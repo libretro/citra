@@ -48,6 +48,8 @@ public:
 
     /// Creates a new context that is shared with the current context
     std::unique_ptr<GraphicsContext> CreateSharedContext() const override;
+    /// Flags that the Emulation Window is not ready to support a hardware context yet.
+    bool ShouldDeferRendererInit() const override;
 
 private:
     /// Called by PollEvents when a key is pressed or released.
