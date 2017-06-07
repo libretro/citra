@@ -11,6 +11,8 @@ option(CITRA_USE_BUNDLED_SDL2 "Download bundled SDL2 binaries" OFF)
 option(ENABLE_QT "Enable the Qt frontend" ON)
 option(CITRA_USE_BUNDLED_QT "Download bundled Qt binaries" OFF)
 
+option(ENABLE_LIBRETRO "Enable the LibRetro frontend" OFF)
+
 if(NOT EXISTS ${CMAKE_SOURCE_DIR}/.git/hooks/pre-commit)
     message(STATUS "Copying pre-commit hook")
     file(COPY hooks/pre-commit

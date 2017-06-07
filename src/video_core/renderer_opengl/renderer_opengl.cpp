@@ -137,6 +137,8 @@ void RendererOpenGL::SwapBuffers() {
         }
     }
 
+    render_window->SetupFramebuffer();
+
     DrawScreens();
 
     Core::System::GetInstance().perf_stats.EndSystemFrame();

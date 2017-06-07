@@ -50,3 +50,7 @@ if (ARCHITECTURE_x86_64)
         target_compile_options(xbyak INTERFACE -fno-operator-names)
     endif()
 endif()
+
+# LibRetro
+add_library(libretro INTERFACE)
+target_include_directories(libretro INTERFACE ./libretro)
