@@ -32,6 +32,11 @@ if(SDL2_FOUND)
     set(HEADERS ${HEADERS} sdl2_sink.h)
 endif()
 
+if(ENABLE_LIBRETRO)
+    set(SRCS ${SRCS} libretro_sink.cpp)
+    set(HEADERS ${HEADERS} libretro_sink.h)
+endif()
+
 create_directory_groups(${SRCS} ${HEADERS})
 
 add_library(audio_core STATIC ${SRCS} ${HEADERS})
@@ -41,4 +46,9 @@ target_link_libraries(audio_core PRIVATE SoundTouch)
 if(SDL2_FOUND)
     target_link_libraries(audio_core PRIVATE SDL2)
     target_compile_definitions(audio_core PRIVATE HAVE_SDL2)
+endif()
+
+if (ENABLE_LIBRETRO)
+    target_link_libraries(audio_core PRIVATE libretro)
+    target_compile_definitions(audio_core PRIVATE HAVE_LIBRETRO)
 endif()

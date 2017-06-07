@@ -10,6 +10,9 @@
 #ifdef HAVE_SDL2
 #include "audio_core/sdl2_sink.h"
 #endif
+#ifdef HAVE_LIBRETRO
+#include "audio_core/libretro_sink.h"
+#endif
 #include "common/logging/log.h"
 
 namespace AudioCore {
@@ -18,6 +21,9 @@ namespace AudioCore {
 const std::vector<SinkDetails> g_sink_details = {
 #ifdef HAVE_SDL2
     {"sdl2", []() { return std::make_unique<SDL2Sink>(); }},
+#endif
+#ifdef HAVE_LIBRETRO
+    {"libretro", []() { return std::make_unique<LibRetroSink>(); }},
 #endif
     {"null", []() { return std::make_unique<NullSink>(); }},
 };

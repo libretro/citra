@@ -56,6 +56,10 @@ endif()
 add_subdirectory(enet)
 target_include_directories(enet INTERFACE ./enet/include)
 
+# LibRetro
+add_library(libretro INTERFACE)
+target_include_directories(libretro INTERFACE ./libretro)
+
 if (ENABLE_WEB_SERVICE)
     # msys installed curl is configured to use openssl, but that isn't portable
     # since it relies on having the bundled certs install in the home folder for SSL

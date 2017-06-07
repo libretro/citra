@@ -132,6 +132,10 @@ public:
 
     void focusOutEvent(QFocusEvent* event) override;
 
+    void SetupFramebuffer() override;
+
+    bool ShouldDeferRendererInit() const override;
+
     void OnClientAreaResized(unsigned width, unsigned height);
 
     void InitRenderTarget();

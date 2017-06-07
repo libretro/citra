@@ -163,6 +163,10 @@ void EmuWindow_SDL2::PollEvents() {
     }
 }
 
+bool EmuWindow_SDL2::ShouldDeferRendererInit() const {
+    return false;
+}
+
 void EmuWindow_SDL2::MakeCurrent() {
     SDL_GL_MakeCurrent(render_window, gl_context);
 }
