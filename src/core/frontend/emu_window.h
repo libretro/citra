@@ -164,6 +164,13 @@ public:
                                         bool is_portrait_mode = {});
 
     std::unique_ptr<TextureMailbox> mailbox = nullptr;
+    /**
+     * Requests for a frontend to setup a framebuffer.
+     */
+    virtual void SetupFramebuffer() = 0;
+
+    /// Flags that the Emulation Window is not ready to support a hardware context yet.
+    virtual bool ShouldDeferRendererInit() const = 0;
 
 protected:
     EmuWindow();

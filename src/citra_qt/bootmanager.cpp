@@ -221,6 +221,10 @@ void GRenderWindow::PollEvents() {
     }
 }
 
+bool GRenderWindow::ShouldDeferRendererInit() const {
+    return false;
+}
+
 // On Qt 5.0+, this correctly gets the size of the framebuffer (pixels).
 //
 // Older versions get the window size (density independent pixels),
@@ -465,4 +469,8 @@ void GLContext::MakeCurrent() {
 
 void GLContext::DoneCurrent() {
     context->doneCurrent();
+}
+
+void GRenderWindow::SetupFramebuffer() {
+    // Framebuffer is consistent in Qt.
 }
