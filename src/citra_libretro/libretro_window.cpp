@@ -7,6 +7,7 @@
 #include "core/settings.h"
 #include "core/3ds.h"
 #include "common/logging/log.h"
+#include "input_common/libretro/libretro.h"
 #include "libretro.h"
 #include "citra_libretro.h"
 #include "environment.h"
@@ -65,6 +66,30 @@ void EmuWindow_LibRetro::SetupFramebuffer() {
 
 void EmuWindow_LibRetro::PollEvents() {
     LibRetro::PollInput();
+
+    // TODO: Poll for right click
+    // TODO: Do we want to check other input devices?
+    bool state = static_cast<bool>(InputCommon::LibRetro::CheckButton(0, RETRO_DEVICE_POINTER,
+                                                                      0, RETRO_DEVICE_ID_POINTER_PRESSED));
+    int x = (int) InputCommon::LibRetro::CheckButton(0, RETRO_DEVICE_POINTER,
+                                                0, RETRO_DEVICE_ID_POINTER_X);
+    int y = (int) InputCommon::LibRetro::CheckButton(0, RETRO_DEVICE_POINTER,
+                                                0, RETRO_DEVICE_ID_POINTER_Y);
+
+    if (state) {
+        if (hasTouched) {
+            LOG_INFO(Frontend, "Mouse move @ %u x %u!", x, y);
+            TouchMoved(x, y);
+        } else {
+            LOG_INFO(Frontend, "Mouse on @ %u x %u!", x, y);
+            TouchPressed(x, y);
+            hasTouched = true;
+        }
+    } else if (hasTouched) {
+        LOG_INFO(Frontend, "Mouse off!");
+        hasTouched = false;
+        TouchReleased();
+    }
 }
 
 void EmuWindow_LibRetro::MakeCurrent() {
@@ -82,6 +107,7 @@ void EmuWindow_LibRetro::OnMinimalClientAreaChangeRequest(const std::pair<unsign
 
 void EmuWindow_LibRetro::Prepare(bool hasOGL) {
     // TODO: Handle custom layouts
+    // TODO: Restrict size (downscaling) - oGL doesn't really like 10k textures :P
     int baseX;
     int baseY;
 
@@ -169,4 +195,9 @@ bool EmuWindow_LibRetro::HasSubmittedFrame() {
     submittedFrame = false;
 
     return state;
+}
+
+void EmuWindow_LibRetro::ResetTouch() {
+    mouseX = 0;
+    mouseY = 0;
 }
