@@ -11,5 +11,5 @@ set(HEADERS
 create_directory_groups(${SRCS} ${HEADERS})
 
 add_library(citra_libretro SHARED ${SRCS} ${HEADERS})
-target_link_libraries(citra_libretro PRIVATE common core input_common)
+target_link_libraries(citra_libretro PRIVATE common core)
 target_link_libraries(citra_libretro PRIVATE inih glad libretro)

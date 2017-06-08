@@ -20,7 +20,6 @@
 #include "core/core.h"
 #include "core/loader/loader.h"
 #include "core/settings.h"
-#include "input_common/main.h"
 #include "video_core/video_core.h"
 #include "video_core/renderer_opengl/renderer_opengl.h"
 #include "citra_libretro/input/input_factory.h"
