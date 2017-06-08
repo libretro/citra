@@ -10,9 +10,6 @@
 #ifdef HAVE_SDL2
 #include "input_common/sdl/sdl.h"
 #endif
-#ifdef HAVE_LIBRETRO
-#include "input_common/libretro/libretro.h"
-#endif
 
 namespace InputCommon {
 
@@ -26,11 +23,6 @@ void Init() {
 #ifdef HAVE_SDL2
     SDL::Init();
 #endif
-#ifdef HAVE_LIBRETRO
-    LibRetro::Init();
-#else
-#error "Fuck off"
-#endif
 }
 
 void Shutdown() {
@@ -40,9 +32,6 @@ void Shutdown() {
 
 #ifdef HAVE_SDL2
     SDL::Shutdown();
-#endif
-#ifdef HAVE_LIBRETRO
-    LibRetro::Shutdown();
 #endif
 }
 

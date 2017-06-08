@@ -20,12 +20,12 @@
 #include "core/core.h"
 #include "core/loader/loader.h"
 #include "core/settings.h"
-#include "input_common/libretro/libretro.h"
 #include "input_common/main.h"
 #include "video_core/video_core.h"
 #include "video_core/renderer_opengl/renderer_opengl.h"
-#include "citra_libretro.h"
-#include "environment.h"
+#include "citra_libretro/input/input_factory.h"
+#include "citra_libretro/citra_libretro.h"
+#include "citra_libretro/environment.h"
 
 // TODO: Find a better place for this junk.
 Log::Filter log_filter (Log::Level::Info);
@@ -40,7 +40,7 @@ void retro_init() {
     LOG_DEBUG(Frontend, "Initialising core...");
     Log::SetFilter(&log_filter);
 
-    InputCommon::Init();
+    LibRetro::Input::Init();
 }
 
 void retro_deinit() {
@@ -48,6 +48,8 @@ void retro_deinit() {
     if (system_core.IsPoweredOn()) {
         system_core.Shutdown();
     }
+
+    LibRetro::Input::Shutdown();
 }
 
 unsigned retro_api_version() {
