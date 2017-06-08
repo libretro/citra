@@ -7,10 +7,10 @@
 #include "core/settings.h"
 #include "core/3ds.h"
 #include "common/logging/log.h"
-#include "input_common/libretro/libretro.h"
 #include "libretro.h"
-#include "citra_libretro.h"
-#include "environment.h"
+#include "citra_libretro/input/input_factory.h"
+#include "citra_libretro/citra_libretro.h"
+#include "citra_libretro/environment.h"
 
 /// LibRetro expects a "default" GL state.
 void ResetGLState() {
@@ -69,11 +69,11 @@ void EmuWindow_LibRetro::PollEvents() {
 
     // TODO: Poll for right click
     // TODO: Do we want to check other input devices?
-    bool state = static_cast<bool>(InputCommon::LibRetro::CheckButton(0, RETRO_DEVICE_POINTER,
+    bool state = static_cast<bool>(LibRetro::Input::CheckButton(0, RETRO_DEVICE_POINTER,
                                                                       0, RETRO_DEVICE_ID_POINTER_PRESSED));
-    int x = (int) InputCommon::LibRetro::CheckButton(0, RETRO_DEVICE_POINTER,
+    int x = (int) LibRetro::Input::CheckButton(0, RETRO_DEVICE_POINTER,
                                                 0, RETRO_DEVICE_ID_POINTER_X);
-    int y = (int) InputCommon::LibRetro::CheckButton(0, RETRO_DEVICE_POINTER,
+    int y = (int) LibRetro::Input::CheckButton(0, RETRO_DEVICE_POINTER,
                                                 0, RETRO_DEVICE_ID_POINTER_Y);
 
     if (state) {

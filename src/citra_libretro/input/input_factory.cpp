@@ -6,21 +6,22 @@
 #include <memory>
 #include <unordered_map>
 #include <libretro.h>
+
+#include "core/frontend/input.h"
 #include "common/logging/log.h"
 #include "common/math_util.h"
-#include "input_common/libretro/libretro.h"
-
-namespace InputCommon {
+#include "citra_libretro/input/input_factory.h"
 
 namespace LibRetro {
 
-// TODO: Should this be outside of LibRetro's namespace?
+namespace Input {
+
 static retro_input_state_t input_state_cb;
 
 class LibRetroButtonFactory;
 class LibRetroAxisFactory;
 
-class LibRetroButton final : public Input::ButtonDevice {
+class LibRetroButton final : public ::Input::ButtonDevice {
 public:
     explicit LibRetroButton(int joystick_, int button_)
             : joystick(joystick_), button(button_) {}
@@ -35,7 +36,7 @@ private:
 };
 
 /// A button device factory that creates button devices from LibRetro joystick
-class LibRetroButtonFactory final : public Input::Factory<Input::ButtonDevice> {
+class LibRetroButtonFactory final : public ::Input::Factory<::Input::ButtonDevice> {
 public:
     /**
      * Creates a button device from a joystick button
@@ -43,7 +44,7 @@ public:
      *     - "joystick": the index of the joystick to bind
      *     - "button": the index of the button to bind
      */
-    std::unique_ptr<Input::ButtonDevice> Create(const Common::ParamPackage& params) override {
+    std::unique_ptr<::Input::ButtonDevice> Create(const Common::ParamPackage& params) override {
         const int joystick_index = params.Get("joystick", 0);
 
         const int button = params.Get("button", 0);
@@ -52,7 +53,7 @@ public:
 };
 
 /// A axis device factory that creates axis devices from LibRetro joystick
-class LibRetroAxis final : public Input::AnalogDevice {
+class LibRetroAxis final : public ::Input::AnalogDevice {
 public:
     explicit LibRetroAxis(int joystick_, int button_)
             : joystick(joystick_), button(button_) {}
@@ -69,7 +70,7 @@ private:
 };
 
 /// A axis device factory that creates axis devices from SDL joystick
-class LibRetroAxisFactory final : public Input::Factory<Input::AnalogDevice> {
+class LibRetroAxisFactory final : public ::Input::Factory<::Input::AnalogDevice> {
 public:
     /**
      * Creates a button device from a joystick button
@@ -86,7 +87,7 @@ public:
      *         is greater than the threshold; "-" means the button is triggered when the axis value
      *         is smaller than the threshold
      */
-    std::unique_ptr<Input::AnalogDevice> Create(const Common::ParamPackage& params) override {
+    std::unique_ptr<::Input::AnalogDevice> Create(const Common::ParamPackage& params) override {
         const int joystick_index = params.Get("joystick", 0);
 
         const int button = params.Get("axis", 0);
@@ -100,20 +101,20 @@ int16_t CheckButton(unsigned port, unsigned device,
 }
 
 void Init() {
-    using namespace Input;
+    using namespace ::Input;
     RegisterFactory<ButtonDevice>("libretro", std::make_shared<LibRetroButtonFactory>());
     RegisterFactory<AnalogDevice>("libretro", std::make_shared<LibRetroAxisFactory>());
 }
 
 void Shutdown() {
-    using namespace Input;
+    using namespace ::Input;
     UnregisterFactory<ButtonDevice>("libretro");
     UnregisterFactory<AnalogDevice>("libretro");
 }
 
+} // namespace Input
 } // namespace LibRetro
-} // namespace InputCommon
 
 void retro_set_input_state(retro_input_state_t cb) {
-    InputCommon::LibRetro::input_state_cb = cb;
+    LibRetro::Input::input_state_cb = cb;
 }

@@ -8,7 +8,6 @@
 #include "audio_core/libretro_sink.h"
 #include "common/scm_rev.h"
 #include "environment.h"
-#include "input_common/libretro/libretro.h"
 
 using namespace LibRetro;
 
