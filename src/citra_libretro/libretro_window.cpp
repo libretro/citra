@@ -78,15 +78,12 @@ void EmuWindow_LibRetro::PollEvents() {
 
     if (state) {
         if (hasTouched) {
-            LOG_INFO(Frontend, "Mouse move @ %u x %u!", x, y);
             TouchMoved(x, y);
         } else {
-            LOG_INFO(Frontend, "Mouse on @ %u x %u!", x, y);
             TouchPressed(x, y);
             hasTouched = true;
         }
     } else if (hasTouched) {
-        LOG_INFO(Frontend, "Mouse off!");
         hasTouched = false;
         TouchReleased();
     }
@@ -175,10 +172,9 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
         LOG_CRITICAL(Frontend, "Failed to update 3DS layout in frontend!");
     }
 
-    LOG_INFO(Frontend, "Updating sizing: %u x %u", scaledX, scaledY);
-    UpdateCurrentFramebufferLayout(scaledX, scaledY);
     NotifyClientAreaSizeChanged(std::pair<unsigned, unsigned>(scaledX, scaledY));
     OnMinimalClientAreaChangeRequest(std::pair<unsigned, unsigned>(scaledX, scaledY));
+    UpdateCurrentFramebufferLayout(scaledX, scaledY);
 
     if (hasOGL) {
         ResetGLState();
@@ -195,9 +191,4 @@ bool EmuWindow_LibRetro::HasSubmittedFrame() {
     submittedFrame = false;
 
     return state;
-}
-
-void EmuWindow_LibRetro::ResetTouch() {
-    mouseX = 0;
-    mouseY = 0;
 }

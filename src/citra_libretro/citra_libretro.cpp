@@ -37,13 +37,17 @@ struct retro_hw_render_callback hw_render;
 std::string file_path;
 
 void retro_init() {
+    LOG_DEBUG(Frontend, "Initialising core...");
     Log::SetFilter(&log_filter);
 
     InputCommon::Init();
 }
 
 void retro_deinit() {
-    InputCommon::Shutdown();
+    LOG_DEBUG(Frontend, "Shutting down core...");
+    if (system_core.IsPoweredOn()) {
+        system_core.Shutdown();
+    }
 }
 
 unsigned retro_api_version() {
@@ -111,7 +115,7 @@ void UpdateSettings(bool init) {
             { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Start" },
             { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select" },
             { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3,     "Home" },
-            { NULL, NULL },
+            { 0, 0 },
     };
 
     LibRetro::SetInputDescriptors(desc);
@@ -217,11 +221,6 @@ void UpdateSettings(bool init) {
  * libretro callback; Called every game tick.
  */
 void retro_run() {
-    if (!system_core.IsPoweredOn()) {
-        LibRetro::Shutdown();
-        return;
-    }
-
     UpdateSettings(false);
 
     while(!emu_window->HasSubmittedFrame()) {
@@ -257,8 +256,6 @@ void context_destroy() {
 }
 
 void retro_reset() {
-    emu_window->ResetTouch();
-    LOG_CRITICAL(Frontend, "Context Reset!");
     system_core.Shutdown();
     system_core.Load(emu_window.get(), file_path);
     context_reset(); // Force the renderer to appear
@@ -268,7 +265,7 @@ void retro_reset() {
  * libretro callback; Called when a game is to be loaded.
  */
 bool retro_load_game(const struct retro_game_info *info) {
-    LOG_INFO(Frontend, "Starting Citra RetroArch core.");
+    LOG_INFO(Frontend, "Starting Citra RetroArch game...");
 
     // TODO: RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL
 
@@ -353,6 +350,7 @@ bool retro_load_game(const struct retro_game_info *info) {
 }
 
 void retro_unload_game() {
+    LOG_DEBUG(Frontend, "Unloading game...");
     system_core.Shutdown();
 }
 
