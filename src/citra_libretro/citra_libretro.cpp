@@ -208,9 +208,8 @@ void UpdateSettings(bool init) {
     Settings::values.analogs[1] = "axis:1,joystick:0,engine:libretro";
 
     // Update the framebuffer sizing, but only if there is a oGL context.
-    //if (!init) {
     emu_window->Prepare(!init);
-    //}
+
     Settings::Apply();
 }
 
@@ -258,6 +257,7 @@ void context_destroy() {
 }
 
 void retro_reset() {
+    emu_window->ResetTouch();
     LOG_CRITICAL(Frontend, "Context Reset!");
     system_core.Shutdown();
     system_core.Load(emu_window.get(), file_path);
