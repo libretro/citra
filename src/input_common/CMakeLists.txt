@@ -17,11 +17,6 @@ if(SDL2_FOUND)
     set(HEADERS ${HEADERS} sdl/sdl.h)
 endif()
 
-if(ENABLE_LIBRETRO)
-    set(SRCS ${SRCS} libretro/libretro.cpp)
-    set(HEADERS ${HEADERS} libretro/libretro.h)
-endif()
-
 create_directory_groups(${SRCS} ${HEADERS})
 
 add_library(input_common STATIC ${SRCS} ${HEADERS})
@@ -30,9 +25,4 @@ target_link_libraries(input_common PUBLIC core PRIVATE common)
 if(SDL2_FOUND)
     target_link_libraries(input_common PRIVATE SDL2)
     target_compile_definitions(input_common PRIVATE HAVE_SDL2)
-endif()
-
-if(ENABLE_LIBRETRO)
-    target_link_libraries(input_common PRIVATE libretro)
-    target_compile_definitions(input_common PRIVATE HAVE_LIBRETRO)
 endif()

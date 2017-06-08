@@ -6,8 +6,9 @@
 
 #include "core/frontend/input.h"
 
-namespace InputCommon {
 namespace LibRetro {
+
+namespace Input {
 
 /// Function provided by Retroarch dynamically to poll input.
 int16_t CheckButton(unsigned port, unsigned device,
@@ -19,5 +20,5 @@ void Init();
 /// Unresisters LibRetro device factories and shut them down.
 void Shutdown();
 
+} // namespace Input
 } // namespace LibRetro
-} // namespace InputCommon
