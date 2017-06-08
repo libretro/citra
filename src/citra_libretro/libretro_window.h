@@ -39,6 +39,8 @@ public:
     /// States whether a frame has been submitted. Resets after call.
     bool HasSubmittedFrame();
 
+    /// Hint that the mouse coordinates should be invalidated.
+    void ResetTouch();
 private:
     /// Called when a configuration change affects the minimal size of the window
     void OnMinimalClientAreaChangeRequest(
@@ -49,4 +51,7 @@ private:
     int height;
 
     bool submittedFrame = false;
+
+    // For tracking LibRetro state
+    bool hasTouched = false;
 };
