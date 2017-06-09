@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <glad/glad.h>
+
 #include <memory>
 #include <utility>
 #include "core/frontend/emu_window.h"
@@ -34,10 +36,14 @@ public:
     void Prepare(bool hasOGL);
 
     /// Enables for deferring a renderer's initalisation.
-    bool ShouldDeferRendererInit() const;
+    bool ShouldDeferRendererInit() const override;
 
     /// States whether a frame has been submitted. Resets after call.
     bool HasSubmittedFrame();
+
+    /// Flags that the framebuffer should be cleared.
+    bool NeedsClearing() const override;
+
 private:
     /// Called when a configuration change affects the minimal size of the window
     void OnMinimalClientAreaChangeRequest(
@@ -49,6 +55,11 @@ private:
 
     bool submittedFrame = false;
 
+    // Hack to ensure stuff runs on the main thread
+    bool doCleanFrame = false;
+
     // For tracking LibRetro state
     bool hasTouched = false;
+
+    GLuint framebuffer;
 };

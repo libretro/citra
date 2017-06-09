@@ -15,7 +15,6 @@
 /// LibRetro expects a "default" GL state.
 void ResetGLState() {
     // Clean up state.
-
     glLogicOp(GL_COPY);
 
     glEnable(GL_DEPTH_TEST);
@@ -57,11 +56,23 @@ void EmuWindow_LibRetro::SwapBuffers() {
                                static_cast<unsigned>(width), static_cast<unsigned>(height), 0);
     glUseProgram(0);
     ResetGLState();
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 }
 
 void EmuWindow_LibRetro::SetupFramebuffer() {
     ResetGLState();
-    glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(LibRetro::GetFramebuffer()));
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+
+    // glClear can be a slow path - skip clearing if we don't need to.
+    if (doCleanFrame) {
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        doCleanFrame = false;
+    }
 }
 
 void EmuWindow_LibRetro::PollEvents() {
@@ -70,11 +81,11 @@ void EmuWindow_LibRetro::PollEvents() {
     // TODO: Poll for right click
     // TODO: Do we want to check other input devices?
     bool state = static_cast<bool>(LibRetro::Input::CheckButton(0, RETRO_DEVICE_POINTER,
-                                                                      0, RETRO_DEVICE_ID_POINTER_PRESSED));
-    int x = (int) LibRetro::Input::CheckButton(0, RETRO_DEVICE_POINTER,
-                                                0, RETRO_DEVICE_ID_POINTER_X);
-    int y = (int) LibRetro::Input::CheckButton(0, RETRO_DEVICE_POINTER,
-                                                0, RETRO_DEVICE_ID_POINTER_Y);
+                                                                0, RETRO_DEVICE_ID_POINTER_PRESSED));
+    unsigned x = static_cast<unsigned>(LibRetro::Input::CheckButton(0, RETRO_DEVICE_POINTER,
+                                                                    0, RETRO_DEVICE_ID_POINTER_X));
+    unsigned y = static_cast<unsigned>(LibRetro::Input::CheckButton(0, RETRO_DEVICE_POINTER,
+                                                                    0, RETRO_DEVICE_ID_POINTER_Y));
 
     if (state) {
         if (hasTouched) {
@@ -176,8 +187,10 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
     OnMinimalClientAreaChangeRequest(std::pair<unsigned, unsigned>(scaledX, scaledY));
     UpdateCurrentFramebufferLayout(scaledX, scaledY);
 
+    framebuffer = static_cast<GLuint>(LibRetro::GetFramebuffer());
+
     if (hasOGL) {
-        ResetGLState();
+        doCleanFrame = true;
     }
 }
 
@@ -186,9 +199,13 @@ bool EmuWindow_LibRetro::ShouldDeferRendererInit() const {
     return true;
 }
 
+bool EmuWindow_LibRetro::NeedsClearing() const {
+    // We manage this ourselves.
+    return false;
+}
+
 bool EmuWindow_LibRetro::HasSubmittedFrame() {
     bool state = submittedFrame;
     submittedFrame = false;
-
     return state;
 }
