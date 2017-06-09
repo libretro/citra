@@ -43,13 +43,19 @@ public:
     /// Releases the GL context from the caller thread
     void DoneCurrent() override;
 
-    /// Whether the window is still open, and a close request hasn't yet been sent
-    bool IsOpen() const;
+    /// Requests for a frontend to setup a framebuffer.
+    void SetupFramebuffer() override;
 
     /// Creates a new context that is shared with the current context
     std::unique_ptr<GraphicsContext> CreateSharedContext() const override;
     /// Flags that the Emulation Window is not ready to support a hardware context yet.
     bool ShouldDeferRendererInit() const override;
+
+    /// Flags that the framebuffer should be cleared.
+    bool NeedsClearing() const override;
+
+    /// Whether the window is still open, and a close request hasn't yet been sent
+    bool IsOpen() const;
 
 private:
     /// Called by PollEvents when a key is pressed or released.

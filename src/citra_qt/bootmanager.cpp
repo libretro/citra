@@ -225,6 +225,10 @@ bool GRenderWindow::ShouldDeferRendererInit() const {
     return false;
 }
 
+bool GRenderWindow::NeedsClearing() const {
+    return true;
+}
+
 // On Qt 5.0+, this correctly gets the size of the framebuffer (pixels).
 //
 // Older versions get the window size (density independent pixels),
