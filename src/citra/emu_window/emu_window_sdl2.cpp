@@ -302,6 +302,12 @@ bool EmuWindow_SDL2::ShouldDeferRendererInit() const {
     return false;
 }
 
+bool EmuWindow_SDL2::NeedsClearing() const {
+    return true;
+}
+
+void EmuWindow_SDL2::SetupFramebuffer() {}
+
 void EmuWindow_SDL2::MakeCurrent() {
     core_context->MakeCurrent();
 }

@@ -377,6 +377,11 @@ void RendererOpenGL::SwapBuffers() {
     state.Apply();
 
     PrepareRendertarget();
+    render_window->SetupFramebuffer();
+
+    for (int i : {0, 1, 2}) {
+        int fb_id = i == 2 ? 1 : 0;
+        const auto& framebuffer = GPU::g_regs.framebuffer_config[fb_id];
 
     RenderScreenshot();
 
@@ -974,7 +979,10 @@ void RendererOpenGL::DrawScreens(const Layout::FramebufferLayout& layout, bool f
     const auto& bottom_screen = layout.bottom_screen;
 
     glViewport(0, 0, layout.width, layout.height);
-    glClear(GL_COLOR_BUFFER_BIT);
+
+    if (render_window->NeedsClearing()) {
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
 
     // Set projection matrix
     std::array<GLfloat, 3 * 2> ortho_matrix =

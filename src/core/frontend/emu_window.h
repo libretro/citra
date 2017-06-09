@@ -170,6 +170,9 @@ public:
     /// Flags that the Emulation Window is not ready to support a hardware context yet.
     virtual bool ShouldDeferRendererInit() const = 0;
 
+    /// Flags that the framebuffer should be cleared.
+    virtual bool NeedsClearing() const = 0;
+
 protected:
     EmuWindow();
     virtual ~EmuWindow();
