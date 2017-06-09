@@ -93,6 +93,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if (NOT MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-attributes")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
     if (MINGW)
         add_definitions(-DMINGW_HAS_SECURE_API)
