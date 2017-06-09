@@ -135,6 +135,79 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin/$<CONFIG>)
 
 
+if (NOT MSVC)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-attributes")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+    if (MINGW)
+        add_definitions(-DMINGW_HAS_SECURE_API)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -gdwarf")
+
+        if (MINGW_STATIC_BUILD)
+            add_definitions(-DQT_STATICPLUGIN)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static")
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+        endif()
+    endif()
+else()
+    # Silence "deprecation" warnings
+    add_definitions(/D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /D_SCL_SECURE_NO_WARNINGS)
+    # Avoid windows.h junk
+    add_definitions(/DNOMINMAX)
+    # Avoid windows.h from including some usually unused libs like winsocks.h, since this might cause some redefinition errors.
+    add_definitions(/DWIN32_LEAN_AND_MEAN)
+
+    set(CMAKE_CONFIGURATION_TYPES Debug Release CACHE STRING "" FORCE)
+
+    # Tweak optimization settings
+    # As far as I can tell, there's no way to override the CMake defaults while leaving user
+    # changes intact, so we'll just clobber everything and say sorry.
+    message(STATUS "Cache compiler flags ignored, please edit CMakeLists.txt to change the flags.")
+
+    # /W3 - Level 3 warnings
+    # /MP - Multi-threaded compilation
+    # /Zi - Output debugging information
+    # /Zo - enhanced debug info for optimized builds
+    # /permissive- - enables stricter C++ standards conformance checks
+    set(CMAKE_C_FLAGS   "/W3 /MP /Zi /Zo /permissive-" CACHE STRING "" FORCE)
+    # /EHsc - C++-only exception handling semantics
+    # /std:c++latest - Latest available C++ standard
+    # /Zc:throwingNew - let codegen assume `operator new` will never return null
+    # /Zc:inline - let codegen omit inline functions in object files
+    set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} /EHsc /std:c++latest /Zc:throwingNew,inline" CACHE STRING "" FORCE)
+
+    # /MDd - Multi-threaded Debug Runtime DLL
+    set(CMAKE_C_FLAGS_DEBUG   "/Od /MDd" CACHE STRING "" FORCE)
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}" CACHE STRING "" FORCE)
+
+    # /O2 - Optimization level 2
+    # /GS- - No stack buffer overflow checks
+    # /MD - Multi-threaded runtime DLL
+    set(CMAKE_C_FLAGS_RELEASE   "/O2 /GS- /MD" CACHE STRING "" FORCE)
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}" CACHE STRING "" FORCE)
+
+    set(CMAKE_EXE_LINKER_FLAGS_DEBUG   "/DEBUG /MANIFEST:NO" CACHE STRING "" FORCE)
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "/DEBUG /MANIFEST:NO /INCREMENTAL:NO /OPT:REF,ICF" CACHE STRING "" FORCE)
+endif()
+
+# Set file offset size to 64 bits.
+#
+# On modern Unixes, this is typically already the case. The lone exception is
+# glibc, which may default to 32 bits. glibc allows this to be configured
+# by setting _FILE_OFFSET_BITS.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_definitions(-D_FILE_OFFSET_BITS=64)
+endif()
+
+add_definitions(-DSINGLETHREADED)
+# CMake seems to only define _DEBUG on Windows
+set_property(DIRECTORY APPEND PROPERTY
+    COMPILE_DEFINITIONS $<$<CONFIG:Debug>:_DEBUG> $<$<NOT:$<CONFIG:Debug>>:NDEBUG>)
+
+math(EXPR EMU_ARCH_BITS ${CMAKE_SIZEOF_VOID_P}*8)
+add_definitions(-DEMU_ARCH_BITS=${EMU_ARCH_BITS})
+
 # System imported libraries
 # ======================
 
