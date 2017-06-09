@@ -135,6 +135,7 @@ public:
     void SetupFramebuffer() override;
 
     bool ShouldDeferRendererInit() const override;
+    bool NeedsClearing() const override;
 
     void OnClientAreaResized(unsigned width, unsigned height);
 
