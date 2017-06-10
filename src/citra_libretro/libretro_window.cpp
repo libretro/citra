@@ -187,9 +187,8 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
     OnMinimalClientAreaChangeRequest(std::pair<unsigned, unsigned>(scaledX, scaledY));
     UpdateCurrentFramebufferLayout(scaledX, scaledY);
 
-    framebuffer = static_cast<GLuint>(LibRetro::GetFramebuffer());
-
     if (hasOGL) {
+        framebuffer = static_cast<GLuint>(LibRetro::GetFramebuffer());
         doCleanFrame = true;
     }
 }
