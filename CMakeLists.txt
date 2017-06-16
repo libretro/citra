@@ -13,6 +13,8 @@ option(CITRA_USE_BUNDLED_QT "Download bundled Qt binaries" OFF)
 
 option(ENABLE_LIBRETRO "Enable the LibRetro frontend" OFF)
 
+option(DISABLE_LIBPNG "Disables compiling against libpng" OFF)
+
 if(NOT EXISTS ${CMAKE_SOURCE_DIR}/.git/hooks/pre-commit)
     message(STATUS "Copying pre-commit hook")
     file(COPY hooks/pre-commit
@@ -150,9 +152,14 @@ function(download_bundled_external remote_path lib_name prefix_var)
     set(${prefix_var} "${prefix}" PARENT_SCOPE)
 endfunction()
 
-find_package(PNG QUIET)
-if (NOT PNG_FOUND)
-    message(STATUS "libpng not found. Some debugging features have been disabled.")
+if (NOT DISABLE_LIBPNG)
+    find_package(PNG QUIET)
+    if (NOT PNG_FOUND)
+        message(STATUS "libpng not found. Some debugging features have been disabled.")
+    endif()
+else()
+    message(STATUS "libpng disabled. Some debugging features have been disabled.")
+    set(PNG_FOUND OFF)
 endif()
 
 find_package(Boost 1.63.0 QUIET)
