@@ -14,6 +14,8 @@ option(CITRA_USE_BUNDLED_QT "Download bundled Qt binaries" OFF)
 
 option(ENABLE_LIBRETRO "Enable the LibRetro frontend" OFF)
 
+option(DISABLE_LIBPNG "Disables compiling against libpng" OFF)
+
 option(ENABLE_WEB_SERVICE "Enable web services (telemetry, etc.)" ON)
 option(CITRA_USE_BUNDLED_CURL "FOR MINGW ONLY: Download curl configured against winssl instead of openssl" OFF)
 if (ENABLE_WEB_SERVICE AND CITRA_USE_BUNDLED_CURL AND WINDOWS AND MSVC)
@@ -164,9 +166,14 @@ set_property(DIRECTORY APPEND PROPERTY
 # System imported libraries
 # ======================
 
-find_package(PNG QUIET)
-if (NOT PNG_FOUND)
-    message(STATUS "libpng not found. Some debugging features have been disabled.")
+if (NOT DISABLE_LIBPNG)
+    find_package(PNG QUIET)
+    if (NOT PNG_FOUND)
+        message(STATUS "libpng not found. Some debugging features have been disabled.")
+    endif()
+else()
+    message(STATUS "libpng disabled. Some debugging features have been disabled.")
+    set(PNG_FOUND OFF)
 endif()
 
 find_package(Boost 1.63.0 QUIET)
