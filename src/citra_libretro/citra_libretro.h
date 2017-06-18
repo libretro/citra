@@ -5,7 +5,7 @@
 #pragma once
 
 #include "core/core.h"
-#include "libretro_window.h"
+#include "emu_window/libretro_window.h"
 
 namespace LibRetro {
 
