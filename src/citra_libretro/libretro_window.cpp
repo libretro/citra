@@ -115,9 +115,8 @@ void EmuWindow_LibRetro::OnMinimalClientAreaChangeRequest(const std::pair<unsign
 
 void EmuWindow_LibRetro::Prepare(bool hasOGL) {
     // TODO: Handle custom layouts
-    // TODO: Restrict size (downscaling) - oGL doesn't really like 10k textures :P
-    int baseX;
-    int baseY;
+    unsigned baseX;
+    unsigned baseY;
 
     float scaling = Settings::values.resolution_factor;
 
@@ -167,25 +166,22 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
             break;
     }
 
-    unsigned scaledX = (unsigned int) (baseX * Settings::values.resolution_factor);
-    unsigned scaledY = (unsigned int) (baseY * Settings::values.resolution_factor);
-
     // Update Libretro with our status
     struct retro_system_av_info info;
     info.timing.fps = 60.0;
     info.timing.sample_rate = 41000;
-    info.geometry.aspect_ratio = (float) scaledX / (float) scaledY;
-    info.geometry.base_height = scaledY;
-    info.geometry.base_width = scaledX;
-    info.geometry.max_width = scaledX;
-    info.geometry.max_height = scaledY;
+    info.geometry.aspect_ratio = (float) baseX / (float) baseY;
+    info.geometry.base_width = baseX;
+    info.geometry.base_height = baseY;
+    info.geometry.max_width = baseX;
+    info.geometry.max_height = baseY;
     if (!LibRetro::SetGeometry(&info)) {
         LOG_CRITICAL(Frontend, "Failed to update 3DS layout in frontend!");
     }
 
-    NotifyClientAreaSizeChanged(std::pair<unsigned, unsigned>(scaledX, scaledY));
-    OnMinimalClientAreaChangeRequest(std::pair<unsigned, unsigned>(scaledX, scaledY));
-    UpdateCurrentFramebufferLayout(scaledX, scaledY);
+    NotifyClientAreaSizeChanged(std::pair<unsigned, unsigned>(baseX, baseY));
+    OnMinimalClientAreaChangeRequest(std::pair<unsigned, unsigned>(baseX, baseY));
+    UpdateCurrentFramebufferLayout(baseX, baseY);
 
     if (hasOGL) {
         framebuffer = static_cast<GLuint>(LibRetro::GetFramebuffer());
