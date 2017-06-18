@@ -1,11 +1,11 @@
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/CMakeModules)
 
 set(SRCS
-        citra_libretro.cpp libretro_window.cpp environment.cpp
+        citra_libretro.cpp emu_window/libretro_window.cpp environment.cpp
         input/input_factory.cpp
         )
 set(HEADERS
-        citra_libretro.h libretro_window.h environment.h
+        citra_libretro.h emu_window/libretro_window.h environment.h
         input/input_factory.h)
 
 create_directory_groups(${SRCS} ${HEADERS})
