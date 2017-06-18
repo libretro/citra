@@ -175,8 +175,8 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
     info.timing.fps = 60.0;
     info.timing.sample_rate = 41000;
     info.geometry.aspect_ratio = (float) scaledX / (float) scaledY;
-    info.geometry.base_height = scaledX;
-    info.geometry.base_width = scaledY;
+    info.geometry.base_height = scaledY;
+    info.geometry.base_width = scaledX;
     info.geometry.max_width = scaledX;
     info.geometry.max_height = scaledY;
     if (!LibRetro::SetGeometry(&info)) {
