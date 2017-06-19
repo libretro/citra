@@ -230,7 +230,8 @@ void retro_run() {
 }
 
 void context_reset() {
-    if (VideoCore::g_renderer == nullptr) {
+    if (!system_core.IsPoweredOn()) {
+        LOG_CRITICAL(Frontend, "Cannot reset system core if isn't on!");
         return;
     }
 
@@ -240,7 +241,9 @@ void context_reset() {
     }
 
     // Recreate our renderer, so it can reset it's state.
-    VideoCore::g_renderer->ShutDown();
+    if (VideoCore::g_renderer != nullptr) {
+        VideoCore::g_renderer->ShutDown();
+    }
 
     VideoCore::g_renderer = std::make_unique<RendererOpenGL>();
     VideoCore::g_renderer->SetWindow(emu_window.get());
