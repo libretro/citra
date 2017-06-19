@@ -6,7 +6,6 @@
 
 #include "core/settings.h"
 #include "core/3ds.h"
-#include "common/logging/log.h"
 #include "libretro.h"
 #include "citra_libretro/input/input_factory.h"
 #include "citra_libretro/citra_libretro.h"
@@ -39,7 +38,6 @@ void ResetGLState() {
     glDisable(GL_CULL_FACE);
     glCullFace(GL_BACK);
 
-    //glUseProgram(0);
     glActiveTexture(GL_TEXTURE0);
 }
 
