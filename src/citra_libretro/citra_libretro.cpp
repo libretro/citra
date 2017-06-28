@@ -58,7 +58,7 @@ unsigned retro_api_version() {
 void LibRetro::OnConfigureEnvironment() {
     static const retro_variable values[] =
     {
-            { "citra_use_cpu_jit", "Enable Dynarmic JIT; enabled|disabled" },
+            { "citra_use_cpu_jit", "Enable CPU JIT; enabled|disabled" },
             { "citra_use_hw_renderer", "Enable hardware renderer; enabled|disabled" },
             { "citra_use_shader_jit", "Enable shader JIT; enabled|disabled" },
             { "citra_resolution_factor", "Resolution scale factor; 1x (Native)|2x|3x|4x|5x|6x|7x|8x|9x|10x" },
