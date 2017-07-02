@@ -50,7 +50,9 @@ void EmuWindow_LibRetro::SwapBuffers() {
 
     ResetGLState();
 
-    tracker.Render(width, height);
+    if (enableEmulatedPointer) {
+        tracker.Render(width, height);
+    }
 
     LibRetro::UploadVideoFrame(RETRO_HW_FRAME_BUFFER_VALID,
                                static_cast<unsigned>(width), static_cast<unsigned>(height), 0);
@@ -78,30 +80,24 @@ void EmuWindow_LibRetro::SetupFramebuffer() {
 void EmuWindow_LibRetro::PollEvents() {
     LibRetro::PollInput();
 
-    // TODO: Poll for right click
-    // TODO: Do we want to check other input devices?
-    /*bool state = static_cast<bool>(LibRetro::CheckInput(0, RETRO_DEVICE_POINTER,
-                                                                0, RETRO_DEVICE_ID_POINTER_PRESSED));
-    unsigned x = static_cast<unsigned>(LibRetro::CheckInput(0, RETRO_DEVICE_POINTER,
-                                                                    0, RETRO_DEVICE_ID_POINTER_X));
-    unsigned y = static_cast<unsigned>(LibRetro::CheckInput(0, RETRO_DEVICE_POINTER,
-                                                                    0, RETRO_DEVICE_ID_POINTER_Y));*/
+    // TODO: Poll for right click for motion emu
 
-    tracker.Update(width, height, GetFramebufferLayout().bottom_screen);
+    if (enableEmulatedPointer) {
+        tracker.Update(width, height, GetFramebufferLayout().bottom_screen);
 
-    if (tracker.IsPressed()) {
-        auto mousePos = tracker.GetPressedPosition();
+        if (tracker.IsPressed()) {
+            auto mousePos = tracker.GetPressedPosition();
 
-        if (hasTouched) {
-            LOG_INFO(Frontend, "Mouse pressed!");
-            TouchMoved(mousePos.first, mousePos.second);
-        } else {
-            TouchPressed(mousePos.first, mousePos.second);
-            hasTouched = true;
+            if (hasTouched) {
+                TouchMoved(mousePos.first, mousePos.second);
+            } else {
+                TouchPressed(mousePos.first, mousePos.second);
+                hasTouched = true;
+            }
+        } else if (hasTouched) {
+            hasTouched = false;
+            TouchReleased();
         }
-    } else if (hasTouched) {
-        hasTouched = false;
-        TouchReleased();
     }
 }
 
@@ -127,6 +123,8 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
 
     bool swapped = Settings::values.swap_screen;
 
+    enableEmulatedPointer = true;
+
     switch(Settings::values.layout_option) {
         case Settings::LayoutOption::SingleScreen:
             if (swapped) { // Bottom screen visible
@@ -135,7 +133,7 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
             } else {  // Top screen visible
                 baseX = Core::kScreenTopWidth;
                 baseY = Core::kScreenTopHeight;
-                // TODO: Disable touch screen?
+                enableEmulatedPointer = false;
             }
             baseX *= scaling;
             baseY *= scaling;
@@ -192,7 +190,10 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
     if (hasOGL) {
         framebuffer = static_cast<GLuint>(LibRetro::GetFramebuffer());
 
-        tracker.InitOpenGL();
+        if (enableEmulatedPointer) {
+            // TODO: This is potentially leaking OpenGL resources!
+            tracker.InitOpenGL();
+        }
 
         doCleanFrame = true;
     }

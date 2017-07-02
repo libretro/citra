@@ -67,4 +67,6 @@ private:
 
     // For tracking mouse cursor
     LibRetro::Input::MouseTracker tracker;
+
+    bool enableEmulatedPointer = true;
 };
