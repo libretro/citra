@@ -291,8 +291,6 @@ void retro_reset() {
 bool retro_load_game(const struct retro_game_info *info) {
     LOG_INFO(Frontend, "Starting Citra RetroArch game...");
 
-    // TODO: RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL
-
     LibRetro::settings.file_path = info->path;
 
     if (!LibRetro::SetPixelFormat(RETRO_PIXEL_FORMAT_XRGB8888)) {
