@@ -103,9 +103,10 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
     projectedY = (float) y / bufferHeight;
 
     // Ensure that the projected position doesn't overlap outside the bottom screen framebuffer.
-    // TODO: Convert to constant/setting for size, share size with below
-    float renderWidth  = 0.005f * bufferWidth / 2;
-    float renderHeight = 0.005f * bufferHeight / 2 * ((float) bufferWidth / bufferHeight);
+    // TODO: Provide config option
+    renderRatio = (float) (bottomScreen.bottom - bottomScreen.top) / bufferHeight / 30;
+    float renderWidth  = renderRatio * bufferWidth / 2;
+    float renderHeight = renderRatio * bufferHeight / 2 * ((float) bufferWidth / bufferHeight);
 
     // Map the mouse coord to the bottom screen's position (with a little margin)
     projectedX = bottomScreen.left + renderWidth + projectedX
@@ -122,9 +123,8 @@ void MouseTracker::Render(int bufferWidth, int bufferHeight) {
     float centerX =   (projectedX / bufferWidth)  * 2 - 1;
     float centerY = -((projectedY / bufferHeight) * 2 - 1);
 
-    // TODO: Convert to constant/setting for size
-    float renderWidth  = 0.005f;
-    float renderHeight = 0.005f * ((float) bufferWidth / bufferHeight);
+    float renderWidth  = renderRatio;
+    float renderHeight = renderRatio * ((float) bufferWidth / bufferHeight);
 
     float projectedLeft   = centerX - renderWidth;
     float projectedTop    = centerY - renderHeight;
