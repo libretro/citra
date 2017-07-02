@@ -78,11 +78,11 @@ void EmuWindow_LibRetro::PollEvents() {
 
     // TODO: Poll for right click
     // TODO: Do we want to check other input devices?
-    bool state = static_cast<bool>(LibRetro::Input::CheckButton(0, RETRO_DEVICE_POINTER,
+    bool state = static_cast<bool>(LibRetro::CheckInput(0, RETRO_DEVICE_POINTER,
                                                                 0, RETRO_DEVICE_ID_POINTER_PRESSED));
-    unsigned x = static_cast<unsigned>(LibRetro::Input::CheckButton(0, RETRO_DEVICE_POINTER,
+    unsigned x = static_cast<unsigned>(LibRetro::CheckInput(0, RETRO_DEVICE_POINTER,
                                                                     0, RETRO_DEVICE_ID_POINTER_X));
-    unsigned y = static_cast<unsigned>(LibRetro::Input::CheckButton(0, RETRO_DEVICE_POINTER,
+    unsigned y = static_cast<unsigned>(LibRetro::CheckInput(0, RETRO_DEVICE_POINTER,
                                                                     0, RETRO_DEVICE_ID_POINTER_Y));
 
     if (state) {
