@@ -10,10 +10,6 @@ namespace LibRetro {
 
 namespace Input {
 
-/// Function provided by Retroarch dynamically to poll input.
-int16_t CheckButton(unsigned port, unsigned device,
-                 unsigned index, unsigned id);
-
 /// Initializes and registers LibRetro device factories
 void Init();
 
