@@ -23,6 +23,7 @@
 #include "video_core/video_core.h"
 #include "video_core/renderer_opengl/renderer_opengl.h"
 #include "citra_libretro/input/input_factory.h"
+#include "citra_libretro/core_settings.h"
 #include "citra_libretro/citra_libretro.h"
 #include "citra_libretro/environment.h"
 
@@ -32,8 +33,6 @@ Core::System& system_core {Core::System::GetInstance()};
 std::unique_ptr<EmuWindow_LibRetro> emu_window;
 
 struct retro_hw_render_callback hw_render;
-
-std::string file_path;
 
 void retro_init() {
     LOG_DEBUG(Frontend, "Initialising core...");
@@ -64,6 +63,8 @@ void LibRetro::OnConfigureEnvironment() {
             { "citra_resolution_factor", "Resolution scale factor; 1x (Native)|2x|3x|4x|5x|6x|7x|8x|9x|10x" },
             { "citra_layout_option", "Screen layout positioning; Default Top-Bottom Screen|Single Screen Only|Large Screen, Small Screen" },
             { "citra_swap_screen", "Prominent 3DS screen; Top|Bottom" },
+            { "citra_analog_function", "Right analog function; C-Stick and Touchscreen Pointer|Touchscreen Pointer|C-Stick" },
+            { "citra_deadzone", "Emulated pointer deadzone (%); 15|20|25|30|35|0|5|10" },
             { "citra_limit_framerate", "Enable frame limiter; enabled|disabled" },
             { "citra_audio_stretching", "Enable audio stretching; enabled|disabled" },
             { "citra_use_virtual_sd", "Enable virtual SD card; enabled|disabled" },
@@ -172,6 +173,21 @@ void UpdateSettings(bool init) {
         Settings::values.layout_option = Settings::LayoutOption::Default;
     }
 
+    auto deadzone = LibRetro::FetchVariable("citra_deadzone", "15");
+    LibRetro::settings.deadzone = (float) std::stoi(deadzone) / 100;
+
+    auto analog_function = LibRetro::FetchVariable("citra_analog_function", "C-Stick and Touchscreen Pointer");
+    if (analog_function.compare("C-Stick and Touchscreen Pointer") == 0) {
+        LibRetro::settings.analog_function = LibRetro::CStickFunction::Both;
+    } else if (analog_function.compare("C-Stick") == 0) {
+        LibRetro::settings.analog_function = LibRetro::CStickFunction::CStick;
+    } else if (analog_function.compare("Touchscreen Pointer") == 0) {
+        LibRetro::settings.analog_function = LibRetro::CStickFunction::Touchscreen;
+    } else {
+        LOG_ERROR(Frontend, "Unknown right analog function: %s.", analog_function.c_str());
+        LibRetro::settings.analog_function = LibRetro::CStickFunction::Both;
+    }
+
     // TODO: Region
 
     // Hardcode buttons to bind to libretro - it is entirely redundant to have
@@ -210,7 +226,11 @@ void UpdateSettings(bool init) {
     // Circle Pad
     Settings::values.analogs[0] = "axis:0,joystick:0,engine:libretro";
     // C-Stick
-    Settings::values.analogs[1] = "axis:1,joystick:0,engine:libretro";
+    if (LibRetro::settings.analog_function != LibRetro::CStickFunction::Touchscreen) {
+        Settings::values.analogs[1] = "axis:1,joystick:0,engine:libretro";
+    } else {
+        Settings::values.analogs[1] = "";
+    }
 
     // Update the framebuffer sizing, but only if there is a oGL context.
     emu_window->Prepare(!init);
@@ -261,7 +281,7 @@ void context_destroy() {
 
 void retro_reset() {
     system_core.Shutdown();
-    system_core.Load(emu_window.get(), file_path);
+    system_core.Load(emu_window.get(), LibRetro::settings.file_path);
     context_reset(); // Force the renderer to appear
 }
 
@@ -273,7 +293,7 @@ bool retro_load_game(const struct retro_game_info *info) {
 
     // TODO: RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL
 
-    file_path = info->path;
+    LibRetro::settings.file_path = info->path;
 
     if (!LibRetro::SetPixelFormat(RETRO_PIXEL_FORMAT_XRGB8888)) {
         LOG_CRITICAL(Frontend, "XRGB8888 is not supported.");
@@ -305,11 +325,11 @@ bool retro_load_game(const struct retro_game_info *info) {
 
     UpdateSettings(true);
 
-    const Core::System::ResultStatus load_result{system_core.Load(emu_window.get(), file_path)};
+    const Core::System::ResultStatus load_result{system_core.Load(emu_window.get(), LibRetro::settings.file_path)};
 
     switch (load_result) {
         case Core::System::ResultStatus::ErrorGetLoader:
-            LOG_CRITICAL(Frontend, "Failed to obtain loader for %s!", file_path.c_str());
+            LOG_CRITICAL(Frontend, "Failed to obtain loader for %s!", LibRetro::settings.file_path.c_str());
             LibRetro::DisplayMessage("Failed to obtain loader for specified ROM!");
             return false;
         case Core::System::ResultStatus::ErrorLoader:

@@ -11,6 +11,8 @@
 #include "core/frontend/emu_window.h"
 #include "core/frontend/motion_emu.h"
 
+#include "citra_libretro/input/mouse_tracker.h"
+
 void ResetGLState();
 
 class EmuWindow_LibRetro : public EmuWindow {
@@ -62,4 +64,7 @@ private:
     bool hasTouched = false;
 
     GLuint framebuffer;
+
+    // For tracking mouse cursor
+    LibRetro::Input::MouseTracker tracker;
 };

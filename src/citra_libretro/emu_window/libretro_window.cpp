@@ -49,7 +49,9 @@ void EmuWindow_LibRetro::SwapBuffers() {
     submittedFrame = true;
 
     ResetGLState();
-    glUseProgram(0);
+
+    tracker.Render(width, height);
+
     LibRetro::UploadVideoFrame(RETRO_HW_FRAME_BUFFER_VALID,
                                static_cast<unsigned>(width), static_cast<unsigned>(height), 0);
     glUseProgram(0);
@@ -78,18 +80,23 @@ void EmuWindow_LibRetro::PollEvents() {
 
     // TODO: Poll for right click
     // TODO: Do we want to check other input devices?
-    bool state = static_cast<bool>(LibRetro::CheckInput(0, RETRO_DEVICE_POINTER,
+    /*bool state = static_cast<bool>(LibRetro::CheckInput(0, RETRO_DEVICE_POINTER,
                                                                 0, RETRO_DEVICE_ID_POINTER_PRESSED));
     unsigned x = static_cast<unsigned>(LibRetro::CheckInput(0, RETRO_DEVICE_POINTER,
                                                                     0, RETRO_DEVICE_ID_POINTER_X));
     unsigned y = static_cast<unsigned>(LibRetro::CheckInput(0, RETRO_DEVICE_POINTER,
-                                                                    0, RETRO_DEVICE_ID_POINTER_Y));
+                                                                    0, RETRO_DEVICE_ID_POINTER_Y));*/
 
-    if (state) {
+    tracker.Update(width, height, GetFramebufferLayout().bottom_screen);
+
+    if (tracker.IsPressed()) {
+        auto mousePos = tracker.GetPressedPosition();
+
         if (hasTouched) {
-            TouchMoved(x, y);
+            LOG_INFO(Frontend, "Mouse pressed!");
+            TouchMoved(mousePos.first, mousePos.second);
         } else {
-            TouchPressed(x, y);
+            TouchPressed(mousePos.first, mousePos.second);
             hasTouched = true;
         }
     } else if (hasTouched) {
@@ -122,21 +129,22 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
 
     switch(Settings::values.layout_option) {
         case Settings::LayoutOption::SingleScreen:
-            if (swapped) {
+            if (swapped) { // Bottom screen visible
                 baseX = Core::kScreenBottomWidth;
                 baseY = Core::kScreenBottomHeight;
-            } else {
+            } else {  // Top screen visible
                 baseX = Core::kScreenTopWidth;
                 baseY = Core::kScreenTopHeight;
+                // TODO: Disable touch screen?
             }
             baseX *= scaling;
             baseY *= scaling;
             break;
         case Settings::LayoutOption::LargeScreen:
-            if (swapped) {
+            if (swapped) { // Bottom screen biggest
                 baseX = Core::kScreenBottomWidth + Core::kScreenTopWidth / 4;
                 baseY = Core::kScreenBottomHeight;
-            } else {
+            } else { // Top screen biggest
                 baseX = Core::kScreenTopWidth + Core::kScreenBottomWidth / 4;
                 baseY = Core::kScreenTopHeight;
             }
@@ -153,9 +161,9 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
             break;
         case Settings::LayoutOption::Default:
         default:
-            if (swapped) {
+            if (swapped) { // Bottom screen on top
                 baseX = Core::kScreenBottomWidth;
-            } else {
+            } else { // Top screen on top
                 baseX = Core::kScreenTopWidth;
             }
             baseY = Core::kScreenTopHeight + Core::kScreenBottomHeight;
@@ -183,6 +191,9 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
 
     if (hasOGL) {
         framebuffer = static_cast<GLuint>(LibRetro::GetFramebuffer());
+
+        tracker.InitOpenGL();
+
         doCleanFrame = true;
     }
 }
