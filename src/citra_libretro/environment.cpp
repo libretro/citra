@@ -76,7 +76,7 @@ bool DisplayMessage(const char* sg) {
 std::string FetchVariable(std::string key, std::string def) {
     struct retro_variable var = {0};
     var.key = key.c_str();
-    if (!environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var)) {
+    if (!environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) || var.value == nullptr) {
         // Fetching variable failed.
         LOG_ERROR(Frontend, "Fetching variable %s failed.", key.c_str());
         return def;
