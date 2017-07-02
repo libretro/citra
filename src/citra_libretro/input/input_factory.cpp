@@ -8,15 +8,14 @@
 #include <libretro.h>
 
 #include "core/frontend/input.h"
-#include "common/logging/log.h"
 #include "common/math_util.h"
+
 #include "citra_libretro/input/input_factory.h"
+#include "citra_libretro/environment.h"
 
 namespace LibRetro {
 
 namespace Input {
-
-static retro_input_state_t input_state_cb;
 
 class LibRetroButtonFactory;
 class LibRetroAxisFactory;
@@ -27,7 +26,7 @@ public:
             : joystick(joystick_), button(button_) {}
 
     bool GetStatus() const override {
-        return CheckButton((unsigned int) joystick, RETRO_DEVICE_JOYPAD, 0, (unsigned int) button) > 0;
+        return CheckInput((unsigned int) joystick, RETRO_DEVICE_JOYPAD, 0, (unsigned int) button) > 0;
     }
 
 private:
@@ -59,8 +58,8 @@ public:
             : joystick(joystick_), button(button_) {}
 
     std::tuple<float, float> GetStatus() const override {
-        auto axis_x = (float) CheckButton((unsigned int) joystick, RETRO_DEVICE_ANALOG, (unsigned int) button, 0);
-        auto axis_y = (float) CheckButton((unsigned int) joystick, RETRO_DEVICE_ANALOG, (unsigned int) button, 1);
+        auto axis_x = (float) CheckInput((unsigned int) joystick, RETRO_DEVICE_ANALOG, (unsigned int) button, 0);
+        auto axis_y = (float) CheckInput((unsigned int) joystick, RETRO_DEVICE_ANALOG, (unsigned int) button, 1);
         return std::make_tuple(axis_x / INT16_MAX, -axis_y / INT16_MAX);
     }
 
@@ -95,11 +94,6 @@ public:
     }
 };
 
-int16_t CheckButton(unsigned port, unsigned device,
-                                           unsigned index, unsigned id) {
-    return input_state_cb(port, device, index, id);
-}
-
 void Init() {
     using namespace ::Input;
     RegisterFactory<ButtonDevice>("libretro", std::make_shared<LibRetroButtonFactory>());
@@ -114,7 +108,3 @@ void Shutdown() {
 
 } // namespace Input
 } // namespace LibRetro
-
-void retro_set_input_state(retro_input_state_t cb) {
-    LibRetro::Input::input_state_cb = cb;
-}

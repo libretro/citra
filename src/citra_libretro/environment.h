@@ -47,6 +47,10 @@ bool SetGeometry(retro_system_av_info* cb);
 /// Tells LibRetro what input buttons are labelled on the 3DS.
 bool SetInputDescriptors(const retro_input_descriptor desc[]);
 
+/// Returns the current status of a input.
+int16_t CheckInput(unsigned port, unsigned device,
+                   unsigned index, unsigned id);
+
 /// Called when the emulator environment is ready to be configured.
 void OnConfigureEnvironment();
 

@@ -17,6 +17,7 @@ static retro_video_refresh_t video_cb;
 static retro_audio_sample_t audio_cb;
 static retro_environment_t environ_cb;
 static retro_input_poll_t input_poll_cb;
+static retro_input_state_t input_state_cb;
 
 void UploadVideoFrame(const void* data, unsigned width,
                  unsigned height, size_t pitch) {
@@ -83,6 +84,11 @@ std::string FetchVariable(std::string key, std::string def) {
     return std::string(var.value);
 }
 
+int16_t CheckInput(unsigned port, unsigned device,
+                    unsigned index, unsigned id) {
+    return input_state_cb(port, device, index, id);
+}
+
 };
 
 void retro_get_system_info(struct retro_system_info *info) {
@@ -110,6 +116,10 @@ void retro_set_environment(retro_environment_t cb) {
 }
 
 void retro_set_controller_port_device(unsigned port, unsigned device) {}
+
+void retro_set_input_state(retro_input_state_t cb) {
+    input_state_cb = cb;
+}
 
 void retro_get_system_av_info(struct retro_system_av_info *info) {
     LOG_INFO(Frontend, "Av go!");
