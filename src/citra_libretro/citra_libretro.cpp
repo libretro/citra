@@ -15,7 +15,6 @@
 #include "audio_core/libretro_sink.h"
 #include "common/logging/backend.h"
 #include "common/logging/filter.h"
-#include "common/logging/log.h"
 #include "common/string_util.h"
 #include "core/core.h"
 #include "core/loader/loader.h"
@@ -177,6 +176,7 @@ void UpdateSettings(bool init) {
     LibRetro::settings.deadzone = (float) std::stoi(deadzone) / 100;
 
     auto analog_function = LibRetro::FetchVariable("citra_analog_function", "C-Stick and Touchscreen Pointer");
+
     if (analog_function.compare("C-Stick and Touchscreen Pointer") == 0) {
         LibRetro::settings.analog_function = LibRetro::CStickFunction::Both;
     } else if (analog_function.compare("C-Stick") == 0) {
@@ -188,7 +188,24 @@ void UpdateSettings(bool init) {
         LibRetro::settings.analog_function = LibRetro::CStickFunction::Both;
     }
 
-    // TODO: Region
+    auto region = LibRetro::FetchVariable("citra_region_value", "Auto");
+    std::map<std::string, int> region_values;
+    region_values["Auto"]      = 0;
+    region_values["Japan"]     = 1;
+    region_values["USA"]       = 2;
+    region_values["Europe"]    = 3;
+    region_values["Australia"] = 4;
+    region_values["China"]     = 5;
+    region_values["Korea"]     = 6;
+    region_values["Taiwan"]    = 7;
+
+    auto result = region_values.find(region);
+    if (result == region_values.end()) {
+        LOG_ERROR(Frontend, "Invalid region: %s.", region.c_str());
+        Settings::values.region_value = 0;
+    } else {
+        Settings::values.region_value = result->second;
+    }
 
     // Hardcode buttons to bind to libretro - it is entirely redundant to have
     //  two methods of rebinding controls.
