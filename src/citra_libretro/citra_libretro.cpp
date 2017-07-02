@@ -160,7 +160,6 @@ void UpdateSettings(bool init) {
 
     auto layout = LibRetro::FetchVariable("citra_layout_option", "Default Top-Bottom Screen");
 
-    // TODO: Could this be reduced to a list of strings?
     if (layout.compare("Default Top-Bottom Screen") == 0) {
         Settings::values.layout_option = Settings::LayoutOption::Default;
     } else if (layout.compare("Single Screen Only") == 0) {
