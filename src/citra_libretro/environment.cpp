@@ -69,7 +69,7 @@ bool Shutdown() {
 bool DisplayMessage(const char* sg) {
     retro_message msg;
     msg.msg = sg;
-    msg.frames = 180;
+    msg.frames = 60 * 10;
     return environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
 }
 
@@ -122,8 +122,6 @@ void retro_set_input_state(retro_input_state_t cb) {
 }
 
 void retro_get_system_av_info(struct retro_system_av_info *info) {
-    LOG_INFO(Frontend, "Av go!");
-
     // These are placeholders until we get control.
     info->timing.fps = 60.0;
     info->timing.sample_rate = 41000;

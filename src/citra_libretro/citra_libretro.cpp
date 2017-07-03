@@ -261,7 +261,26 @@ void retro_run() {
     UpdateSettings(false);
 
     while(!emu_window->HasSubmittedFrame()) {
-        system_core.RunLoop();
+        auto result = system_core.RunLoop();
+
+        if (result != Core::System::ResultStatus::Success) {
+            std::string errorContent = Core::System::GetInstance().GetStatusDetails();
+            std::string msg;
+
+            switch(result) {
+                case Core::System::ResultStatus::ErrorSystemFiles:
+                    msg = "Citra was unable to locate a 3DS system archive: " + errorContent;
+                    break;
+                case Core::System::ResultStatus::ErrorSharedFont:
+                    msg = "Citra was unable to locate the 3DS shared fonts.";
+                    break;
+                default:
+                    msg = "Fatal Error encountered: " + errorContent;
+                    break;
+            }
+
+            LibRetro::DisplayMessage(msg.c_str());
+        }
     }
 }
 
