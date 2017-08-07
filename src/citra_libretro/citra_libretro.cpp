@@ -328,6 +328,8 @@ bool retro_load_game(const struct retro_game_info *info) {
 
     LibRetro::settings.file_path = info->path;
 
+    LibRetro::SetHWSharedContext();
+
     if (!LibRetro::SetPixelFormat(RETRO_PIXEL_FORMAT_XRGB8888)) {
         LOG_CRITICAL(Frontend, "XRGB8888 is not supported.");
         LibRetro::DisplayMessage("XRGB8888 is not supported.");

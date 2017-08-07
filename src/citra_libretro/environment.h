@@ -26,6 +26,8 @@ void PollInput();
 /// Sets the environmental variables used for settings.
 bool SetVariables(const retro_variable vars[]);
 
+bool SetHWSharedContext(void);
+
 /// Fetches a variable by key name.
 std::string FetchVariable(std::string key, std::string def);
 

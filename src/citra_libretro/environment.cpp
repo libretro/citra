@@ -24,6 +24,10 @@ void UploadVideoFrame(const void* data, unsigned width,
     return video_cb(data, width, height, pitch);
 }
 
+bool SetHWSharedContext() {
+    return environ_cb(RETRO_ENVIRONMENT_SET_HW_SHARED_CONTEXT, NULL);
+}
+
 void PollInput() {
     return input_poll_cb();
 }
