@@ -9,7 +9,6 @@
 #include <memory>
 #include <utility>
 #include "core/frontend/emu_window.h"
-#include "core/frontend/motion_emu.h"
 
 #include "citra_libretro/input/mouse_tracker.h"
 
