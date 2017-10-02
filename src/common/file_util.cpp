@@ -649,7 +649,7 @@ static const std::string GetUserDirectory(const std::string& envvar) {
         if (envvar == "XDG_DATA_HOME")
             subdirectory = DIR_SEP ".local" DIR_SEP "share";
         else if (envvar == "XDG_CONFIG_HOME")
-            subdirectory = DIR_SEP ".config";
+            subdirectory = DIR_SEP ".config" DIR_SEP "retroarch" DIR_SEP "system";
         else if (envvar == "XDG_CACHE_HOME")
             subdirectory = DIR_SEP ".cache";
         else
@@ -712,9 +712,9 @@ const std::string& GetUserPath(const unsigned int DirIDX, const std::string& new
             paths[D_CACHE_IDX] = cache_dir + DIR_SEP EMU_DATA_DIR DIR_SEP;
         }
 #endif
-        paths[D_SDMC_IDX] = paths[D_USER_IDX] + SDMC_DIR DIR_SEP;
-        paths[D_NAND_IDX] = paths[D_USER_IDX] + NAND_DIR DIR_SEP;
-        paths[D_SYSDATA_IDX] = paths[D_USER_IDX] + SYSDATA_DIR DIR_SEP;
+        paths[D_SDMC_IDX] = paths[D_CONFIG_IDX] + SDMC_DIR DIR_SEP;
+        paths[D_NAND_IDX] = paths[D_CONFIG_IDX] + NAND_DIR DIR_SEP;
+        paths[D_SYSDATA_IDX] = paths[D_CONFIG_IDX] + SYSDATA_DIR DIR_SEP;
     }
 
     if (!newPath.empty()) {
@@ -727,15 +727,15 @@ const std::string& GetUserPath(const unsigned int DirIDX, const std::string& new
 
         switch (DirIDX) {
         case D_ROOT_IDX:
-            paths[D_USER_IDX] = paths[D_ROOT_IDX] + DIR_SEP;
+            paths[D_USER_IDX] = paths[D_CONFIG_IDX] + DIR_SEP;
             break;
 
         case D_USER_IDX:
-            paths[D_USER_IDX] = paths[D_ROOT_IDX] + DIR_SEP;
-            paths[D_CONFIG_IDX] = paths[D_USER_IDX] + CONFIG_DIR DIR_SEP;
-            paths[D_CACHE_IDX] = paths[D_USER_IDX] + CACHE_DIR DIR_SEP;
-            paths[D_SDMC_IDX] = paths[D_USER_IDX] + SDMC_DIR DIR_SEP;
-            paths[D_NAND_IDX] = paths[D_USER_IDX] + NAND_DIR DIR_SEP;
+            paths[D_USER_IDX] = paths[D_CONFIG_IDX] + DIR_SEP;
+            paths[D_CONFIG_IDX] = paths[D_CONFIG_IDX] + CONFIG_DIR DIR_SEP;
+            paths[D_CACHE_IDX] = paths[D_CONFIG_IDX] + CACHE_DIR DIR_SEP;
+            paths[D_SDMC_IDX] = paths[D_CONFIG_IDX] + SDMC_DIR DIR_SEP;
+            paths[D_NAND_IDX] = paths[D_CONFIG_IDX] + NAND_DIR DIR_SEP;
             break;
         }
     }
