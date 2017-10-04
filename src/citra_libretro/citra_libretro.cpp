@@ -206,6 +206,8 @@ void UpdateSettings(bool init) {
         Settings::values.region_value = result->second;
     }
 
+    Settings::values.touch_device = "engine:emu_window";
+
     // Hardcode buttons to bind to libretro - it is entirely redundant to have
     //  two methods of rebinding controls.
     // Citra: A = RETRO_DEVICE_ID_JOYPAD_A (8)
