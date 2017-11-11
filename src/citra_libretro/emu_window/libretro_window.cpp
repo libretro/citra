@@ -110,7 +110,7 @@ void EmuWindow_LibRetro::DoneCurrent() {
 }
 
 void EmuWindow_LibRetro::OnMinimalClientAreaChangeRequest(
-    const std::pair<unsigned, unsigned> &minimal_size) {
+    const std::pair<unsigned, unsigned>& minimal_size) {
     width = minimal_size.first;
     height = minimal_size.second;
 }
@@ -126,12 +126,12 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
 
     enableEmulatedPointer = true;
 
-    switch(Settings::values.layout_option) {
+    switch (Settings::values.layout_option) {
     case Settings::LayoutOption::SingleScreen:
         if (swapped) { // Bottom screen visible
             baseX = Core::kScreenBottomWidth;
             baseY = Core::kScreenBottomHeight;
-        } else {  // Top screen visible
+        } else { // Top screen visible
             baseX = Core::kScreenTopWidth;
             baseY = Core::kScreenTopHeight;
             enableEmulatedPointer = false;
@@ -178,7 +178,7 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
     }
 
     // Update Libretro with our status
-    struct retro_system_av_info info{};
+    struct retro_system_av_info info {};
     info.timing.fps = 60.0;
     info.timing.sample_rate = 41000;
     info.geometry.aspect_ratio = (float)baseX / (float)baseY;

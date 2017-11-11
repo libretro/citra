@@ -3,8 +3,8 @@
 // Refer to the license.txt file included.
 
 #include <list>
-#include <math.h>
 #include <numeric>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -130,23 +130,22 @@ void UpdateSettings(bool init) {
 
     // For our other settings, import them from LibRetro.
     Settings::values.use_cpu_jit =
-            LibRetro::FetchVariable("citra_use_cpu_jit", "enabled") == "enabled";
+        LibRetro::FetchVariable("citra_use_cpu_jit", "enabled") == "enabled";
     Settings::values.use_hw_renderer =
-            LibRetro::FetchVariable("citra_use_hw_renderer", "enabled") == "enabled";
+        LibRetro::FetchVariable("citra_use_hw_renderer", "enabled") == "enabled";
     Settings::values.use_shader_jit =
-            LibRetro::FetchVariable("citra_use_shader_jit", "enabled") == "enabled";
+        LibRetro::FetchVariable("citra_use_shader_jit", "enabled") == "enabled";
     Settings::values.enable_audio_stretching =
-            LibRetro::FetchVariable("citra_audio_stretching", "enabled") == "enabled";
+        LibRetro::FetchVariable("citra_audio_stretching", "enabled") == "enabled";
     Settings::values.toggle_framelimit =
-            LibRetro::FetchVariable("citra_limit_framerate", "enabled") == "enabled";
+        LibRetro::FetchVariable("citra_limit_framerate", "enabled") == "enabled";
     Settings::values.use_virtual_sd =
-            LibRetro::FetchVariable("citra_use_virtual_sd", "enabled") == "enabled";
+        LibRetro::FetchVariable("citra_use_virtual_sd", "enabled") == "enabled";
     Settings::values.is_new_3ds =
-            LibRetro::FetchVariable("citra_is_new_3ds", "Old 3DS") == "New 3DS";
-    Settings::values.swap_screen =
-            LibRetro::FetchVariable("citra_swap_screen", "Top") == "Bottom";
+        LibRetro::FetchVariable("citra_is_new_3ds", "Old 3DS") == "New 3DS";
+    Settings::values.swap_screen = LibRetro::FetchVariable("citra_swap_screen", "Top") == "Bottom";
     Settings::values.use_gdbstub =
-            LibRetro::FetchVariable("citra_use_gdbstub", "disabled") == "enabled";
+        LibRetro::FetchVariable("citra_use_gdbstub", "disabled") == "enabled";
 
     // These values are a bit more hard to define, unfortunately.
     auto scaling = LibRetro::FetchVariable("citra_resolution_factor", "1x (Native)");
@@ -178,7 +177,7 @@ void UpdateSettings(bool init) {
     LibRetro::settings.deadzone = (float)std::stoi(deadzone) / 100;
 
     auto analog_function =
-            LibRetro::FetchVariable("citra_analog_function", "C-Stick and Touchscreen Pointer");
+        LibRetro::FetchVariable("citra_analog_function", "C-Stick and Touchscreen Pointer");
 
     if (analog_function == "C-Stick and Touchscreen Pointer") {
         LibRetro::settings.analog_function = LibRetro::CStickFunction::Both;
@@ -255,8 +254,8 @@ void UpdateSettings(bool init) {
     }
 
     // Configure the file storage location
-    auto use_libretro_saves = LibRetro::FetchVariable("citra_use_libretro_save_path", "Citra Default") ==
-                              "LibRetro Default";
+    auto use_libretro_saves = LibRetro::FetchVariable("citra_use_libretro_save_path",
+                                                      "Citra Default") == "LibRetro Default";
 
     if (use_libretro_saves) {
         auto target_dir = LibRetro::GetSaveDir();
@@ -270,10 +269,11 @@ void UpdateSettings(bool init) {
 
             // Ensure that this new dir exists
             if (!FileUtil::CreateDir(target_dir)) {
-                LOG_ERROR(Frontend, "Failed to create \"%s\". Using Citra's default paths.", target_dir.c_str());
+                LOG_ERROR(Frontend, "Failed to create \"%s\". Using Citra's default paths.",
+                          target_dir.c_str());
             } else {
                 FileUtil::GetUserPath(D_ROOT_IDX, target_dir);
-                const auto &target_dir_result = FileUtil::GetUserPath(D_USER_IDX, target_dir);
+                const auto& target_dir_result = FileUtil::GetUserPath(D_USER_IDX, target_dir);
                 LOG_INFO(Frontend, "User dir set to \"%s\".", target_dir_result.c_str());
             }
         }
@@ -353,7 +353,7 @@ void retro_reset() {
 /**
  * libretro callback; Called when a game is to be loaded.
  */
-bool retro_load_game(const struct retro_game_info *info) {
+bool retro_load_game(const struct retro_game_info* info) {
     LOG_INFO(Frontend, "Starting Citra RetroArch game...");
 
     LibRetro::settings.file_path = info->path;
@@ -391,11 +391,12 @@ bool retro_load_game(const struct retro_game_info *info) {
     UpdateSettings(true);
 
     const Core::System::ResultStatus load_result{
-            system_core.Load(emu_window.get(), LibRetro::settings.file_path)};
+        system_core.Load(emu_window.get(), LibRetro::settings.file_path)};
 
     switch (load_result) {
     case Core::System::ResultStatus::ErrorGetLoader:
-        LOG_CRITICAL(Frontend, "Failed to obtain loader for %s!", LibRetro::settings.file_path.c_str());
+        LOG_CRITICAL(Frontend, "Failed to obtain loader for %s!",
+                     LibRetro::settings.file_path.c_str());
         LibRetro::DisplayMessage("Failed to obtain loader for specified ROM!");
         return false;
     case Core::System::ResultStatus::ErrorLoader:
@@ -448,7 +449,7 @@ unsigned retro_get_region() {
     return RETRO_REGION_NTSC;
 }
 
-bool retro_load_game_special(unsigned game_type, const struct retro_game_info *info,
+bool retro_load_game_special(unsigned game_type, const struct retro_game_info* info,
                              size_t num_info) {
     return retro_load_game(info);
 }

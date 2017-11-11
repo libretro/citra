@@ -142,7 +142,7 @@ void retro_set_input_state(retro_input_state_t cb) {
     input_state_cb = cb;
 }
 
-void retro_get_system_av_info(struct retro_system_av_info *info) {
+void retro_get_system_av_info(struct retro_system_av_info* info) {
     // These are placeholders until we get control.
     info->timing.fps = 60.0;
     info->timing.sample_rate = 41000;

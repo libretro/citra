@@ -57,9 +57,9 @@ public:
 
     std::tuple<float, float> GetStatus() const override {
         auto axis_x =
-                (float)CheckInput((unsigned int)joystick, RETRO_DEVICE_ANALOG, (unsigned int)button, 0);
+            (float)CheckInput((unsigned int)joystick, RETRO_DEVICE_ANALOG, (unsigned int)button, 0);
         auto axis_y =
-                (float)CheckInput((unsigned int)joystick, RETRO_DEVICE_ANALOG, (unsigned int)button, 1);
+            (float)CheckInput((unsigned int)joystick, RETRO_DEVICE_ANALOG, (unsigned int)button, 1);
         return std::make_tuple(axis_x / INT16_MAX, -axis_y / INT16_MAX);
     }
 
