@@ -27,6 +27,12 @@ bool SetVariables(const retro_variable vars[]);
 
 bool SetHWSharedContext(void);
 
+/// Returns the LibRetro save directory, or a empty string if one doesn't exist.
+std::string GetSaveDir();
+
+/// Returns the LibRetro system directory, or a empty string if one doesn't exist.
+std::string GetSystemDir();
+
 /// Fetches a variable by key name.
 std::string FetchVariable(std::string key, std::string def);
 
