@@ -77,7 +77,7 @@ bool DisplayMessage(const char* sg) {
 }
 
 std::string FetchVariable(std::string key, std::string def) {
-    struct retro_variable var = {0};
+    struct retro_variable var = {nullptr};
     var.key = key.c_str();
     if (!environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) || var.value == nullptr) {
         // Fetching variable failed.
@@ -85,6 +85,26 @@ std::string FetchVariable(std::string key, std::string def) {
         return def;
     }
     return std::string(var.value);
+}
+
+std::string GetSaveDir() {
+    char* var = nullptr;
+    if (!environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &var) || var == nullptr) {
+        // Fetching variable failed.
+        LOG_ERROR(Frontend, "No save directory provided by LibRetro.");
+        return std::string();
+    }
+    return std::string(var);
+}
+
+std::string GetSystemDir() {
+    char* var = nullptr;
+    if (!environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &var) || var == nullptr) {
+        // Fetching variable failed.
+        LOG_ERROR(Frontend, "No system directory provided by LibRetro.");
+        return std::string();
+    }
+    return std::string(var);
 }
 
 int16_t CheckInput(unsigned port, unsigned device, unsigned index, unsigned id) {

@@ -69,6 +69,7 @@ void LibRetro::OnConfigureEnvironment() {
         {"citra_limit_framerate", "Enable frame limiter; enabled|disabled"},
         {"citra_audio_stretching", "Enable audio stretching; enabled|disabled"},
         {"citra_use_virtual_sd", "Enable virtual SD card; enabled|disabled"},
+        {"citra_use_libretro_save_path", "Savegame location; Citra Default|LibRetro Default"},
         {"citra_is_new_3ds", "3DS system model; Old 3DS|New 3DS"},
         {"citra_region_value",
          "3DS system region; Auto|Japan|USA|Europe|Australia|China|Korea|Taiwan"},
@@ -249,6 +250,31 @@ void UpdateSettings(bool init) {
         Settings::values.analogs[1] = "axis:1,joystick:0,engine:libretro";
     } else {
         Settings::values.analogs[1] = "";
+    }
+
+    // Configure the file storage location
+    auto use_libretro_saves = LibRetro::FetchVariable("citra_use_libretro_save_path", "Citra Default") ==
+                              "LibRetro Default";
+
+    if (use_libretro_saves) {
+        auto target_dir = LibRetro::GetSaveDir();
+        if (target_dir.empty()) {
+            LOG_INFO(Frontend, "No save dir provided; trying system dir...");
+            target_dir = LibRetro::GetSystemDir();
+        }
+
+        if (!target_dir.empty()) {
+            target_dir += "/Citra";
+
+            // Ensure that this new dir exists
+            if (!FileUtil::CreateDir(target_dir)) {
+                LOG_ERROR(Frontend, "Failed to create \"%s\". Using Citra's default paths.", target_dir.c_str());
+            } else {
+                FileUtil::GetUserPath(D_ROOT_IDX, target_dir);
+                const auto &target_dir_result = FileUtil::GetUserPath(D_USER_IDX, target_dir);
+                LOG_INFO(Frontend, "User dir set to \"%s\".", target_dir_result.c_str());
+            }
+        }
     }
 
     // Update the framebuffer sizing, but only if there is a oGL context.
