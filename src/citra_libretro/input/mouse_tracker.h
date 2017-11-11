@@ -43,6 +43,9 @@ private:
     int x;
     int y;
 
+    float lastMouseX;
+    float lastMouseY;
+
     float projectedX;
     float projectedY;
     float renderRatio;

@@ -61,7 +61,7 @@ void LibRetro::OnConfigureEnvironment() {
         {"citra_resolution_factor",
          "Resolution scale factor; 1x (Native)|2x|3x|4x|5x|6x|7x|8x|9x|10x"},
         {"citra_layout_option", "Screen layout positioning; Default Top-Bottom Screen|Single "
-                                "Screen Only|Large Screen, Small Screen"},
+                                "Screen Only|Large Screen, Small Screen|Side by Side"},
         {"citra_swap_screen", "Prominent 3DS screen; Top|Bottom"},
         {"citra_analog_function",
          "Right analog function; C-Stick and Touchscreen Pointer|Touchscreen Pointer|C-Stick"},
@@ -161,12 +161,14 @@ void UpdateSettings(bool init) {
 
     auto layout = LibRetro::FetchVariable("citra_layout_option", "Default Top-Bottom Screen");
 
-    if (layout.compare("Default Top-Bottom Screen") == 0) {
+    if (layout == "Default Top-Bottom Screen") {
         Settings::values.layout_option = Settings::LayoutOption::Default;
-    } else if (layout.compare("Single Screen Only") == 0) {
+    } else if (layout == "Single Screen Only") {
         Settings::values.layout_option = Settings::LayoutOption::SingleScreen;
-    } else if (layout.compare("Large Screen, Small Screen") == 0) {
+    } else if (layout == "Large Screen, Small Screen") {
         Settings::values.layout_option = Settings::LayoutOption::LargeScreen;
+    } else if (layout == "Side by Side") {
+        Settings::values.layout_option = Settings::LayoutOption::SideScreen;
     } else {
         LOG_ERROR(Frontend, "Unknown layout type: %s.", layout.c_str());
         Settings::values.layout_option = Settings::LayoutOption::Default;
@@ -178,11 +180,11 @@ void UpdateSettings(bool init) {
     auto analog_function =
             LibRetro::FetchVariable("citra_analog_function", "C-Stick and Touchscreen Pointer");
 
-    if (analog_function.compare("C-Stick and Touchscreen Pointer") == 0) {
+    if (analog_function == "C-Stick and Touchscreen Pointer") {
         LibRetro::settings.analog_function = LibRetro::CStickFunction::Both;
-    } else if (analog_function.compare("C-Stick") == 0) {
+    } else if (analog_function == "C-Stick") {
         LibRetro::settings.analog_function = LibRetro::CStickFunction::CStick;
-    } else if (analog_function.compare("Touchscreen Pointer") == 0) {
+    } else if (analog_function == "Touchscreen Pointer") {
         LibRetro::settings.analog_function = LibRetro::CStickFunction::Touchscreen;
     } else {
         LOG_ERROR(Frontend, "Unknown right analog function: %s.", analog_function.c_str());

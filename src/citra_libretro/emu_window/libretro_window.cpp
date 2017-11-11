@@ -158,6 +158,12 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
             baseY *= scaling;
         }
         break;
+    case Settings::LayoutOption::SideScreen:
+        baseX = Core::kScreenBottomWidth + Core::kScreenTopWidth;
+        baseY = Core::kScreenTopHeight;
+        baseX *= scaling;
+        baseY *= scaling;
+        break;
     case Settings::LayoutOption::Default:
     default:
         if (swapped) { // Bottom screen on top
