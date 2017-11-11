@@ -5,19 +5,18 @@
 #pragma once
 
 #include <cstdint>
-#include "core/core.h"
+#include "citra_libretro.h"
 #include "common/logging/backend.h"
 #include "common/logging/filter.h"
 #include "common/logging/log.h"
+#include "core/core.h"
 #include "libretro.h"
-#include "citra_libretro.h"
 
 namespace LibRetro {
 
 /// Calls back to LibRetro to upload a particular video frame.
 /// @see retro_video_refresh_t
-void UploadVideoFrame(const void* data, unsigned width,
-                      unsigned height, size_t pitch);
+void UploadVideoFrame(const void* data, unsigned width, unsigned height, size_t pitch);
 
 /// Calls back to LibRetro to poll input.
 /// @see retro_input_poll_t
@@ -50,16 +49,14 @@ bool SetGeometry(retro_system_av_info* cb);
 bool SetInputDescriptors(const retro_input_descriptor desc[]);
 
 /// Returns the current status of a input.
-int16_t CheckInput(unsigned port, unsigned device,
-                   unsigned index, unsigned id);
+int16_t CheckInput(unsigned port, unsigned device, unsigned index, unsigned id);
 
 /// Called when the emulator environment is ready to be configured.
 void OnConfigureEnvironment();
 
 /// Submits audio frames to LibRetro.
 /// @see retro_audio_sample_batch_t
-void SubmitAudio(const int16_t *data,
-                 size_t frames);
+void SubmitAudio(const int16_t *data, size_t frames);
 
 /// Checks to see if the frontend configuration has been updated.
 bool HasUpdatedConfig();

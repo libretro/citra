@@ -7,6 +7,4 @@
 #include "core/core.h"
 #include "emu_window/libretro_window.h"
 
-namespace LibRetro {
-
-} // namespace LibRetro
+namespace LibRetro {} // namespace LibRetro

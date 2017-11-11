@@ -8,11 +8,7 @@
 
 namespace LibRetro {
 
-enum CStickFunction {
-    Both,
-    CStick,
-    Touchscreen
-};
+enum CStickFunction { Both, CStick, Touchscreen };
 
 struct CoreSettings {
 

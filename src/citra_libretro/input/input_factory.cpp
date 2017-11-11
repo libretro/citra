@@ -7,11 +7,11 @@
 #include <unordered_map>
 #include <libretro.h>
 
-#include "core/frontend/input.h"
 #include "common/math_util.h"
+#include "core/frontend/input.h"
 
-#include "citra_libretro/input/input_factory.h"
 #include "citra_libretro/environment.h"
+#include "citra_libretro/input/input_factory.h"
 
 namespace LibRetro {
 
@@ -22,11 +22,10 @@ class LibRetroAxisFactory;
 
 class LibRetroButton final : public ::Input::ButtonDevice {
 public:
-    explicit LibRetroButton(int joystick_, int button_)
-            : joystick(joystick_), button(button_) {}
+    explicit LibRetroButton(int joystick_, int button_) : joystick(joystick_), button(button_) {}
 
     bool GetStatus() const override {
-        return CheckInput((unsigned int) joystick, RETRO_DEVICE_JOYPAD, 0, (unsigned int) button) > 0;
+        return CheckInput((unsigned int)joystick, RETRO_DEVICE_JOYPAD, 0, (unsigned int)button) > 0;
     }
 
 private:
@@ -54,12 +53,13 @@ public:
 /// A axis device factory that creates axis devices from LibRetro joystick
 class LibRetroAxis final : public ::Input::AnalogDevice {
 public:
-    explicit LibRetroAxis(int joystick_, int button_)
-            : joystick(joystick_), button(button_) {}
+    explicit LibRetroAxis(int joystick_, int button_) : joystick(joystick_), button(button_) {}
 
     std::tuple<float, float> GetStatus() const override {
-        auto axis_x = (float) CheckInput((unsigned int) joystick, RETRO_DEVICE_ANALOG, (unsigned int) button, 0);
-        auto axis_y = (float) CheckInput((unsigned int) joystick, RETRO_DEVICE_ANALOG, (unsigned int) button, 1);
+        auto axis_x =
+                (float)CheckInput((unsigned int)joystick, RETRO_DEVICE_ANALOG, (unsigned int)button, 0);
+        auto axis_y =
+                (float)CheckInput((unsigned int)joystick, RETRO_DEVICE_ANALOG, (unsigned int)button, 1);
         return std::make_tuple(axis_x / INT16_MAX, -axis_y / INT16_MAX);
     }
 

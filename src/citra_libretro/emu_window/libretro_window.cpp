@@ -4,12 +4,12 @@
 
 #include <glad/glad.h>
 
-#include "core/settings.h"
-#include "core/3ds.h"
-#include "libretro.h"
-#include "citra_libretro/input/input_factory.h"
 #include "citra_libretro/citra_libretro.h"
 #include "citra_libretro/environment.h"
+#include "citra_libretro/input/input_factory.h"
+#include "core/3ds.h"
+#include "core/settings.h"
+#include "libretro.h"
 
 /// LibRetro expects a "default" GL state.
 void ResetGLState() {
@@ -54,8 +54,8 @@ void EmuWindow_LibRetro::SwapBuffers() {
         tracker.Render(width, height);
     }
 
-    LibRetro::UploadVideoFrame(RETRO_HW_FRAME_BUFFER_VALID,
-                               static_cast<unsigned>(width), static_cast<unsigned>(height), 0);
+    LibRetro::UploadVideoFrame(RETRO_HW_FRAME_BUFFER_VALID, static_cast<unsigned>(width),
+                               static_cast<unsigned>(height), 0);
     glUseProgram(0);
     ResetGLState();
 
@@ -109,7 +109,8 @@ void EmuWindow_LibRetro::DoneCurrent() {
     // They don't get any say in the matter - GL context is always current!
 }
 
-void EmuWindow_LibRetro::OnMinimalClientAreaChangeRequest(const std::pair<unsigned, unsigned> &minimal_size) {
+void EmuWindow_LibRetro::OnMinimalClientAreaChangeRequest(
+    const std::pair<unsigned, unsigned> &minimal_size) {
     width = minimal_size.first;
     height = minimal_size.second;
 }
@@ -126,55 +127,55 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
     enableEmulatedPointer = true;
 
     switch(Settings::values.layout_option) {
-        case Settings::LayoutOption::SingleScreen:
-            if (swapped) { // Bottom screen visible
-                baseX = Core::kScreenBottomWidth;
-                baseY = Core::kScreenBottomHeight;
-            } else {  // Top screen visible
-                baseX = Core::kScreenTopWidth;
-                baseY = Core::kScreenTopHeight;
-                enableEmulatedPointer = false;
-            }
-            baseX *= scaling;
-            baseY *= scaling;
-            break;
-        case Settings::LayoutOption::LargeScreen:
-            if (swapped) { // Bottom screen biggest
-                baseX = Core::kScreenBottomWidth + Core::kScreenTopWidth / 4;
-                baseY = Core::kScreenBottomHeight;
-            } else { // Top screen biggest
-                baseX = Core::kScreenTopWidth + Core::kScreenBottomWidth / 4;
-                baseY = Core::kScreenTopHeight;
-            }
+    case Settings::LayoutOption::SingleScreen:
+        if (swapped) { // Bottom screen visible
+            baseX = Core::kScreenBottomWidth;
+            baseY = Core::kScreenBottomHeight;
+        } else {  // Top screen visible
+            baseX = Core::kScreenTopWidth;
+            baseY = Core::kScreenTopHeight;
+            enableEmulatedPointer = false;
+        }
+        baseX *= scaling;
+        baseY *= scaling;
+        break;
+    case Settings::LayoutOption::LargeScreen:
+        if (swapped) { // Bottom screen biggest
+            baseX = Core::kScreenBottomWidth + Core::kScreenTopWidth / 4;
+            baseY = Core::kScreenBottomHeight;
+        } else { // Top screen biggest
+            baseX = Core::kScreenTopWidth + Core::kScreenBottomWidth / 4;
+            baseY = Core::kScreenTopHeight;
+        }
 
-            if (scaling < 4) {
-                // Unfortunately, to get this aspect ratio correct (and have non-blurry 1x scaling),
-                //  we have to have a pretty large buffer for the minimum ratio.
-                baseX *= 4;
-                baseY *= 4;
-            } else {
-                baseX *= scaling;
-                baseY *= scaling;
-            }
-            break;
-        case Settings::LayoutOption::Default:
-        default:
-            if (swapped) { // Bottom screen on top
-                baseX = Core::kScreenBottomWidth;
-            } else { // Top screen on top
-                baseX = Core::kScreenTopWidth;
-            }
-            baseY = Core::kScreenTopHeight + Core::kScreenBottomHeight;
+        if (scaling < 4) {
+            // Unfortunately, to get this aspect ratio correct (and have non-blurry 1x scaling),
+            //  we have to have a pretty large buffer for the minimum ratio.
+            baseX *= 4;
+            baseY *= 4;
+        } else {
             baseX *= scaling;
             baseY *= scaling;
-            break;
+        }
+        break;
+    case Settings::LayoutOption::Default:
+    default:
+        if (swapped) { // Bottom screen on top
+            baseX = Core::kScreenBottomWidth;
+        } else { // Top screen on top
+            baseX = Core::kScreenTopWidth;
+        }
+        baseY = Core::kScreenTopHeight + Core::kScreenBottomHeight;
+        baseX *= scaling;
+        baseY *= scaling;
+        break;
     }
 
     // Update Libretro with our status
-    struct retro_system_av_info info;
+    struct retro_system_av_info info{};
     info.timing.fps = 60.0;
     info.timing.sample_rate = 41000;
-    info.geometry.aspect_ratio = (float) baseX / (float) baseY;
+    info.geometry.aspect_ratio = (float)baseX / (float)baseY;
     info.geometry.base_width = baseX;
     info.geometry.base_height = baseY;
     info.geometry.max_width = baseX;
