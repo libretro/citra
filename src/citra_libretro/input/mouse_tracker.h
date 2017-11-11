@@ -36,7 +36,7 @@ public:
 
     /// Get the pressed position, relative to the framebuffer.
     std::pair<unsigned, unsigned> GetPressedPosition() {
-        return std::pair<unsigned, unsigned>(projectedX, projectedY);
+        return {static_cast<const unsigned int &>(projectedX), static_cast<const unsigned int &>(projectedY)};
     }
 
 private:
