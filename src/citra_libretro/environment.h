@@ -62,7 +62,7 @@ void OnConfigureEnvironment();
 
 /// Submits audio frames to LibRetro.
 /// @see retro_audio_sample_batch_t
-void SubmitAudio(const int16_t *data, size_t frames);
+void SubmitAudio(const int16_t* data, size_t frames);
 
 /// Checks to see if the frontend configuration has been updated.
 bool HasUpdatedConfig();

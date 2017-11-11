@@ -45,8 +45,7 @@ size_t LibRetroSink::SamplesInQueue() const {
 
 void LibRetroSink::SetDevice(int device_id) {}
 
-void LibRetroSink::SubmitAudioFrames(const int16_t *samples,
-                                                size_t sample_count) {
+void LibRetroSink::SubmitAudioFrames(const int16_t* samples, size_t sample_count) {
     // audio_batch_cb(data, frames);
     queue.emplace_back(samples, samples + sample_count * 2);
 }
@@ -83,7 +82,7 @@ void audio_set_state(bool state) {}
 
 } // namespace AudioCore
 
-void LibRetro::SubmitAudio(const int16_t *data, size_t frames) {
+void LibRetro::SubmitAudio(const int16_t* data, size_t frames) {
     LibRetro::audio_batch_cb(data, frames);
 }
 

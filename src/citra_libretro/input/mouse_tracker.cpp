@@ -85,20 +85,22 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
         lastMouseX = newX;
         lastMouseY = newY;
 
-        x = std::max(static_cast<int>(bottomScreen.left), std::min(newX, static_cast<int>(bottomScreen.right))) -
-               bottomScreen.left;
-        y = std::max(static_cast<int>(bottomScreen.top), std::min(newY, static_cast<int>(bottomScreen.bottom))) -
-               bottomScreen.top;
+        x = std::max(static_cast<int>(bottomScreen.left),
+                     std::min(newX, static_cast<int>(bottomScreen.right))) -
+            bottomScreen.left;
+        y = std::max(static_cast<int>(bottomScreen.top),
+                     std::min(newY, static_cast<int>(bottomScreen.bottom))) -
+            bottomScreen.top;
     } else if (LibRetro::settings.analog_function != LibRetro::CStickFunction::CStick) {
         // Use controller movement
         float controllerX =
-                ((float) LibRetro::CheckInput(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT,
-                                              RETRO_DEVICE_ID_ANALOG_X) /
-                 INT16_MAX);
+            ((float)LibRetro::CheckInput(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT,
+                                         RETRO_DEVICE_ID_ANALOG_X) /
+             INT16_MAX);
         float controllerY =
-                ((float) LibRetro::CheckInput(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT,
-                                              RETRO_DEVICE_ID_ANALOG_Y) /
-                 INT16_MAX);
+            ((float)LibRetro::CheckInput(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT,
+                                         RETRO_DEVICE_ID_ANALOG_Y) /
+             INT16_MAX);
 
         // Deadzone the controller inputs
         if (std::abs(controllerX) < LibRetro::settings.deadzone) {
@@ -115,8 +117,8 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
     Restrict(0, 0, bottomScreen.GetWidth(), bottomScreen.GetHeight());
 
     // Make the coordinates 0 -> 1
-    projectedX = (float) x / bottomScreen.GetWidth();
-    projectedY = (float) y / bottomScreen.GetHeight();
+    projectedX = (float)x / bottomScreen.GetWidth();
+    projectedY = (float)y / bottomScreen.GetHeight();
 
     // Ensure that the projected position doesn't overlap outside the bottom screen framebuffer.
     // TODO: Provide config option
@@ -125,11 +127,10 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
     float renderHeight = (float)bottomScreen.GetWidth() / 30 / 2;
 
     // Map the mouse coord to the bottom screen's position (with a little margin)
-    projectedX = bottomScreen.left + renderWidth +
-                 projectedX * (bottomScreen.GetWidth() - renderWidth * 2);
+    projectedX =
+        bottomScreen.left + renderWidth + projectedX * (bottomScreen.GetWidth() - renderWidth * 2);
     projectedY = bottomScreen.top + renderHeight +
                  projectedY * (bottomScreen.GetHeight() - renderHeight * 2);
-
 
     isPressed = state;
 }
@@ -144,7 +145,7 @@ void MouseTracker::Render(int bufferWidth, int bufferHeight) {
 
     float projectedLeft = centerX - renderWidth;
     float projectedTop = centerY - renderHeight;
-    float projectedRight  = centerX + renderWidth;
+    float projectedRight = centerX + renderWidth;
     float projectedBottom = centerY + renderHeight;
 
     glUseProgram(shader);
