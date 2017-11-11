@@ -70,9 +70,13 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
         (bool)(LibRetro::CheckInput(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT)) ||
         (bool)(LibRetro::CheckInput(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3));
 
-    auto mouseX = LibRetro::CheckInput(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X) * 2;
-    auto mouseY = LibRetro::CheckInput(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y) * 2;
-    OnMouseMove(mouseX, mouseY);
+    // TODO: Provide config option for ratios here
+    auto widthSpeed = (bottomScreen.GetWidth() / 20.0);
+    auto heightSpeed = (bottomScreen.GetHeight() / 20.0);
+
+    auto mouseX = LibRetro::CheckInput(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X) * (widthSpeed / 30);
+    auto mouseY = LibRetro::CheckInput(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y) * (heightSpeed / 30);
+    OnMouseMove(static_cast<int>(mouseX), static_cast<int>(mouseY));
 
     if (LibRetro::settings.analog_function != LibRetro::CStickFunction::CStick) {
         float controllerX =
@@ -92,7 +96,8 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
             controllerY = 0;
         }
 
-        OnMouseMove((int)(controllerX * 20), (int)(controllerY * 20));
+        OnMouseMove(static_cast<int>(controllerX * widthSpeed),
+                    static_cast<int>(controllerY * heightSpeed));
     }
 
     Restrict(0, 0, bufferWidth, bufferHeight);
