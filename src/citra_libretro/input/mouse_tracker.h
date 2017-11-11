@@ -38,6 +38,7 @@ public:
     std::pair<unsigned, unsigned> GetPressedPosition() {
         return std::pair<unsigned, unsigned>(projectedX, projectedY);
     }
+
 private:
     int x;
     int y;

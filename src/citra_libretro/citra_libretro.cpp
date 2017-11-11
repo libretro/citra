@@ -3,32 +3,32 @@
 // Refer to the license.txt file included.
 
 #include <list>
-#include <stdio.h>
-#include <stdint.h>
-#include <stdlib.h>
 #include <math.h>
 #include <numeric>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
-#include "libretro.h"
 #include "glad/glad.h"
+#include "libretro.h"
 
 #include "audio_core/libretro_sink.h"
+#include "citra_libretro/citra_libretro.h"
+#include "citra_libretro/core_settings.h"
+#include "citra_libretro/environment.h"
+#include "citra_libretro/input/input_factory.h"
 #include "common/logging/backend.h"
 #include "common/logging/filter.h"
 #include "common/string_util.h"
 #include "core/core.h"
 #include "core/loader/loader.h"
 #include "core/settings.h"
-#include "video_core/video_core.h"
 #include "video_core/renderer_opengl/renderer_opengl.h"
-#include "citra_libretro/input/input_factory.h"
-#include "citra_libretro/core_settings.h"
-#include "citra_libretro/citra_libretro.h"
-#include "citra_libretro/environment.h"
+#include "video_core/video_core.h"
 
 // TODO: Find a better place for this junk.
-Log::Filter log_filter (Log::Level::Info);
-Core::System& system_core {Core::System::GetInstance()};
+Log::Filter log_filter(Log::Level::Info);
+Core::System& system_core{Core::System::GetInstance()};
 std::unique_ptr<EmuWindow_LibRetro> emu_window;
 
 struct retro_hw_render_callback hw_render;
@@ -54,34 +54,35 @@ unsigned retro_api_version() {
 }
 
 void LibRetro::OnConfigureEnvironment() {
-    static const retro_variable values[] =
-    {
-            { "citra_use_cpu_jit", "Enable CPU JIT; enabled|disabled" },
-            { "citra_use_hw_renderer", "Enable hardware renderer; enabled|disabled" },
-            { "citra_use_shader_jit", "Enable shader JIT; enabled|disabled" },
-            { "citra_resolution_factor", "Resolution scale factor; 1x (Native)|2x|3x|4x|5x|6x|7x|8x|9x|10x" },
-            { "citra_layout_option", "Screen layout positioning; Default Top-Bottom Screen|Single Screen Only|Large Screen, Small Screen" },
-            { "citra_swap_screen", "Prominent 3DS screen; Top|Bottom" },
-            { "citra_analog_function", "Right analog function; C-Stick and Touchscreen Pointer|Touchscreen Pointer|C-Stick" },
-            { "citra_deadzone", "Emulated pointer deadzone (%); 15|20|25|30|35|0|5|10" },
-            { "citra_limit_framerate", "Enable frame limiter; enabled|disabled" },
-            { "citra_audio_stretching", "Enable audio stretching; enabled|disabled" },
-            { "citra_use_virtual_sd", "Enable virtual SD card; enabled|disabled" },
-            { "citra_is_new_3ds", "3DS system model; Old 3DS|New 3DS" },
-            { "citra_region_value", "3DS system region; Auto|Japan|USA|Europe|Australia|China|Korea|Taiwan" },
-            { "citra_use_gdbstub", "Enable GDB stub; disabled|enabled" },
-            { NULL, NULL }
-    };
+    static const retro_variable values[] = {
+        {"citra_use_cpu_jit", "Enable CPU JIT; enabled|disabled"},
+        {"citra_use_hw_renderer", "Enable hardware renderer; enabled|disabled"},
+        {"citra_use_shader_jit", "Enable shader JIT; enabled|disabled"},
+        {"citra_resolution_factor",
+         "Resolution scale factor; 1x (Native)|2x|3x|4x|5x|6x|7x|8x|9x|10x"},
+        {"citra_layout_option", "Screen layout positioning; Default Top-Bottom Screen|Single "
+                                "Screen Only|Large Screen, Small Screen"},
+        {"citra_swap_screen", "Prominent 3DS screen; Top|Bottom"},
+        {"citra_analog_function",
+         "Right analog function; C-Stick and Touchscreen Pointer|Touchscreen Pointer|C-Stick"},
+        {"citra_deadzone", "Emulated pointer deadzone (%); 15|20|25|30|35|0|5|10"},
+        {"citra_limit_framerate", "Enable frame limiter; enabled|disabled"},
+        {"citra_audio_stretching", "Enable audio stretching; enabled|disabled"},
+        {"citra_use_virtual_sd", "Enable virtual SD card; enabled|disabled"},
+        {"citra_is_new_3ds", "3DS system model; Old 3DS|New 3DS"},
+        {"citra_region_value",
+         "3DS system region; Auto|Japan|USA|Europe|Australia|China|Korea|Taiwan"},
+        {"citra_use_gdbstub", "Enable GDB stub; disabled|enabled"},
+        {nullptr, nullptr}};
 
     LibRetro::SetVariables(values);
 
     static const struct retro_controller_description controllers[] = {
-            { "Nintendo 3DS", RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 0) },
+        {"Nintendo 3DS", RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 0)},
     };
 
     static const struct retro_controller_info ports[] = {
-            { controllers, 1 },
-            { NULL, 0 },
+        {controllers, 1}, {nullptr, 0},
     };
 
     LibRetro::SetControllerInfo(ports);
@@ -101,22 +102,22 @@ void UpdateSettings(bool init) {
     }
 
     struct retro_input_descriptor desc[] = {
-            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,   "Left" },
-            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,     "Up" },
-            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,   "Down" },
-            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT,  "Right" },
-            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,      "X" },
-            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "Y" },
-            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,      "B" },
-            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,      "A" },
-            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,      "L" },
-            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2,     "ZL" },
-            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,      "R" },
-            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2,     "ZR" },
-            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Start" },
-            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select" },
-            { 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3,     "Home" },
-            { 0, 0 },
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Left"},
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Up"},
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN, "Down"},
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right"},
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "X"},
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Y"},
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "B"},
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "A"},
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, "L"},
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, "ZL"},
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, "R"},
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "ZR"},
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, "Start"},
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select"},
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "Home"},
+        {0, 0},
     };
 
     LibRetro::SetInputDescriptors(desc);
@@ -127,25 +128,24 @@ void UpdateSettings(bool init) {
     Settings::values.sink_id = "libretro";
 
     // For our other settings, import them from LibRetro.
-    // TODO: Clean up this fetching maybe?
-    Settings::values.use_cpu_jit = LibRetro::FetchVariable("citra_use_cpu_jit",
-                                                                  "enabled").compare("enabled") == 0;
-    Settings::values.use_hw_renderer = LibRetro::FetchVariable("citra_use_hw_renderer",
-                                                                  "enabled").compare("enabled") == 0;
-    Settings::values.use_shader_jit = LibRetro::FetchVariable("citra_use_shader_jit",
-                                                                  "enabled").compare("enabled") == 0;
-    Settings::values.enable_audio_stretching = LibRetro::FetchVariable("citra_audio_stretching",
-                                                                  "enabled").compare("enabled") == 0;
-    Settings::values.toggle_framelimit = LibRetro::FetchVariable("citra_limit_framerate",
-                                                                  "enabled").compare("enabled") == 0;
-    Settings::values.use_virtual_sd = LibRetro::FetchVariable("citra_use_virtual_sd",
-                                                                  "enabled").compare("enabled") == 0;
-    Settings::values.is_new_3ds = LibRetro::FetchVariable("citra_is_new_3ds",
-                                                                  "Old 3DS").compare("New 3DS") == 0;
-    Settings::values.swap_screen = LibRetro::FetchVariable("citra_swap_screen",
-                                                                  "Top").compare("Bottom") == 0;
-    Settings::values.use_gdbstub = LibRetro::FetchVariable("citra_use_gdbstub",
-                                                                  "disabled").compare("enabled") == 0;
+    Settings::values.use_cpu_jit =
+            LibRetro::FetchVariable("citra_use_cpu_jit", "enabled") == "enabled";
+    Settings::values.use_hw_renderer =
+            LibRetro::FetchVariable("citra_use_hw_renderer", "enabled") == "enabled";
+    Settings::values.use_shader_jit =
+            LibRetro::FetchVariable("citra_use_shader_jit", "enabled") == "enabled";
+    Settings::values.enable_audio_stretching =
+            LibRetro::FetchVariable("citra_audio_stretching", "enabled") == "enabled";
+    Settings::values.toggle_framelimit =
+            LibRetro::FetchVariable("citra_limit_framerate", "enabled") == "enabled";
+    Settings::values.use_virtual_sd =
+            LibRetro::FetchVariable("citra_use_virtual_sd", "enabled") == "enabled";
+    Settings::values.is_new_3ds =
+            LibRetro::FetchVariable("citra_is_new_3ds", "Old 3DS") == "New 3DS";
+    Settings::values.swap_screen =
+            LibRetro::FetchVariable("citra_swap_screen", "Top") == "Bottom";
+    Settings::values.use_gdbstub =
+            LibRetro::FetchVariable("citra_use_gdbstub", "disabled") == "enabled";
 
     // These values are a bit more hard to define, unfortunately.
     auto scaling = LibRetro::FetchVariable("citra_resolution_factor", "1x (Native)");
@@ -172,9 +172,10 @@ void UpdateSettings(bool init) {
     }
 
     auto deadzone = LibRetro::FetchVariable("citra_deadzone", "15");
-    LibRetro::settings.deadzone = (float) std::stoi(deadzone) / 100;
+    LibRetro::settings.deadzone = (float)std::stoi(deadzone) / 100;
 
-    auto analog_function = LibRetro::FetchVariable("citra_analog_function", "C-Stick and Touchscreen Pointer");
+    auto analog_function =
+            LibRetro::FetchVariable("citra_analog_function", "C-Stick and Touchscreen Pointer");
 
     if (analog_function.compare("C-Stick and Touchscreen Pointer") == 0) {
         LibRetro::settings.analog_function = LibRetro::CStickFunction::Both;
@@ -189,14 +190,14 @@ void UpdateSettings(bool init) {
 
     auto region = LibRetro::FetchVariable("citra_region_value", "Auto");
     std::map<std::string, int> region_values;
-    region_values["Auto"]      = 0;
-    region_values["Japan"]     = 1;
-    region_values["USA"]       = 2;
-    region_values["Europe"]    = 3;
+    region_values["Auto"] = 0;
+    region_values["Japan"] = 1;
+    region_values["USA"] = 2;
+    region_values["Europe"] = 3;
     region_values["Australia"] = 4;
-    region_values["China"]     = 5;
-    region_values["Korea"]     = 6;
-    region_values["Taiwan"]    = 7;
+    region_values["China"] = 5;
+    region_values["Korea"] = 6;
+    region_values["Taiwan"] = 7;
 
     auto result = region_values.find(region);
     if (result == region_values.end()) {
@@ -262,23 +263,23 @@ void UpdateSettings(bool init) {
 void retro_run() {
     UpdateSettings(false);
 
-    while(!emu_window->HasSubmittedFrame()) {
+    while (!emu_window->HasSubmittedFrame()) {
         auto result = system_core.RunLoop();
 
         if (result != Core::System::ResultStatus::Success) {
             std::string errorContent = Core::System::GetInstance().GetStatusDetails();
             std::string msg;
 
-            switch(result) {
-                case Core::System::ResultStatus::ErrorSystemFiles:
-                    msg = "Citra was unable to locate a 3DS system archive: " + errorContent;
-                    break;
-                case Core::System::ResultStatus::ErrorSharedFont:
-                    msg = "Citra was unable to locate the 3DS shared fonts.";
-                    break;
-                default:
-                    msg = "Fatal Error encountered: " + errorContent;
-                    break;
+            switch (result) {
+            case Core::System::ResultStatus::ErrorSystemFiles:
+                msg = "Citra was unable to locate a 3DS system archive: " + errorContent;
+                break;
+            case Core::System::ResultStatus::ErrorSharedFont:
+                msg = "Citra was unable to locate the 3DS shared fonts.";
+                break;
+            default:
+                msg = "Fatal Error encountered: " + errorContent;
+                break;
             }
 
             LibRetro::DisplayMessage(msg.c_str());
@@ -313,8 +314,7 @@ void context_reset() {
     emu_window->Prepare(true);
 }
 
-void context_destroy() {
-}
+void context_destroy() {}
 
 void retro_reset() {
     system_core.Shutdown();
@@ -351,7 +351,7 @@ bool retro_load_game(const struct retro_game_info *info) {
         return false;
     }
 
-    struct retro_audio_callback audio_cb = { AudioCore::audio_callback, AudioCore::audio_set_state };
+    struct retro_audio_callback audio_cb = {AudioCore::audio_callback, AudioCore::audio_set_state};
     if (!LibRetro::SetAudioCallback(&audio_cb)) {
         LOG_CRITICAL(Frontend, "Async audio is not supported.");
         LibRetro::DisplayMessage("Async audio is not supported.");
@@ -362,49 +362,50 @@ bool retro_load_game(const struct retro_game_info *info) {
 
     UpdateSettings(true);
 
-    const Core::System::ResultStatus load_result{system_core.Load(emu_window.get(), LibRetro::settings.file_path)};
+    const Core::System::ResultStatus load_result{
+            system_core.Load(emu_window.get(), LibRetro::settings.file_path)};
 
     switch (load_result) {
-        case Core::System::ResultStatus::ErrorGetLoader:
-            LOG_CRITICAL(Frontend, "Failed to obtain loader for %s!", LibRetro::settings.file_path.c_str());
-            LibRetro::DisplayMessage("Failed to obtain loader for specified ROM!");
-            return false;
-        case Core::System::ResultStatus::ErrorLoader:
-            LOG_CRITICAL(Frontend, "Failed to load ROM!");
-            LibRetro::DisplayMessage("Failed to load ROM!");
-            return false;
-        case Core::System::ResultStatus::ErrorLoader_ErrorEncrypted:
-            LOG_CRITICAL(Frontend, "The game that you are trying to load must be decrypted before "
-                    "being used with Citra. \n\n For more information on dumping and "
-                    "decrypting games, please refer to: "
-                    "https://citra-emu.org/wiki/Dumping-Game-Cartridges");
-            LibRetro::DisplayMessage("The game that you are trying to load must be decrypted before "
-                                             "being used with Citra. \n\n For more information on dumping and "
-                                             "decrypting games, please refer to: "
-                                             "https://citra-emu.org/wiki/Dumping-Game-Cartridges");
-            return false;
-        case Core::System::ResultStatus::ErrorLoader_ErrorInvalidFormat:
-            LOG_CRITICAL(Frontend, "Error while loading ROM: The ROM format is not supported.");
-            LibRetro::DisplayMessage("Error while loading ROM: The ROM format is not supported.");
-            return false;
-        case Core::System::ResultStatus::ErrorNotInitialized:
-            LOG_CRITICAL(Frontend, "CPUCore not initialized");
-            LibRetro::DisplayMessage("CPUCore not initialized");
-            return false;
-        case Core::System::ResultStatus::ErrorSystemMode:
-            LOG_CRITICAL(Frontend, "Failed to determine system mode!");
-            LibRetro::DisplayMessage("Failed to determine system mode!");
-            return false;
-        case Core::System::ResultStatus::ErrorVideoCore:
-            LOG_CRITICAL(Frontend, "VideoCore not initialized");
-            LibRetro::DisplayMessage("VideoCore not initialized");
-            return false;
-        case Core::System::ResultStatus::Success:
-            break; // Expected case
-        default:
-            LOG_CRITICAL(Frontend, "Unknown error");
-            LibRetro::DisplayMessage("Unknown error");
-            return false;
+    case Core::System::ResultStatus::ErrorGetLoader:
+        LOG_CRITICAL(Frontend, "Failed to obtain loader for %s!", LibRetro::settings.file_path.c_str());
+        LibRetro::DisplayMessage("Failed to obtain loader for specified ROM!");
+        return false;
+    case Core::System::ResultStatus::ErrorLoader:
+        LOG_CRITICAL(Frontend, "Failed to load ROM!");
+        LibRetro::DisplayMessage("Failed to load ROM!");
+        return false;
+    case Core::System::ResultStatus::ErrorLoader_ErrorEncrypted:
+        LOG_CRITICAL(Frontend, "The game that you are trying to load must be decrypted before "
+                               "being used with Citra. \n\n For more information on dumping and "
+                               "decrypting games, please refer to: "
+                               "https://citra-emu.org/wiki/Dumping-Game-Cartridges");
+        LibRetro::DisplayMessage("The game that you are trying to load must be decrypted before "
+                                 "being used with Citra. \n\n For more information on dumping and "
+                                 "decrypting games, please refer to: "
+                                 "https://citra-emu.org/wiki/Dumping-Game-Cartridges");
+        return false;
+    case Core::System::ResultStatus::ErrorLoader_ErrorInvalidFormat:
+        LOG_CRITICAL(Frontend, "Error while loading ROM: The ROM format is not supported.");
+        LibRetro::DisplayMessage("Error while loading ROM: The ROM format is not supported.");
+        return false;
+    case Core::System::ResultStatus::ErrorNotInitialized:
+        LOG_CRITICAL(Frontend, "CPUCore not initialized");
+        LibRetro::DisplayMessage("CPUCore not initialized");
+        return false;
+    case Core::System::ResultStatus::ErrorSystemMode:
+        LOG_CRITICAL(Frontend, "Failed to determine system mode!");
+        LibRetro::DisplayMessage("Failed to determine system mode!");
+        return false;
+    case Core::System::ResultStatus::ErrorVideoCore:
+        LOG_CRITICAL(Frontend, "VideoCore not initialized");
+        LibRetro::DisplayMessage("VideoCore not initialized");
+        return false;
+    case Core::System::ResultStatus::Success:
+        break; // Expected case
+    default:
+        LOG_CRITICAL(Frontend, "Unknown error");
+        LibRetro::DisplayMessage("Unknown error");
+        return false;
     }
 
     return true;
@@ -419,7 +420,8 @@ unsigned retro_get_region() {
     return RETRO_REGION_NTSC;
 }
 
-bool retro_load_game_special(unsigned game_type, const struct retro_game_info *info, size_t num_info) {
+bool retro_load_game_special(unsigned game_type, const struct retro_game_info *info,
+                             size_t num_info) {
     return retro_load_game(info);
 }
 
@@ -427,24 +429,24 @@ size_t retro_serialize_size() {
     return 0;
 }
 
-bool retro_serialize(void *data_, size_t size) {
+bool retro_serialize(void* data_, size_t size) {
     return true;
 }
 
-bool retro_unserialize(const void *data_, size_t size) {
+bool retro_unserialize(const void* data_, size_t size) {
     return true;
 }
 
-void *retro_get_memory_data(unsigned id) {
-    (void) id;
+void* retro_get_memory_data(unsigned id) {
+    (void)id;
     return NULL;
 }
 
 size_t retro_get_memory_size(unsigned id) {
-    (void) id;
+    (void)id;
     return 0;
 }
 
 void retro_cheat_reset() {}
 
-void retro_cheat_set(unsigned index, bool enabled, const char *code) {}
+void retro_cheat_set(unsigned index, bool enabled, const char* code) {}

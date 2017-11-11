@@ -19,8 +19,7 @@ static retro_environment_t environ_cb;
 static retro_input_poll_t input_poll_cb;
 static retro_input_state_t input_state_cb;
 
-void UploadVideoFrame(const void* data, unsigned width,
-                 unsigned height, size_t pitch) {
+void UploadVideoFrame(const void* data, unsigned width, unsigned height, size_t pitch) {
     return video_cb(data, width, height, pitch);
 }
 
@@ -33,15 +32,15 @@ void PollInput() {
 }
 
 bool SetVariables(const retro_variable vars[]) {
-    return environ_cb(RETRO_ENVIRONMENT_SET_VARIABLES, (void *) vars);
+    return environ_cb(RETRO_ENVIRONMENT_SET_VARIABLES, (void*)vars);
 }
 
 bool SetControllerInfo(const retro_controller_info info[]) {
-    return environ_cb(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void *) info);
+    return environ_cb(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void*)info);
 }
 
 bool SetPixelFormat(const retro_pixel_format fmt) {
-    return environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, (void *) &fmt);
+    return environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, (void*)&fmt);
 }
 
 bool SetHWRenderer(retro_hw_render_callback* cb) {
@@ -57,7 +56,7 @@ bool SetGeometry(retro_system_av_info* cb) {
 }
 
 bool SetInputDescriptors(const retro_input_descriptor desc[]) {
-    return environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void *) desc);
+    return environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void*)desc);
 }
 
 bool HasUpdatedConfig() {
@@ -88,14 +87,12 @@ std::string FetchVariable(std::string key, std::string def) {
     return std::string(var.value);
 }
 
-int16_t CheckInput(unsigned port, unsigned device,
-                    unsigned index, unsigned id) {
+int16_t CheckInput(unsigned port, unsigned device, unsigned index, unsigned id) {
     return input_state_cb(port, device, index, id);
 }
-
 };
 
-void retro_get_system_info(struct retro_system_info *info) {
+void retro_get_system_info(struct retro_system_info* info) {
     memset(info, 0, sizeof(*info));
     info->library_name = "Citra";
     info->library_version = Common::g_scm_desc;

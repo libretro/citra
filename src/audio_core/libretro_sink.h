@@ -6,15 +6,14 @@
 
 #include <cstddef>
 #include <memory>
-#include "libretro.h"
 #include "audio_core/sink.h"
+#include "libretro.h"
 
 namespace LibRetro {
 
 static retro_audio_sample_batch_t audio_batch_cb;
 
-void SubmitAudio(const int16_t *data,
-                 size_t frames);
+void SubmitAudio(const int16_t *data, size_t frames);
 
 } // namespace LibRetro
 
@@ -35,8 +34,7 @@ public:
     void SetDevice(int device_id) override;
 
     /// Function provided by Retroarch dynamically to submit audio frames.
-    void SubmitAudioFrames(const int16_t *data,
-                                   size_t frames);
+    void SubmitAudioFrames(const int16_t *data, size_t frames);
 
 private:
     struct Impl;

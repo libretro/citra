@@ -48,7 +48,7 @@ public:
 private:
     /// Called when a configuration change affects the minimal size of the window
     void OnMinimalClientAreaChangeRequest(
-            const std::pair<unsigned, unsigned>& minimal_size) override;
+        const std::pair<unsigned, unsigned>& minimal_size) override;
 
     float scale = 2;
     int width;
