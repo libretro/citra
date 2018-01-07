@@ -2,6 +2,8 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <cmath>
+
 #include <glad/glad.h>
 
 #include "citra_libretro/core_settings.h"
@@ -103,10 +105,13 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
              INT16_MAX);
 
         // Deadzone the controller inputs
-        if (std::abs(controllerX) < LibRetro::settings.deadzone) {
+        float smoothedX = std::abs(controllerX);
+        float smoothedY = std::abs(controllerY);
+
+        if (smoothedX < LibRetro::settings.deadzone) {
             controllerX = 0;
         }
-        if (std::abs(controllerY) < LibRetro::settings.deadzone) {
+        if (smoothedY < LibRetro::settings.deadzone) {
             controllerY = 0;
         }
 
