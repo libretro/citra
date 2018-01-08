@@ -19,5 +19,6 @@ create_target_directory_groups(citra_libretro)
 
 target_link_libraries(citra_libretro PRIVATE common core)
 target_link_libraries(citra_libretro PRIVATE glad libretro)
+target_link_libraries(citra_libretro PRIVATE ${PLATFORM_LIBRARIES} Threads::Threads)
 
 set_target_properties(citra_libretro PROPERTIES PREFIX "")
