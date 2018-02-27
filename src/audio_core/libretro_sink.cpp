@@ -5,7 +5,6 @@
 #include <list>
 #include <numeric>
 #include <libretro.h>
-#include "audio_core/audio_core.h"
 #include "audio_core/libretro_sink.h"
 #include "common/assert.h"
 #include "common/logging/log.h"
