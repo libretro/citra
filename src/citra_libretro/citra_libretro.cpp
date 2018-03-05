@@ -26,27 +26,35 @@
 #include "video_core/renderer_opengl/renderer_opengl.h"
 #include "video_core/video_core.h"
 
-// TODO: Find a better place for this junk.
-Log::Filter log_filter(Log::Level::Info);
-Core::System& system_core{Core::System::GetInstance()};
-std::unique_ptr<EmuWindow_LibRetro> emu_window;
+class CitraLibRetro {
+public:
+    CitraLibRetro() : log_filter(Log::Level::Info) {
+    }
 
-struct retro_hw_render_callback hw_render;
+    Log::Filter log_filter;
+    std::unique_ptr<EmuWindow_LibRetro> emu_window;
+    struct retro_hw_render_callback hw_render {};
+};
+
+CitraLibRetro* emu_instance;
 
 void retro_init() {
+    emu_instance = new CitraLibRetro();
+    Log::SetFilter(&emu_instance->log_filter);
     LOG_DEBUG(Frontend, "Initialising core...");
-    Log::SetFilter(&log_filter);
 
     LibRetro::Input::Init();
 }
 
 void retro_deinit() {
     LOG_DEBUG(Frontend, "Shutting down core...");
-    if (system_core.IsPoweredOn()) {
-        system_core.Shutdown();
+    if (Core::System::GetInstance().IsPoweredOn()) {
+        Core::System::GetInstance().Shutdown();
     }
 
     LibRetro::Input::Shutdown();
+
+    delete emu_instance;
 }
 
 unsigned retro_api_version() {
@@ -91,7 +99,7 @@ void LibRetro::OnConfigureEnvironment() {
 }
 
 uintptr_t LibRetro::GetFramebuffer() {
-    return hw_render.get_current_framebuffer();
+    return emu_instance->hw_render.get_current_framebuffer();
 }
 
 /**
@@ -283,7 +291,7 @@ void UpdateSettings(bool init) {
     }
 
     // Update the framebuffer sizing, but only if there is a oGL context.
-    emu_window->Prepare(!init);
+    emu_instance->emu_window->Prepare(!init);
 
     Settings::Apply();
 }
@@ -294,8 +302,8 @@ void UpdateSettings(bool init) {
 void retro_run() {
     UpdateSettings(false);
 
-    while (!emu_window->HasSubmittedFrame()) {
-        auto result = system_core.RunLoop();
+    while (!emu_instance->emu_window->HasSubmittedFrame()) {
+        auto result = Core::System::GetInstance().RunLoop();
 
         if (result != Core::System::ResultStatus::Success) {
             std::string errorContent = Core::System::GetInstance().GetStatusDetails();
@@ -318,38 +326,55 @@ void retro_run() {
     }
 }
 
+void* load_opengl_func(const char* name) {
+    return (void*) emu_instance->hw_render.get_proc_address(name);
+}
+
 void context_reset() {
-    if (!system_core.IsPoweredOn()) {
+    if (!Core::System::GetInstance().IsPoweredOn()) {
         LOG_CRITICAL(Frontend, "Cannot reset system core if isn't on!");
         return;
     }
 
-    if (!gladLoadGL()) {
-        LOG_CRITICAL(Frontend, "Glad failed to load!");
-        return;
+    // Check to see if the frontend provides us with OpenGL symbols
+    if (emu_instance->hw_render.get_proc_address != nullptr) {
+        if (!gladLoadGLLoader((GLADloadproc) load_opengl_func)) {
+            LOG_CRITICAL(Frontend, "Glad failed to load (frontend-provided symbols)!");
+            return;
+        }
+    } else {
+        // Else, try to load them on our own
+        if (!gladLoadGL()) {
+            LOG_CRITICAL(Frontend, "Glad failed to load (internal symbols)!");
+            return;
+        }
     }
 
     // Recreate our renderer, so it can reset it's state.
     if (VideoCore::g_renderer != nullptr) {
-        VideoCore::g_renderer->ShutDown();
+        LOG_ERROR(Frontend, "Likely memory leak: context_destroy() was not called before context_reset()!");
     }
 
     VideoCore::g_renderer = std::make_unique<RendererOpenGL>();
-    VideoCore::g_renderer->SetWindow(emu_window.get());
+    VideoCore::g_renderer->SetWindow(emu_instance->emu_window.get());
     if (VideoCore::g_renderer->Init()) {
         LOG_DEBUG(Render, "initialized OK");
     } else {
         LOG_ERROR(Render, "initialization failed!");
     }
 
-    emu_window->Prepare(true);
+    emu_instance->emu_window->Prepare(true);
 }
 
-void context_destroy() {}
+void context_destroy() {
+    if (VideoCore::g_renderer != nullptr) {
+        VideoCore::g_renderer->ShutDown();
+    }
+}
 
 void retro_reset() {
-    system_core.Shutdown();
-    system_core.Load(emu_window.get(), LibRetro::settings.file_path);
+    Core::System::GetInstance().Shutdown();
+    Core::System::GetInstance().Load(emu_instance->emu_window.get(), LibRetro::settings.file_path);
     context_reset(); // Force the renderer to appear
 }
 
@@ -369,14 +394,14 @@ bool retro_load_game(const struct retro_game_info* info) {
         return false;
     }
 
-    hw_render.context_type = RETRO_HW_CONTEXT_OPENGL_CORE;
-    hw_render.version_major = 3;
-    hw_render.version_minor = 3;
-    hw_render.context_reset = context_reset;
-    hw_render.context_destroy = context_destroy;
-    hw_render.cache_context = false;
-    hw_render.bottom_left_origin = true;
-    if (!LibRetro::SetHWRenderer(&hw_render)) {
+    emu_instance->hw_render.context_type = RETRO_HW_CONTEXT_OPENGL_CORE;
+    emu_instance->hw_render.version_major = 3;
+    emu_instance->hw_render.version_minor = 3;
+    emu_instance->hw_render.context_reset = context_reset;
+    emu_instance->hw_render.context_destroy = context_destroy;
+    emu_instance->hw_render.cache_context = false;
+    emu_instance->hw_render.bottom_left_origin = true;
+    if (!LibRetro::SetHWRenderer(&emu_instance->hw_render)) {
         LOG_CRITICAL(Frontend, "OpenGL 3.3 is not supported.");
         LibRetro::DisplayMessage("OpenGL 3.3 is not supported.");
         return false;
@@ -389,12 +414,12 @@ bool retro_load_game(const struct retro_game_info* info) {
         return false;
     }
 
-    emu_window = std::make_unique<EmuWindow_LibRetro>();
+    emu_instance->emu_window = std::make_unique<EmuWindow_LibRetro>();
 
     UpdateSettings(true);
 
     const Core::System::ResultStatus load_result{
-        system_core.Load(emu_window.get(), LibRetro::settings.file_path)};
+        Core::System::GetInstance().Load(emu_instance->emu_window.get(), LibRetro::settings.file_path)};
 
     switch (load_result) {
     case Core::System::ResultStatus::ErrorGetLoader:
@@ -445,7 +470,7 @@ bool retro_load_game(const struct retro_game_info* info) {
 
 void retro_unload_game() {
     LOG_DEBUG(Frontend, "Unloading game...");
-    system_core.Shutdown();
+    Core::System::GetInstance().Shutdown();
 }
 
 unsigned retro_get_region() {
