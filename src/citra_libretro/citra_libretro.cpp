@@ -75,7 +75,8 @@ void LibRetro::OnConfigureEnvironment() {
          "Right analog function; C-Stick and Touchscreen Pointer|Touchscreen Pointer|C-Stick"},
         {"citra_deadzone", "Emulated pointer deadzone (%); 15|20|25|30|35|0|5|10"},
         {"citra_limit_framerate", "Enable frame limiter; enabled|disabled"},
-        {"citra_limit_framerate_target", "Frame limiter target (% of full speed); 100|110|120|130|140|150|200|250|300|350|400|450|500|50|80|90"},
+        {"citra_limit_framerate_target", "Frame limiter target (% of full speed); "
+                                         "100|110|120|130|140|150|200|250|300|350|400|450|500|50|80|90"},
         {"citra_audio_stretching", "Enable audio stretching; enabled|disabled"},
         {"citra_use_virtual_sd", "Enable virtual SD card; enabled|disabled"},
         {"citra_use_libretro_save_path", "Savegame location; Citra Default|LibRetro Default"},
