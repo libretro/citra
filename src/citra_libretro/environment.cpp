@@ -145,7 +145,7 @@ void retro_set_input_state(retro_input_state_t cb) {
 void retro_get_system_av_info(struct retro_system_av_info* info) {
     // These are placeholders until we get control.
     info->timing.fps = 60.0;
-    info->timing.sample_rate = 41000;
+    info->timing.sample_rate = 32728;
     info->geometry.base_width = 400;
     info->geometry.base_height = 480;
     info->geometry.max_width = 400 * 10;
