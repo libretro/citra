@@ -180,7 +180,7 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
     // Update Libretro with our status
     struct retro_system_av_info info {};
     info.timing.fps = 60.0;
-    info.timing.sample_rate = 41000;
+    info.timing.sample_rate = 32728;
     info.geometry.aspect_ratio = (float)baseX / (float)baseY;
     info.geometry.base_width = baseX;
     info.geometry.base_height = baseY;

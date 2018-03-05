@@ -9,6 +9,7 @@
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "core/settings.h"
+#include "audio_types.h"
 
 namespace AudioCore {
 
@@ -22,7 +23,7 @@ LibRetroSink::LibRetroSink() : impl(std::make_unique<Impl>()) {}
 LibRetroSink::~LibRetroSink() {}
 
 unsigned int LibRetroSink::GetNativeSampleRate() const {
-    return 41000; // We specify this.
+    return native_sample_rate; // We specify this.
 }
 
 std::vector<std::string> LibRetroSink::GetDeviceList() const {
