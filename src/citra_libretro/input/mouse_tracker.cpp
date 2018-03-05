@@ -47,7 +47,7 @@ void MouseTracker::InitOpenGL() {
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
 
-    shader = GLShader::LoadProgram(vertex, fragment);
+    shader = GLShader::LoadProgram(vertex, nullptr, fragment, {}, false);
 
     auto positionVariable = (GLuint)glGetAttribLocation(shader, "position");
     glEnableVertexAttribArray(positionVariable);
