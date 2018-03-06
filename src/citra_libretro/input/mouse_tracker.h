@@ -56,6 +56,8 @@ private:
     GLuint shader;
     GLuint vbo;
     GLuint vao;
+
+    MathUtil::Rectangle<unsigned> bottomScreen;
 };
 
 } // namespace Input
