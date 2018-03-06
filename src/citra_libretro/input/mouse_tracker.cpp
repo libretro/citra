@@ -128,44 +128,65 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
     // Ensure that the projected position doesn't overlap outside the bottom screen framebuffer.
     // TODO: Provide config option
     renderRatio = (float)bottomScreen.GetHeight() / 30;
-    float renderWidth = renderRatio / 2;
-    float renderHeight = (float)bottomScreen.GetWidth() / 30 / 2;
 
-    // Map the mouse coord to the bottom screen's position (with a little margin)
-    projectedX =
-        bottomScreen.left + renderWidth + projectedX * (bottomScreen.GetWidth() - renderWidth * 2);
-    projectedY = bottomScreen.top + renderHeight +
-                 projectedY * (bottomScreen.GetHeight() - renderHeight * 2);
+    // Map the mouse coord to the bottom screen's position
+    projectedX = bottomScreen.left + projectedX * bottomScreen.GetWidth();
+    projectedY = bottomScreen.top + projectedY * bottomScreen.GetHeight();
 
     isPressed = state;
+
+    this->bottomScreen = bottomScreen;
 }
 
 void MouseTracker::Render(int bufferWidth, int bufferHeight) {
     // Convert to OpenGL coordinates
     float centerX = (projectedX / bufferWidth) * 2 - 1;
-    float centerY = -((projectedY / bufferHeight) * 2 - 1);
+    float centerY = (projectedY / bufferHeight) * 2 - 1;
 
     float renderWidth = renderRatio / bufferWidth;
     float renderHeight = renderRatio / bufferHeight;
 
-    float projectedLeft = centerX - renderWidth;
-    float projectedTop = centerY - renderHeight;
-    float projectedRight = centerX + renderWidth;
-    float projectedBottom = centerY + renderHeight;
+    float boundingLeft = (bottomScreen.left / (float) bufferWidth) * 2 - 1;
+    float boundingTop = (bottomScreen.top / (float) bufferHeight) * 2 - 1;
+    float boundingRight = (bottomScreen.right / (float) bufferWidth) * 2 - 1;
+    float boundingBottom = (bottomScreen.bottom / (float) bufferHeight) * 2 - 1;
+
+    // Calculate the size of the vertical stalk
+    float verticalLeft = std::fmax(centerX - renderWidth / 5, boundingLeft);
+    float verticalRight = std::fmin(centerX + renderWidth / 5, boundingRight);
+    float verticalTop = -std::fmax(centerY - renderHeight, boundingTop);
+    float verticalBottom = -std::fmin(centerY + renderHeight, boundingBottom);
+
+    // Calculate the size of the horizontal stalk
+    float horizontalLeft = std::fmax(centerX - renderWidth, boundingLeft);
+    float horizontalRight = std::fmin(centerX + renderWidth, boundingRight);
+    float horizontalTop = -std::fmax(centerY - renderHeight / 5, boundingTop);
+    float horizontalBottom = -std::fmin(centerY + renderHeight / 5, boundingBottom);
 
     glUseProgram(shader);
 
     glBindVertexArray(vao);
 
     // clang-format off
-    GLfloat cursor[] = {
-            projectedLeft,  projectedTop,
-            projectedRight, projectedTop,
-            projectedRight, projectedBottom,
+    GLfloat verticalCursor[] = {
+            // | in the cursor
+            verticalLeft,  verticalTop,
+            verticalRight, verticalTop,
+            verticalRight, verticalBottom,
 
-            projectedLeft,  projectedTop,
-            projectedRight, projectedBottom,
-            projectedLeft,  projectedBottom
+            verticalLeft,  verticalTop,
+            verticalRight, verticalBottom,
+            verticalLeft,  verticalBottom
+    };
+    GLfloat horizontalCursor[] = {
+            // - in the cursor
+            horizontalLeft,  horizontalTop,
+            horizontalRight, horizontalTop,
+            horizontalRight, horizontalBottom,
+
+            horizontalLeft,  horizontalTop,
+            horizontalRight, horizontalBottom,
+            horizontalLeft,  horizontalBottom
     };
     // clang-format on
 
@@ -173,7 +194,11 @@ void MouseTracker::Render(int bufferWidth, int bufferHeight) {
     glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE_MINUS_SRC_COLOR);
 
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(cursor), cursor, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(verticalCursor), verticalCursor, GL_STATIC_DRAW);
+
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    glBufferData(GL_ARRAY_BUFFER, sizeof(horizontalCursor), horizontalCursor, GL_STATIC_DRAW);
 
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
