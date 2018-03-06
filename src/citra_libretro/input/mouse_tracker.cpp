@@ -168,7 +168,7 @@ void MouseTracker::Render(int bufferWidth, int bufferHeight) {
     glBindVertexArray(vao);
 
     // clang-format off
-    GLfloat verticalCursor[] = {
+    GLfloat cursor[] = {
             // | in the cursor
             verticalLeft,  verticalTop,
             verticalRight, verticalTop,
@@ -176,9 +176,8 @@ void MouseTracker::Render(int bufferWidth, int bufferHeight) {
 
             verticalLeft,  verticalTop,
             verticalRight, verticalBottom,
-            verticalLeft,  verticalBottom
-    };
-    GLfloat horizontalCursor[] = {
+            verticalLeft,  verticalBottom,
+
             // - in the cursor
             horizontalLeft,  horizontalTop,
             horizontalRight, horizontalTop,
@@ -194,13 +193,9 @@ void MouseTracker::Render(int bufferWidth, int bufferHeight) {
     glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE_MINUS_SRC_COLOR);
 
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(verticalCursor), verticalCursor, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(cursor), cursor, GL_STATIC_DRAW);
 
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-
-    glBufferData(GL_ARRAY_BUFFER, sizeof(horizontalCursor), horizontalCursor, GL_STATIC_DRAW);
-
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDrawArrays(GL_TRIANGLES, 0, 12);
 
     glBindVertexArray(0);
     glUseProgram(0);
