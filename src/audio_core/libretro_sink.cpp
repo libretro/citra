@@ -6,10 +6,10 @@
 #include <numeric>
 #include <libretro.h>
 #include "audio_core/libretro_sink.h"
+#include "audio_types.h"
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "core/settings.h"
-#include "audio_types.h"
 
 namespace AudioCore {
 

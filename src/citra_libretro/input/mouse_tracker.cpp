@@ -146,10 +146,10 @@ void MouseTracker::Render(int bufferWidth, int bufferHeight) {
     float renderWidth = renderRatio / bufferWidth;
     float renderHeight = renderRatio / bufferHeight;
 
-    float boundingLeft = (bottomScreen.left / (float) bufferWidth) * 2 - 1;
-    float boundingTop = (bottomScreen.top / (float) bufferHeight) * 2 - 1;
-    float boundingRight = (bottomScreen.right / (float) bufferWidth) * 2 - 1;
-    float boundingBottom = (bottomScreen.bottom / (float) bufferHeight) * 2 - 1;
+    float boundingLeft = (bottomScreen.left / (float)bufferWidth) * 2 - 1;
+    float boundingTop = (bottomScreen.top / (float)bufferHeight) * 2 - 1;
+    float boundingRight = (bottomScreen.right / (float)bufferWidth) * 2 - 1;
+    float boundingBottom = (bottomScreen.bottom / (float)bufferHeight) * 2 - 1;
 
     // Calculate the size of the vertical stalk
     float verticalLeft = std::fmax(centerX - renderWidth / 5, boundingLeft);

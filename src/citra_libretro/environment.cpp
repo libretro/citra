@@ -110,7 +110,7 @@ std::string GetSystemDir() {
 int16_t CheckInput(unsigned port, unsigned device, unsigned index, unsigned id) {
     return input_state_cb(port, device, index, id);
 }
-};
+}; // namespace LibRetro
 
 void retro_get_system_info(struct retro_system_info* info) {
     memset(info, 0, sizeof(*info));
