@@ -28,8 +28,7 @@
 
 class CitraLibRetro {
 public:
-    CitraLibRetro() : log_filter(Log::Level::Info) {
-    }
+    CitraLibRetro() : log_filter(Log::Level::Info) {}
 
     Log::Filter log_filter;
     std::unique_ptr<EmuWindow_LibRetro> emu_window;
@@ -75,8 +74,9 @@ void LibRetro::OnConfigureEnvironment() {
          "Right analog function; C-Stick and Touchscreen Pointer|Touchscreen Pointer|C-Stick"},
         {"citra_deadzone", "Emulated pointer deadzone (%); 15|20|25|30|35|0|5|10"},
         {"citra_limit_framerate", "Enable frame limiter; enabled|disabled"},
-        {"citra_limit_framerate_target", "Frame limiter target (% of full speed); "
-                                         "100|110|120|130|140|150|200|250|300|350|400|450|500|50|80|90"},
+        {"citra_limit_framerate_target",
+         "Frame limiter target (% of full speed); "
+         "100|110|120|130|140|150|200|250|300|350|400|450|500|50|80|90"},
         {"citra_audio_stretching", "Enable audio stretching; enabled|disabled"},
         {"citra_use_virtual_sd", "Enable virtual SD card; enabled|disabled"},
         {"citra_use_libretro_save_path", "Savegame location; Citra Default|LibRetro Default"},
@@ -93,7 +93,8 @@ void LibRetro::OnConfigureEnvironment() {
     };
 
     static const struct retro_controller_info ports[] = {
-        {controllers, 1}, {nullptr, 0},
+        {controllers, 1},
+        {nullptr, 0},
     };
 
     LibRetro::SetControllerInfo(ports);
@@ -328,7 +329,7 @@ void retro_run() {
 }
 
 void* load_opengl_func(const char* name) {
-    return (void*) emu_instance->hw_render.get_proc_address(name);
+    return (void*)emu_instance->hw_render.get_proc_address(name);
 }
 
 void context_reset() {
@@ -339,7 +340,7 @@ void context_reset() {
 
     // Check to see if the frontend provides us with OpenGL symbols
     if (emu_instance->hw_render.get_proc_address != nullptr) {
-        if (!gladLoadGLLoader((GLADloadproc) load_opengl_func)) {
+        if (!gladLoadGLLoader((GLADloadproc)load_opengl_func)) {
             LOG_CRITICAL(Frontend, "Glad failed to load (frontend-provided symbols)!");
             return;
         }
@@ -353,7 +354,8 @@ void context_reset() {
 
     // Recreate our renderer, so it can reset it's state.
     if (VideoCore::g_renderer != nullptr) {
-        LOG_ERROR(Frontend, "Likely memory leak: context_destroy() was not called before context_reset()!");
+        LOG_ERROR(Frontend,
+                  "Likely memory leak: context_destroy() was not called before context_reset()!");
     }
 
     VideoCore::g_renderer = std::make_unique<RendererOpenGL>();
@@ -419,8 +421,8 @@ bool retro_load_game(const struct retro_game_info* info) {
 
     UpdateSettings(true);
 
-    const Core::System::ResultStatus load_result{
-        Core::System::GetInstance().Load(emu_instance->emu_window.get(), LibRetro::settings.file_path)};
+    const Core::System::ResultStatus load_result{Core::System::GetInstance().Load(
+        emu_instance->emu_window.get(), LibRetro::settings.file_path)};
 
     switch (load_result) {
     case Core::System::ResultStatus::ErrorGetLoader:
