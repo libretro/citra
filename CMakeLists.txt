@@ -346,7 +346,7 @@ find_program(CLANG_FORMAT
           clang-format
     PATHS ${PROJECT_BINARY_DIR}/externals)
 # if find_program doesn't find it, try to download from externals
-if (NOT CLANG_FORMAT)
+if (NOT CLANG_FORMAT AND NOT DISABLE_CLANG_TARGET)
     if (WIN32)
         message(STATUS "Clang format not found! Downloading...")
         set(CLANG_FORMAT "${PROJECT_BINARY_DIR}/externals/clang-format${CLANG_FORMAT_POSTFIX}.exe")
