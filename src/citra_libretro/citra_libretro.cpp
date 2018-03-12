@@ -478,6 +478,11 @@ bool retro_load_game(const struct retro_game_info* info) {
 }
 
 void retro_unload_game() {
+    struct retro_audio_callback audio_cb = {nullptr, nullptr};
+    if (!LibRetro::SetAudioCallback(&audio_cb)) {
+        LOG_CRITICAL(Frontend, "Async audio could not be halted.");
+    }
+
     LOG_DEBUG(Frontend, "Unloading game...");
     Core::System::GetInstance().Shutdown();
 }

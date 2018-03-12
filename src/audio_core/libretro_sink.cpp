@@ -50,7 +50,14 @@ void LibRetroSink::SubmitAudioFrames(const int16_t* samples, size_t sample_count
     queue.emplace_back(samples, samples + sample_count * 2);
 }
 
+bool audio_state = false;
+
+// TODO: Let LibRetroSink register itself for this, and clean up automatically internally
 void audio_callback() {
+    if (!audio_state) {
+        return;
+    }
+
     u8 buffer_backing[512];
     size_t remaining_size =
         static_cast<size_t>(512) / sizeof(s16); // Keep track of size in 16-bit increments.
@@ -78,7 +85,9 @@ void audio_callback() {
     LibRetro::SubmitAudio((const int16_t*)&buffer_backing, (max_size - remaining_size) / 2);
 }
 
-void audio_set_state(bool state) {}
+void audio_set_state(bool state) {
+    audio_state = state;
+}
 
 } // namespace AudioCore
 
