@@ -79,7 +79,7 @@ void LibRetro::OnConfigureEnvironment() {
          "100|110|120|130|140|150|200|250|300|350|400|450|500|50|80|90"},
         {"citra_audio_stretching", "Enable audio stretching; enabled|disabled"},
         {"citra_use_virtual_sd", "Enable virtual SD card; enabled|disabled"},
-        {"citra_use_libretro_save_path", "Savegame location; Citra Default|LibRetro Default"},
+        {"citra_use_libretro_save_path", "Savegame location; LibRetro Default|Citra Default"},
         {"citra_is_new_3ds", "3DS system model; Old 3DS|New 3DS"},
         {"citra_region_value",
          "3DS system region; Auto|Japan|USA|Europe|Australia|China|Korea|Taiwan"},
@@ -268,7 +268,7 @@ void UpdateSettings(bool init) {
 
     // Configure the file storage location
     auto use_libretro_saves = LibRetro::FetchVariable("citra_use_libretro_save_path",
-                                                      "Citra Default") == "LibRetro Default";
+                                                      "LibRetro Default") == "LibRetro Default";
 
     if (use_libretro_saves) {
         auto target_dir = LibRetro::GetSaveDir();
