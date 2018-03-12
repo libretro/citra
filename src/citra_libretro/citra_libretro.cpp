@@ -304,6 +304,10 @@ void UpdateSettings(bool init) {
 void retro_run() {
     UpdateSettings(false);
 
+    // We can't assume that the frontend has been nice and preserved all OpenGL settings. Reset.
+    OpenGLState new_state {};
+    new_state.Apply();
+
     while (!emu_instance->emu_window->HasSubmittedFrame()) {
         auto result = Core::System::GetInstance().RunLoop();
 
@@ -372,6 +376,7 @@ void context_reset() {
 void context_destroy() {
     if (VideoCore::g_renderer != nullptr) {
         VideoCore::g_renderer->ShutDown();
+        VideoCore::g_renderer = nullptr;
     }
 }
 
