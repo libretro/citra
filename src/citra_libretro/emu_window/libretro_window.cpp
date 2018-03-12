@@ -3,6 +3,7 @@
 // Refer to the license.txt file included.
 
 #include <glad/glad.h>
+#include <video_core/renderer_opengl/gl_state.h>
 
 #include "citra_libretro/citra_libretro.h"
 #include "citra_libretro/environment.h"
@@ -13,7 +14,11 @@
 
 /// LibRetro expects a "default" GL state.
 void ResetGLState() {
-    // Clean up state.
+    // Reset internal state.
+    OpenGLState state {};
+    state.Apply();
+
+    // Clean up global state.
     glLogicOp(GL_COPY);
 
     glEnable(GL_DEPTH_TEST);
@@ -48,25 +53,25 @@ EmuWindow_LibRetro::~EmuWindow_LibRetro() {}
 void EmuWindow_LibRetro::SwapBuffers() {
     submittedFrame = true;
 
+    auto current_state = OpenGLState::GetCurState();
+
     ResetGLState();
 
     if (enableEmulatedPointer) {
+        // TODO: Port tracker to OpenGLState
         tracker.Render(width, height);
     }
 
     LibRetro::UploadVideoFrame(RETRO_HW_FRAME_BUFFER_VALID, static_cast<unsigned>(width),
                                static_cast<unsigned>(height), 0);
-    glUseProgram(0);
+
     ResetGLState();
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    current_state.Apply();
 }
 
 void EmuWindow_LibRetro::SetupFramebuffer() {
-    ResetGLState();
-
+    // TODO: Expose interface in renderer_opengl to configure this in it's internal state
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
 
     // glClear can be a slow path - skip clearing if we don't need to.
@@ -117,6 +122,7 @@ void EmuWindow_LibRetro::OnMinimalClientAreaChangeRequest(
 
 void EmuWindow_LibRetro::Prepare(bool hasOGL) {
     // TODO: Handle custom layouts
+    // TODO: Extract this ugly thing somewhere else
     unsigned baseX;
     unsigned baseY;
 

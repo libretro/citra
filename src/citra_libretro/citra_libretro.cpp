@@ -305,8 +305,9 @@ void retro_run() {
     UpdateSettings(false);
 
     // We can't assume that the frontend has been nice and preserved all OpenGL settings. Reset.
-    OpenGLState new_state {};
-    new_state.Apply();
+    auto last_state = OpenGLState::GetCurState();
+    ResetGLState();
+    last_state.Apply();
 
     while (!emu_instance->emu_window->HasSubmittedFrame()) {
         auto result = Core::System::GetInstance().RunLoop();
