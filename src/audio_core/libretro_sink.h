@@ -37,10 +37,6 @@ public:
     void SubmitAudioFrames(const int16_t* data, size_t frames);
 
 private:
-    struct Impl;
-    std::unique_ptr<Impl> impl;
-    int device_id;
-    std::vector<std::string> device_list;
 };
 
 void audio_callback();
