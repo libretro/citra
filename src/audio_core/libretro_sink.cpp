@@ -15,10 +15,9 @@ namespace AudioCore {
 
 // TODO: Should this be global? I think: yes.
 std::list<std::vector<s16>> queue;
+std::mutex queue_mutex;
 
-struct LibRetroSink::Impl {};
-
-LibRetroSink::LibRetroSink() : impl(std::make_unique<Impl>()) {}
+LibRetroSink::LibRetroSink() {}
 
 LibRetroSink::~LibRetroSink() {}
 
@@ -35,6 +34,7 @@ void LibRetroSink::EnqueueSamples(const s16* samples, size_t sample_count) {
 }
 
 size_t LibRetroSink::SamplesInQueue() const {
+    std::lock_guard<std::mutex> lock(queue_mutex);
     return std::accumulate(queue.begin(), queue.end(), static_cast<size_t>(0),
                            [](size_t sum, const auto& buffer) {
                                // Division by two because each stereo sample is made of
@@ -46,6 +46,7 @@ size_t LibRetroSink::SamplesInQueue() const {
 void LibRetroSink::SetDevice(int device_id) {}
 
 void LibRetroSink::SubmitAudioFrames(const int16_t* samples, size_t sample_count) {
+    std::lock_guard<std::mutex> lock(queue_mutex);
     // audio_batch_cb(data, frames);
     queue.emplace_back(samples, samples + sample_count * 2);
 }
@@ -64,17 +65,21 @@ void audio_callback() {
     size_t max_size = remaining_size;
     u8* buffer = buffer_backing;
 
-    while (remaining_size > 0 && !queue.empty()) {
-        if (queue.front().size() <= remaining_size) {
-            memcpy(buffer, queue.front().data(), queue.front().size() * sizeof(s16));
-            buffer += queue.front().size() * sizeof(s16);
-            remaining_size -= queue.front().size();
-            queue.pop_front();
-        } else {
-            memcpy(buffer, queue.front().data(), remaining_size * sizeof(s16));
-            buffer += remaining_size * sizeof(s16);
-            queue.front().erase(queue.front().begin(), queue.front().begin() + remaining_size);
-            remaining_size = 0;
+    {
+        std::lock_guard<std::mutex> lock(queue_mutex);
+
+        while (remaining_size > 0 && !queue.empty()) {
+            if (queue.front().size() <= remaining_size) {
+                memcpy(buffer, queue.front().data(), queue.front().size() * sizeof(s16));
+                buffer += queue.front().size() * sizeof(s16);
+                remaining_size -= queue.front().size();
+                queue.pop_front();
+            } else {
+                memcpy(buffer, queue.front().data(), remaining_size * sizeof(s16));
+                buffer += remaining_size * sizeof(s16);
+                queue.front().erase(queue.front().begin(), queue.front().begin() + remaining_size);
+                remaining_size = 0;
+            }
         }
     }
 
