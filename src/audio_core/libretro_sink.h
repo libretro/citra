@@ -32,11 +32,9 @@ public:
 
     std::vector<std::string> GetDeviceList() const override;
     void SetDevice(int device_id) override;
-
-    /// Function provided by Retroarch dynamically to submit audio frames.
-    void SubmitAudioFrames(const int16_t* data, size_t frames);
-
 private:
+
+    std::vector<s16> samples;
 };
 
 void audio_callback();

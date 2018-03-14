@@ -7,15 +7,9 @@
 #include <libretro.h>
 #include "audio_core/libretro_sink.h"
 #include "audio_types.h"
-#include "common/assert.h"
-#include "common/logging/log.h"
 #include "core/settings.h"
 
 namespace AudioCore {
-
-// TODO: Should this be global? I think: yes.
-std::list<std::vector<s16>> queue;
-std::mutex queue_mutex;
 
 LibRetroSink::LibRetroSink() {}
 
@@ -30,69 +24,14 @@ std::vector<std::string> LibRetroSink::GetDeviceList() const {
 }
 
 void LibRetroSink::EnqueueSamples(const s16* samples, size_t sample_count) {
-    SubmitAudioFrames(samples, sample_count);
+    LibRetro::SubmitAudio(samples, sample_count);
 }
 
 size_t LibRetroSink::SamplesInQueue() const {
-    std::lock_guard<std::mutex> lock(queue_mutex);
-    return std::accumulate(queue.begin(), queue.end(), static_cast<size_t>(0),
-                           [](size_t sum, const auto& buffer) {
-                               // Division by two because each stereo sample is made of
-                               // two s16.
-                               return sum + buffer.size() / 2;
-                           });
+    return 0;
 }
 
 void LibRetroSink::SetDevice(int device_id) {}
-
-void LibRetroSink::SubmitAudioFrames(const int16_t* samples, size_t sample_count) {
-    std::lock_guard<std::mutex> lock(queue_mutex);
-    // audio_batch_cb(data, frames);
-    queue.emplace_back(samples, samples + sample_count * 2);
-}
-
-bool audio_state = false;
-
-// TODO: Let LibRetroSink register itself for this, and clean up automatically internally
-void audio_callback() {
-    if (!audio_state) {
-        return;
-    }
-
-    u8 buffer_backing[512];
-    size_t remaining_size =
-        static_cast<size_t>(512) / sizeof(s16); // Keep track of size in 16-bit increments.
-    size_t max_size = remaining_size;
-    u8* buffer = buffer_backing;
-
-    {
-        std::lock_guard<std::mutex> lock(queue_mutex);
-
-        while (remaining_size > 0 && !queue.empty()) {
-            if (queue.front().size() <= remaining_size) {
-                memcpy(buffer, queue.front().data(), queue.front().size() * sizeof(s16));
-                buffer += queue.front().size() * sizeof(s16);
-                remaining_size -= queue.front().size();
-                queue.pop_front();
-            } else {
-                memcpy(buffer, queue.front().data(), remaining_size * sizeof(s16));
-                buffer += remaining_size * sizeof(s16);
-                queue.front().erase(queue.front().begin(), queue.front().begin() + remaining_size);
-                remaining_size = 0;
-            }
-        }
-    }
-
-    if (remaining_size > 0) {
-        memset(buffer, 0, remaining_size * sizeof(s16));
-    }
-
-    LibRetro::SubmitAudio((const int16_t*)&buffer_backing, (max_size - remaining_size) / 2);
-}
-
-void audio_set_state(bool state) {
-    audio_state = state;
-}
 
 } // namespace AudioCore
 

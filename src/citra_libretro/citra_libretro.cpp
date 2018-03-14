@@ -73,11 +73,6 @@ void LibRetro::OnConfigureEnvironment() {
         {"citra_analog_function",
          "Right analog function; C-Stick and Touchscreen Pointer|Touchscreen Pointer|C-Stick"},
         {"citra_deadzone", "Emulated pointer deadzone (%); 15|20|25|30|35|0|5|10"},
-        {"citra_limit_framerate", "Enable frame limiter; enabled|disabled"},
-        {"citra_limit_framerate_target",
-         "Frame limiter target (% of full speed); "
-         "100|110|120|130|140|150|200|250|300|350|400|450|500|50|80|90"},
-        {"citra_audio_stretching", "Enable audio stretching; enabled|disabled"},
         {"citra_use_virtual_sd", "Enable virtual SD card; enabled|disabled"},
         {"citra_use_libretro_save_path", "Savegame location; LibRetro Default|Citra Default"},
         {"citra_is_new_3ds", "3DS system model; Old 3DS|New 3DS"},
@@ -129,6 +124,7 @@ void UpdateSettings(bool init) {
         {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, "Start"},
         {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select"},
         {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "Home"},
+        {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, "Touch Screen Touch"},
         {0, 0},
     };
 
@@ -139,6 +135,11 @@ void UpdateSettings(bool init) {
     Settings::values.log_filter = "*:Info";
     Settings::values.sink_id = "libretro";
 
+    // We don't need these, as this is the frontend's responsibility.
+    Settings::values.enable_audio_stretching = false;
+    Settings::values.use_frame_limit = false;
+    Settings::values.frame_limit = 100;
+
     // For our other settings, import them from LibRetro.
     Settings::values.use_cpu_jit =
         LibRetro::FetchVariable("citra_use_cpu_jit", "enabled") == "enabled";
@@ -146,12 +147,6 @@ void UpdateSettings(bool init) {
         LibRetro::FetchVariable("citra_use_hw_renderer", "enabled") == "enabled";
     Settings::values.use_shader_jit =
         LibRetro::FetchVariable("citra_use_shader_jit", "enabled") == "enabled";
-    Settings::values.enable_audio_stretching =
-        LibRetro::FetchVariable("citra_audio_stretching", "enabled") == "enabled";
-    Settings::values.use_frame_limit =
-        LibRetro::FetchVariable("citra_limit_framerate", "enabled") == "enabled";
-    auto framerate_target = LibRetro::FetchVariable("citra_limit_framerate_target", "100");
-    Settings::values.frame_limit = static_cast<u16>(std::stoi(framerate_target));
     Settings::values.use_virtual_sd =
         LibRetro::FetchVariable("citra_use_virtual_sd", "enabled") == "enabled";
     Settings::values.is_new_3ds =
@@ -416,13 +411,6 @@ bool retro_load_game(const struct retro_game_info* info) {
         return false;
     }
 
-    struct retro_audio_callback audio_cb = {AudioCore::audio_callback, AudioCore::audio_set_state};
-    if (!LibRetro::SetAudioCallback(&audio_cb)) {
-        LOG_CRITICAL(Frontend, "Async audio is not supported.");
-        LibRetro::DisplayMessage("Async audio is not supported.");
-        return false;
-    }
-
     emu_instance->emu_window = std::make_unique<EmuWindow_LibRetro>();
 
     UpdateSettings(true);
@@ -478,11 +466,6 @@ bool retro_load_game(const struct retro_game_info* info) {
 }
 
 void retro_unload_game() {
-    struct retro_audio_callback audio_cb = {nullptr, nullptr};
-    if (!LibRetro::SetAudioCallback(&audio_cb)) {
-        LOG_CRITICAL(Frontend, "Async audio could not be halted.");
-    }
-
     LOG_DEBUG(Frontend, "Unloading game...");
     Core::System::GetInstance().Shutdown();
 }
