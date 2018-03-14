@@ -3,8 +3,9 @@
 // Refer to the license.txt file included.
 
 #include <cstring>
-#include <core/settings.h>
 
+#include "core/settings.h"
+#include "audio_core/audio_types.h"
 #include "audio_core/libretro_sink.h"
 #include "common/scm_rev.h"
 #include "environment.h"
@@ -145,7 +146,7 @@ void retro_set_input_state(retro_input_state_t cb) {
 void retro_get_system_av_info(struct retro_system_av_info* info) {
     // These are placeholders until we get control.
     info->timing.fps = 60.0;
-    info->timing.sample_rate = 32728;
+    info->timing.sample_rate = AudioCore::native_sample_rate;
     info->geometry.base_width = 400;
     info->geometry.base_height = 480;
     info->geometry.max_width = 400 * 10;

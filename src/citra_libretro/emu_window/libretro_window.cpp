@@ -3,14 +3,15 @@
 // Refer to the license.txt file included.
 
 #include <glad/glad.h>
-#include <video_core/renderer_opengl/gl_state.h>
+#include <libretro.h>
 
+#include "audio_core/audio_types.h"
 #include "citra_libretro/citra_libretro.h"
 #include "citra_libretro/environment.h"
 #include "citra_libretro/input/input_factory.h"
 #include "core/3ds.h"
 #include "core/settings.h"
-#include "libretro.h"
+#include "video_core/renderer_opengl/gl_state.h"
 
 /// LibRetro expects a "default" GL state.
 void ResetGLState() {
@@ -186,7 +187,7 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
     // Update Libretro with our status
     struct retro_system_av_info info {};
     info.timing.fps = 60.0;
-    info.timing.sample_rate = 32728;
+    info.timing.sample_rate = AudioCore::native_sample_rate;
     info.geometry.aspect_ratio = (float)baseX / (float)baseY;
     info.geometry.base_width = baseX;
     info.geometry.base_height = baseY;
