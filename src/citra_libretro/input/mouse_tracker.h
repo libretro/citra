@@ -5,7 +5,7 @@
 #pragma once
 
 #include "common/math_util.h"
-#include "video_core/renderer_opengl/gl_state.h"
+#include "video_core/renderer_opengl/gl_resource_manager.h"
 
 namespace LibRetro {
 
