@@ -63,7 +63,7 @@ unsigned retro_api_version() {
 void LibRetro::OnConfigureEnvironment() {
     static const retro_variable values[] = {
         {"citra_use_cpu_jit", "Enable CPU JIT; enabled|disabled"},
-        {"citra_use_hw_renderer", "Enable hardware renderer; enabled|disabled"},
+        {"citra_renderer", "Select Renderer; OpenGL|Software"},
         {"citra_use_shader_jit", "Enable shader JIT; enabled|disabled"},
         {"citra_resolution_factor",
          "Resolution scale factor; 1x (Native)|2x|3x|4x|5x|6x|7x|8x|9x|10x"},
@@ -73,6 +73,9 @@ void LibRetro::OnConfigureEnvironment() {
         {"citra_analog_function",
          "Right analog function; C-Stick and Touchscreen Pointer|Touchscreen Pointer|C-Stick"},
         {"citra_deadzone", "Emulated pointer deadzone (%); 15|20|25|30|35|0|5|10"},
+        {"citra_hw_shaders", "What hardware shaders to enable; None|Partial|Full"},
+        {"citra_use_accurate_mul", "Enables accurate hardware shaders (infinity * 0 = 0), "
+                                   "required for some games, though slow on some hardware; enabled|disabled"},
         {"citra_use_virtual_sd", "Enable virtual SD card; enabled|disabled"},
         {"citra_use_libretro_save_path", "Savegame location; LibRetro Default|Citra Default"},
         {"citra_is_new_3ds", "3DS system model; Old 3DS|New 3DS"},
@@ -143,10 +146,10 @@ void UpdateSettings(bool init) {
     // For our other settings, import them from LibRetro.
     Settings::values.use_cpu_jit =
         LibRetro::FetchVariable("citra_use_cpu_jit", "enabled") == "enabled";
-    Settings::values.use_hw_renderer =
-        LibRetro::FetchVariable("citra_use_hw_renderer", "enabled") == "enabled";
     Settings::values.use_shader_jit =
         LibRetro::FetchVariable("citra_use_shader_jit", "enabled") == "enabled";
+    Settings::values.shaders_accurate_mul =
+        LibRetro::FetchVariable("citra_use_accurate_mul", "enabled") == "enabled";
     Settings::values.use_virtual_sd =
         LibRetro::FetchVariable("citra_use_virtual_sd", "enabled") == "enabled";
     Settings::values.is_new_3ds =
@@ -179,6 +182,29 @@ void UpdateSettings(bool init) {
     } else {
         LOG_ERROR(Frontend, "Unknown layout type: %s.", layout.c_str());
         Settings::values.layout_option = Settings::LayoutOption::Default;
+    }
+
+    auto renderer = LibRetro::FetchVariable("citra_renderer", "OpenGL");
+    if (renderer == "OpenGL") {
+        Settings::values.renderer = Settings::RenderBackend::OpenGL;
+    } else if (renderer == "Software") {
+        Settings::values.renderer = Settings::RenderBackend::Software;
+    } else {
+        LOG_ERROR(Frontend, "Unknown renderer type: %s.", renderer.c_str());
+        Settings::values.renderer = Settings::RenderBackend::OpenGL;
+    }
+
+    auto hwShaders = LibRetro::FetchVariable("citra_hw_shaders", "None");
+
+    if (hwShaders == "None") {
+        Settings::values.hw_shaders = Settings::HwShaders::Off;
+    } else if (hwShaders == "Partial") {
+        Settings::values.hw_shaders = Settings::HwShaders::VS;
+    } else if (hwShaders == "Full") {
+        Settings::values.hw_shaders = Settings::HwShaders::All;
+    } else {
+        LOG_ERROR(Frontend, "Unknown H/W shader type: %s.", hwShaders.c_str());
+        Settings::values.hw_shaders = Settings::HwShaders::Off;
     }
 
     auto deadzone = LibRetro::FetchVariable("citra_deadzone", "15");

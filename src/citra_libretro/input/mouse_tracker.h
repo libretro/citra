@@ -5,6 +5,7 @@
 #pragma once
 
 #include "common/math_util.h"
+#include "video_core/renderer_opengl/gl_resource_manager.h"
 
 namespace LibRetro {
 
@@ -53,11 +54,12 @@ private:
 
     bool isPressed;
 
-    GLuint shader;
     GLuint vbo;
     GLuint vao;
 
     MathUtil::Rectangle<unsigned> bottomScreen;
+
+    OGLProgram shader;
 };
 
 } // namespace Input
