@@ -13,7 +13,8 @@ add_library(citra_libretro SHARED
         environment.h
         core_settings.cpp
         core_settings.h
-        )
+        libretro_logger.cpp
+        libretro_logger.h)
 
 create_target_directory_groups(citra_libretro)
 

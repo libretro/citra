@@ -36,6 +36,9 @@ std::string GetSystemDir();
 /// Fetches a variable by key name.
 std::string FetchVariable(std::string key, std::string def);
 
+/// Returns a logging backend, or null if the frontend refuses to provide one.
+retro_log_printf_t GetLoggingBackend();
+
 /// Displays information about the kinds of controllers that this Citra recreates.
 bool SetControllerInfo(const retro_controller_info info[]);
 
