@@ -47,9 +47,9 @@ void MouseTracker::InitOpenGL() {
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
 
-    shader = GLShader::LoadProgram(vertex, fragment);
+    shader.Create(vertex, fragment);
 
-    auto positionVariable = (GLuint)glGetAttribLocation(shader, "position");
+    auto positionVariable = (GLuint)glGetAttribLocation(shader.handle, "position");
     glEnableVertexAttribArray(positionVariable);
 
     glVertexAttribPointer(positionVariable, 2, GL_FLOAT, GL_FALSE, 0, 0);
@@ -163,7 +163,7 @@ void MouseTracker::Render(int bufferWidth, int bufferHeight) {
     float horizontalTop = -std::fmax(centerY - renderHeight / 5, boundingTop);
     float horizontalBottom = -std::fmin(centerY + renderHeight / 5, boundingBottom);
 
-    glUseProgram(shader);
+    glUseProgram(shader.handle);
 
     glBindVertexArray(vao);
 

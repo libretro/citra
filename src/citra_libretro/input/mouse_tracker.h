@@ -6,6 +6,8 @@
 
 #include "common/math_util.h"
 
+#include "video_core/renderer_opengl/gl_resource_manager.h"
+
 namespace LibRetro {
 
 namespace Input {
@@ -53,7 +55,7 @@ private:
 
     bool isPressed;
 
-    GLuint shader;
+    OGLProgram shader;
     GLuint vbo;
     GLuint vao;
 
