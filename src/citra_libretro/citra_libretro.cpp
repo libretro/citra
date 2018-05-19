@@ -39,7 +39,7 @@ CitraLibRetro* emu_instance;
 
 void retro_init() {
     emu_instance = new CitraLibRetro();
-    Log::SetFilter(&emu_instance->log_filter);
+    Log::SetGlobalFilter(emu_instance->log_filter);
     LOG_DEBUG(Frontend, "Initialising core...");
 
     LibRetro::Input::Init();
@@ -65,6 +65,9 @@ void LibRetro::OnConfigureEnvironment() {
         {"citra_use_cpu_jit", "Enable CPU JIT; enabled|disabled"},
         {"citra_use_hw_renderer", "Enable hardware renderer; enabled|disabled"},
         {"citra_use_shader_jit", "Enable shader JIT; enabled|disabled"},
+        {"citra_use_hw_shaders", "Enable hardware shaders; enabled|disabled"},
+        {"citra_use_acc_geo_shaders", "Enable accurate geometry shaders (only for H/W shaders); enabled|disabled"},
+        {"citra_use_acc_mul", "Enable accurate shaders multiplication (only for H/W shaders); enabled|disabled"},
         {"citra_resolution_factor",
          "Resolution scale factor; 1x (Native)|2x|3x|4x|5x|6x|7x|8x|9x|10x"},
         {"citra_layout_option", "Screen layout positioning; Default Top-Bottom Screen|Single "
@@ -145,8 +148,14 @@ void UpdateSettings(bool init) {
         LibRetro::FetchVariable("citra_use_cpu_jit", "enabled") == "enabled";
     Settings::values.use_hw_renderer =
         LibRetro::FetchVariable("citra_use_hw_renderer", "enabled") == "enabled";
+    Settings::values.use_hw_shader =
+            LibRetro::FetchVariable("citra_use_hw_shaders", "enabled") == "enabled";
     Settings::values.use_shader_jit =
         LibRetro::FetchVariable("citra_use_shader_jit", "enabled") == "enabled";
+    Settings::values.shaders_accurate_gs =
+            LibRetro::FetchVariable("citra_use_acc_geo_shaders", "enabled") == "enabled";
+    Settings::values.shaders_accurate_mul =
+            LibRetro::FetchVariable("citra_use_acc_mul", "enabled") == "enabled";
     Settings::values.use_virtual_sd =
         LibRetro::FetchVariable("citra_use_virtual_sd", "enabled") == "enabled";
     Settings::values.is_new_3ds =
