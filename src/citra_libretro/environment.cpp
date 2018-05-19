@@ -108,6 +108,15 @@ std::string GetSystemDir() {
     return std::string(var);
 }
 
+retro_log_printf_t GetLoggingBackend() {
+    retro_log_callback callback{};
+    if (!environ_cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &callback)) {
+        LOG_WARNING(Frontend, "No logging backend provided by LibRetro.");
+        return nullptr;
+    }
+    return callback.log;
+}
+
 int16_t CheckInput(unsigned port, unsigned device, unsigned index, unsigned id) {
     return input_state_cb(port, device, index, id);
 }

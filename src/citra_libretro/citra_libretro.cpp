@@ -16,6 +16,7 @@
 #include "citra_libretro/citra_libretro.h"
 #include "citra_libretro/core_settings.h"
 #include "citra_libretro/environment.h"
+#include "citra_libretro/libretro_logger.h"
 #include "citra_libretro/input/input_factory.h"
 #include "common/logging/backend.h"
 #include "common/logging/filter.h"
@@ -40,6 +41,15 @@ CitraLibRetro* emu_instance;
 void retro_init() {
     emu_instance = new CitraLibRetro();
     Log::SetGlobalFilter(emu_instance->log_filter);
+
+    // Check to see if the frontend is providing us with logging functionality
+    auto callback = LibRetro::GetLoggingBackend();
+    if (callback != nullptr) {
+        Log::AddBackend(std::make_unique<LibRetroLogger>(callback));
+    } else {
+        Log::AddBackend(std::make_unique<Log::ColorConsoleBackend>());
+    }
+
     LOG_DEBUG(Frontend, "Initialising core...");
 
     LibRetro::Input::Init();
