@@ -199,7 +199,7 @@ void UpdateSettings(bool init) {
     } else if (layout == "Side by Side") {
         Settings::values.layout_option = Settings::LayoutOption::SideScreen;
     } else {
-        LOG_ERROR(Frontend, "Unknown layout type: %s.", layout.c_str());
+        LOG_ERROR(Frontend, "Unknown layout type: {}.", layout);
         Settings::values.layout_option = Settings::LayoutOption::Default;
     }
 
@@ -216,7 +216,7 @@ void UpdateSettings(bool init) {
     } else if (analog_function == "Touchscreen Pointer") {
         LibRetro::settings.analog_function = LibRetro::CStickFunction::Touchscreen;
     } else {
-        LOG_ERROR(Frontend, "Unknown right analog function: %s.", analog_function.c_str());
+        LOG_ERROR(Frontend, "Unknown right analog function: {}.", analog_function);
         LibRetro::settings.analog_function = LibRetro::CStickFunction::Both;
     }
 
@@ -233,7 +233,7 @@ void UpdateSettings(bool init) {
 
     auto result = region_values.find(region);
     if (result == region_values.end()) {
-        LOG_ERROR(Frontend, "Invalid region: %s.", region.c_str());
+        LOG_ERROR(Frontend, "Invalid region: {}.", region);
         Settings::values.region_value = 0;
     } else {
         Settings::values.region_value = result->second;
@@ -299,12 +299,11 @@ void UpdateSettings(bool init) {
 
             // Ensure that this new dir exists
             if (!FileUtil::CreateDir(target_dir)) {
-                LOG_ERROR(Frontend, "Failed to create \"%s\". Using Citra's default paths.",
-                          target_dir.c_str());
+                LOG_ERROR(Frontend, "Failed to create \"{}\". Using Citra's default paths.", target_dir);
             } else {
                 FileUtil::GetUserPath(D_ROOT_IDX, target_dir);
                 const auto& target_dir_result = FileUtil::GetUserPath(D_USER_IDX, target_dir);
-                LOG_INFO(Frontend, "User dir set to \"%s\".", target_dir_result.c_str());
+                LOG_INFO(Frontend, "User dir set to \"{}\".", target_dir_result);
             }
         }
     }
@@ -442,8 +441,8 @@ bool retro_load_game(const struct retro_game_info* info) {
 
     switch (load_result) {
     case Core::System::ResultStatus::ErrorGetLoader:
-        LOG_CRITICAL(Frontend, "Failed to obtain loader for %s!",
-                     LibRetro::settings.file_path.c_str());
+        LOG_CRITICAL(Frontend, "Failed to obtain loader for {}!",
+                     LibRetro::settings.file_path);
         LibRetro::DisplayMessage("Failed to obtain loader for specified ROM!");
         return false;
     case Core::System::ResultStatus::ErrorLoader:
