@@ -82,7 +82,7 @@ std::string FetchVariable(std::string key, std::string def) {
     var.key = key.c_str();
     if (!environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) || var.value == nullptr) {
         // Fetching variable failed.
-        LOG_ERROR(Frontend, "Fetching variable %s failed.", key.c_str());
+        LOG_ERROR(Frontend, "Fetching variable {} failed.", key);
         return def;
     }
     return std::string(var.value);
