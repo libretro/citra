@@ -40,6 +40,7 @@ CitraLibRetro* emu_instance;
 
 void retro_init() {
     emu_instance = new CitraLibRetro();
+    Log::Init();
     Log::SetGlobalFilter(emu_instance->log_filter);
 
     // Check to see if the frontend is providing us with logging functionality
@@ -64,6 +65,8 @@ void retro_deinit() {
     LibRetro::Input::Shutdown();
 
     delete emu_instance;
+
+    Log::Destroy();
 }
 
 unsigned retro_api_version() {

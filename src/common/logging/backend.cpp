@@ -35,10 +35,6 @@ void SetGlobalFilter(const Filter& f) {
  */
 class Impl {
 public:
-    static Impl& Instance() {
-        static Impl backend;
-        return backend;
-    }
 
     Impl(Impl const&) = delete;
     const Impl& operator=(Impl const&) = delete;
@@ -131,6 +127,16 @@ private:
     Filter filter;
     std::chrono::steady_clock::time_point time_origin{std::chrono::steady_clock::now()};
 };
+
+std::unique_ptr<Impl> g_logger;
+
+void Init() {
+    g_logger = std::make_unique<Impl>();
+}
+
+void Destroy() {
+    g_logger = nullptr;
+}
 
 void ConsoleBackend::Write(const Entry& entry) {
     PrintMessage(entry);
@@ -283,22 +289,30 @@ const char* GetLevelName(Level log_level) {
     return "Invalid";
 }
 
+void SetGlobalFilter(const Filter& filter) {
+    g_logger->SetGlobalFilter(filter);
+}
+
 void AddBackend(std::unique_ptr<Backend> backend) {
-    Impl::Instance().AddBackend(std::move(backend));
+    g_logger->AddBackend(std::move(backend));
 }
 
 void RemoveBackend(std::string_view backend_name) {
-    Impl::Instance().RemoveBackend(backend_name);
+    g_logger->RemoveBackend(backend_name);
 }
 
 Backend* GetBackend(std::string_view backend_name) {
-    return Impl::Instance().GetBackend(backend_name);
+    return g_logger->GetBackend(backend_name);
 }
 
 void FmtLogMessageImpl(Class log_class, Level log_level, const char* filename,
                        unsigned int line_num, const char* function, const char* format,
                        const fmt::format_args& args) {
     auto& instance = Impl::Instance();
+    auto filter = g_logger->GetGlobalFilter();
+    if (!filter.CheckMessage(log_class, log_level))
+        return;
+
     instance.PushEntry(log_class, log_level, filename, line_num, function,
                        fmt::vformat(format, args));
 }
