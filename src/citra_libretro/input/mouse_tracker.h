@@ -16,8 +16,8 @@ namespace Input {
 ///  for a touch-screen device.
 class MouseTracker {
 public:
-    /// Initalises OpenGL.
-    void InitOpenGL();
+    MouseTracker();
+    ~MouseTracker();
 
     /// Called whenever a mouse moves.
     void OnMouseMove(int xDelta, int yDelta);
@@ -56,8 +56,8 @@ private:
     bool isPressed;
 
     OGLProgram shader;
-    GLuint vbo;
-    GLuint vao;
+    OGLVertexArray vao;
+    OGLBuffer vbo;
 
     MathUtil::Rectangle<unsigned> bottomScreen;
 };

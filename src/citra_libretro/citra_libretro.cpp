@@ -118,12 +118,7 @@ uintptr_t LibRetro::GetFramebuffer() {
 /**
  * Updates Citra's settings with Libretro's.
  */
-void UpdateSettings(bool init) {
-    // Check to see if we actually have any config updates to process.
-    if (!init && !LibRetro::HasUpdatedConfig()) {
-        return;
-    }
-
+void UpdateSettings() {
     struct retro_input_descriptor desc[] = {
         {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, "Left"},
         {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, "Up"},
@@ -308,8 +303,8 @@ void UpdateSettings(bool init) {
         }
     }
 
-    // Update the framebuffer sizing, but only if there is a oGL context.
-    emu_instance->emu_window->Prepare(!init);
+    // Update the framebuffer sizing.
+    emu_instance->emu_window->UpdateLayout();
 
     Settings::Apply();
 }
@@ -318,7 +313,10 @@ void UpdateSettings(bool init) {
  * libretro callback; Called every game tick.
  */
 void retro_run() {
-    UpdateSettings(false);
+    // Check to see if we actually have any config updates to process.
+    if (LibRetro::HasUpdatedConfig()) {
+        UpdateSettings();
+    }
 
     // We can't assume that the frontend has been nice and preserved all OpenGL settings. Reset.
     auto last_state = OpenGLState::GetCurState();
@@ -387,14 +385,17 @@ void context_reset() {
         LOG_ERROR(Render, "initialization failed!");
     }
 
-    emu_instance->emu_window->Prepare(true);
+    emu_instance->emu_window->UpdateLayout();
+    emu_instance->emu_window->CreateContext();
 }
 
 void context_destroy() {
     if (VideoCore::g_renderer != nullptr) {
         VideoCore::g_renderer->ShutDown();
-        VideoCore::g_renderer = nullptr;
     }
+
+    emu_instance->emu_window->DestroyContext();
+    VideoCore::g_renderer = nullptr;
 }
 
 void retro_reset() {
@@ -433,8 +434,7 @@ bool retro_load_game(const struct retro_game_info* info) {
     }
 
     emu_instance->emu_window = std::make_unique<EmuWindow_LibRetro>();
-
-    UpdateSettings(true);
+    UpdateSettings();
 
     const Core::System::ResultStatus load_result{Core::System::GetInstance().Load(
         emu_instance->emu_window.get(), LibRetro::settings.file_path)};

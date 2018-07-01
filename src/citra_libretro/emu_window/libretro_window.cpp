@@ -58,9 +58,8 @@ void EmuWindow_LibRetro::SwapBuffers() {
 
     ResetGLState();
 
-    if (enableEmulatedPointer) {
-        // TODO: Port tracker to OpenGLState
-        tracker.Render(width, height);
+    if (tracker != nullptr) {
+        tracker->Render(width, height);
     }
 
     LibRetro::UploadVideoFrame(RETRO_HW_FRAME_BUFFER_VALID, static_cast<unsigned>(width),
@@ -88,11 +87,11 @@ void EmuWindow_LibRetro::PollEvents() {
 
     // TODO: Poll for right click for motion emu
 
-    if (enableEmulatedPointer) {
-        tracker.Update(width, height, GetFramebufferLayout().bottom_screen);
+    if (tracker != nullptr) {
+        tracker->Update(width, height, GetFramebufferLayout().bottom_screen);
 
-        if (tracker.IsPressed()) {
-            auto mousePos = tracker.GetPressedPosition();
+        if (tracker->IsPressed()) {
+            auto mousePos = tracker->GetPressedPosition();
 
             if (hasTouched) {
                 TouchMoved(mousePos.first, mousePos.second);
@@ -121,7 +120,7 @@ void EmuWindow_LibRetro::OnMinimalClientAreaChangeRequest(
     height = minimal_size.second;
 }
 
-void EmuWindow_LibRetro::Prepare(bool hasOGL) {
+void EmuWindow_LibRetro::UpdateLayout() {
     // TODO: Handle custom layouts
     // TODO: Extract this ugly thing somewhere else
     unsigned baseX;
@@ -200,17 +199,6 @@ void EmuWindow_LibRetro::Prepare(bool hasOGL) {
     NotifyClientAreaSizeChanged(std::pair<unsigned, unsigned>(baseX, baseY));
     OnMinimalClientAreaChangeRequest(std::pair<unsigned, unsigned>(baseX, baseY));
     UpdateCurrentFramebufferLayout(baseX, baseY);
-
-    if (hasOGL) {
-        framebuffer = static_cast<GLuint>(LibRetro::GetFramebuffer());
-
-        if (enableEmulatedPointer) {
-            // TODO: This is potentially leaking OpenGL resources!
-            tracker.InitOpenGL();
-        }
-
-        doCleanFrame = true;
-    }
 }
 
 bool EmuWindow_LibRetro::ShouldDeferRendererInit() const {
@@ -227,4 +215,18 @@ bool EmuWindow_LibRetro::HasSubmittedFrame() {
     bool state = submittedFrame;
     submittedFrame = false;
     return state;
+}
+
+void EmuWindow_LibRetro::CreateContext() {
+    framebuffer = static_cast<GLuint>(LibRetro::GetFramebuffer());
+
+    if (enableEmulatedPointer) {
+        tracker = std::make_unique<LibRetro::Input::MouseTracker>();
+    }
+
+    doCleanFrame = true;
+}
+
+void EmuWindow_LibRetro::DestroyContext() {
+    tracker = nullptr;
 }
