@@ -2465,6 +2465,15 @@ int main(int argc, char* argv[]) {
     setlocale(LC_ALL, "C");
 
     GMainWindow main_window;
+    Log::Init();
+
+    // After settings have been loaded by GMainWindow, apply the filter
+    Log::Filter log_filter;
+    log_filter.ParseFilterString(Settings::values.log_filter);
+    Log::SetGlobalFilter(log_filter);
+    FileUtil::CreateFullPath(FileUtil::GetUserPath(D_LOGS_IDX));
+    Log::AddBackend(
+        std::make_unique<Log::FileBackend>(FileUtil::GetUserPath(D_LOGS_IDX) + LOG_FILE));
 
     // Register CameraFactory
     Camera::RegisterFactory("image", std::make_unique<Camera::StillImageCameraFactory>());
