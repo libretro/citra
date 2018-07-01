@@ -34,7 +34,7 @@ public:
     void SetupFramebuffer() override;
 
     /// Prepares the window for rendering
-    void Prepare(bool hasOGL);
+    void UpdateLayout();
 
     /// Enables for deferring a renderer's initalisation.
     bool ShouldDeferRendererInit() const override;
@@ -44,6 +44,12 @@ public:
 
     /// Flags that the framebuffer should be cleared.
     bool NeedsClearing() const override;
+
+    /// Creates state for a currently running OpenGL context.
+    void CreateContext();
+
+    /// Destroys a currently running OpenGL context.
+    void DestroyContext();
 
 private:
     /// Called when a configuration change affects the minimal size of the window
@@ -65,7 +71,7 @@ private:
     GLuint framebuffer;
 
     // For tracking mouse cursor
-    LibRetro::Input::MouseTracker tracker;
+    std::unique_ptr<LibRetro::Input::MouseTracker> tracker = nullptr;
 
     bool enableEmulatedPointer = true;
 };

@@ -16,7 +16,7 @@ namespace LibRetro {
 
 namespace Input {
 
-void MouseTracker::InitOpenGL() {
+MouseTracker::MouseTracker() {
     // Could potentially also use Citra's built-in shaders, if they can be
     //  wrangled to cooperate.
     const GLchar* vertex = R"(
@@ -41,11 +41,11 @@ void MouseTracker::InitOpenGL() {
         }
     )";
 
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
+    vao.Create();
+    vbo.Create();
 
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBindVertexArray(vao.handle);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo.handle);
 
     shader.Create(vertex, fragment);
 
@@ -53,6 +53,12 @@ void MouseTracker::InitOpenGL() {
     glEnableVertexAttribArray(positionVariable);
 
     glVertexAttribPointer(positionVariable, 2, GL_FLOAT, GL_FALSE, 0, 0);
+}
+
+MouseTracker::~MouseTracker() {
+    shader.Release();
+    vao.Release();
+    vbo.Release();
 }
 
 void MouseTracker::OnMouseMove(int deltaX, int deltaY) {
@@ -165,7 +171,7 @@ void MouseTracker::Render(int bufferWidth, int bufferHeight) {
 
     glUseProgram(shader.handle);
 
-    glBindVertexArray(vao);
+    glBindVertexArray(vao.handle);
 
     // clang-format off
     GLfloat cursor[] = {
@@ -192,7 +198,7 @@ void MouseTracker::Render(int bufferWidth, int bufferHeight) {
     glEnable(GL_BLEND);
     glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE_MINUS_SRC_COLOR);
 
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo.handle);
     glBufferData(GL_ARRAY_BUFFER, sizeof(cursor), cursor, GL_STATIC_DRAW);
 
     glDrawArrays(GL_TRIANGLES, 0, 12);
