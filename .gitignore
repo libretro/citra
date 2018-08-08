@@ -13,6 +13,16 @@ src/common/scm_rev.cpp
 .vscode/
 .cache/
 CMakeLists.txt.user*
+src/CMakeCache.txt
+src/CMakeFiles/
+src/CTestTestfile.cmake
+src/Makefile
+src/citra_libretro/CMakeCache.txt
+src/citra_libretro/CMakeFiles/
+src/cmake_install.cmake
+src/dist/
+src/externals/
+src/src/
 
 # *nix related
 # Common convention for backup or temporary files
