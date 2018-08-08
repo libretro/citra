@@ -22,6 +22,8 @@
 #include "common/logging/filter.h"
 #include "common/string_util.h"
 #include "core/core.h"
+#include "core/memory.h"
+#include "core/hle/kernel/memory.h"
 #include "core/loader/loader.h"
 #include "core/settings.h"
 #include "video_core/renderer_opengl/renderer_opengl.h"
@@ -513,12 +515,16 @@ bool retro_unserialize(const void* data_, size_t size) {
 }
 
 void* retro_get_memory_data(unsigned id) {
-    (void)id;
+    if ( id == RETRO_MEMORY_SYSTEM_RAM )
+        return Kernel::memory_regions[0].linear_heap_memory->data() ;
+
     return NULL;
 }
 
 size_t retro_get_memory_size(unsigned id) {
-    (void)id;
+    if ( id == RETRO_MEMORY_SYSTEM_RAM )
+        return Kernel::memory_regions[0].size ;
+
     return 0;
 }
 
