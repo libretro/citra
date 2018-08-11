@@ -21,7 +21,7 @@ namespace AudioCore {
 
 class LibRetroSink final : public Sink {
 public:
-    LibRetroSink();
+    explicit LibRetroSink(std::string target_device_name);
     ~LibRetroSink() override;
 
     unsigned int GetNativeSampleRate() const override;
@@ -29,16 +29,12 @@ public:
     void EnqueueSamples(const s16* samples, size_t sample_count) override;
 
     size_t SamplesInQueue() const override;
-
-    std::vector<std::string> GetDeviceList() const override;
-    void SetDevice(int device_id) override;
-private:
-
-    std::vector<s16> samples;
 };
 
 void audio_callback();
 
 void audio_set_state(bool new_state);
+
+std::vector<std::string> ListLibretroSinkDevices();
 
 } // namespace AudioCore

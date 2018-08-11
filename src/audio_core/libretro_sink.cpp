@@ -11,16 +11,12 @@
 
 namespace AudioCore {
 
-LibRetroSink::LibRetroSink() {}
+LibRetroSink::LibRetroSink(std::string target_device_name) {}
 
 LibRetroSink::~LibRetroSink() {}
 
 unsigned int LibRetroSink::GetNativeSampleRate() const {
     return native_sample_rate; // We specify this.
-}
-
-std::vector<std::string> LibRetroSink::GetDeviceList() const {
-    return {"LibRetro"};
 }
 
 void LibRetroSink::EnqueueSamples(const s16* samples, size_t sample_count) {
@@ -31,7 +27,9 @@ size_t LibRetroSink::SamplesInQueue() const {
     return 0;
 }
 
-void LibRetroSink::SetDevice(int device_id) {}
+std::vector<std::string> ListLibretroSinkDevices() {
+    return std::vector<std::string>{"LibRetro"};
+}
 
 } // namespace AudioCore
 
