@@ -516,14 +516,14 @@ bool retro_unserialize(const void* data_, size_t size) {
 
 void* retro_get_memory_data(unsigned id) {
     if ( id == RETRO_MEMORY_SYSTEM_RAM )
-        return Kernel::memory_regions[0].linear_heap_memory->data() ;
+        return Kernel::memory_regions[0].linear_heap_memory->data();
 
     return NULL;
 }
 
 size_t retro_get_memory_size(unsigned id) {
     if ( id == RETRO_MEMORY_SYSTEM_RAM )
-        return Kernel::memory_regions[0].size ;
+        return Kernel::memory_regions[0].size;
 
     return 0;
 }
