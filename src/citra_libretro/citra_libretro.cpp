@@ -55,6 +55,11 @@ void retro_init() {
 
     LOG_DEBUG(Frontend, "Initialising core...");
 
+    // Set up LLE cores
+    for (const auto& service_module : Service::service_module_map) {
+        Settings::values.lle_modules.emplace(service_module.name, false);
+    }
+
     LibRetro::Input::Init();
 }
 
@@ -219,19 +224,19 @@ void UpdateSettings() {
 
     auto region = LibRetro::FetchVariable("citra_region_value", "Auto");
     std::map<std::string, int> region_values;
-    region_values["Auto"] = 0;
-    region_values["Japan"] = 1;
-    region_values["USA"] = 2;
-    region_values["Europe"] = 3;
-    region_values["Australia"] = 4;
-    region_values["China"] = 5;
-    region_values["Korea"] = 6;
-    region_values["Taiwan"] = 7;
+    region_values["Auto"] = -1;
+    region_values["Japan"] = 0;
+    region_values["USA"] = 1;
+    region_values["Europe"] = 2;
+    region_values["Australia"] = 3;
+    region_values["China"] = 4;
+    region_values["Korea"] = 5;
+    region_values["Taiwan"] = 6;
 
     auto result = region_values.find(region);
     if (result == region_values.end()) {
         LOG_ERROR(Frontend, "Invalid region: {}.", region);
-        Settings::values.region_value = 0;
+        Settings::values.region_value = -1;
     } else {
         Settings::values.region_value = result->second;
     }
