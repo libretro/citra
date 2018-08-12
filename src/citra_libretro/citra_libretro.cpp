@@ -26,6 +26,7 @@
 #include "core/hle/kernel/memory.h"
 #include "core/loader/loader.h"
 #include "core/settings.h"
+#include "core/frontend/applets/default_applets.h"
 #include "video_core/renderer_opengl/renderer_opengl.h"
 #include "video_core/video_core.h"
 
@@ -59,6 +60,9 @@ void retro_init() {
     for (const auto& service_module : Service::service_module_map) {
         Settings::values.lle_modules.emplace(service_module.name, false);
     }
+
+    // Setup default, stub handlers for HLE applets
+    Frontend::RegisterDefaultApplets();
 
     LibRetro::Input::Init();
 }
@@ -152,6 +156,7 @@ void UpdateSettings() {
     // finite. Make assumptions.
     Settings::values.log_filter = "*:Info";
     Settings::values.sink_id = "libretro";
+    Settings::values.volume = 1.0f;
 
     // We don't need these, as this is the frontend's responsibility.
     Settings::values.enable_audio_stretching = false;
