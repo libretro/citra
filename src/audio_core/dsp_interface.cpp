@@ -44,6 +44,8 @@ void DspInterface::OutputFrame(StereoFrame16 frame) {
 
     fifo.Push(frame.data(), frame.size());
 
+    GetSink().OnAudioSubmission(frame.size());
+
     if (Core::System::GetInstance().VideoDumper().IsDumping()) {
         Core::System::GetInstance().VideoDumper().AddAudioFrame(std::move(frame));
     }

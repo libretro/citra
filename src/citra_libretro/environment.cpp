@@ -52,6 +52,10 @@ bool SetAudioCallback(retro_audio_callback* cb) {
     return environ_cb(RETRO_ENVIRONMENT_SET_AUDIO_CALLBACK, cb);
 }
 
+bool SetFrameTimeCallback(retro_frame_time_callback* cb) {
+    return environ_cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, cb);
+}
+
 bool SetGeometry(retro_system_av_info* cb) {
     return environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, cb);
 }
