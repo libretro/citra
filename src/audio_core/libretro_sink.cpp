@@ -11,7 +11,11 @@
 
 namespace AudioCore {
 
-LibRetroSink::LibRetroSink(std::string target_device_name) {}
+struct LibRetroSink::Impl {
+    std::function<void(s16*, std::size_t)> cb;
+};
+
+LibRetroSink::LibRetroSink(std::string target_device_name) : impl(std::make_unique<Impl>()) {}
 
 LibRetroSink::~LibRetroSink() {}
 
@@ -19,12 +23,16 @@ unsigned int LibRetroSink::GetNativeSampleRate() const {
     return native_sample_rate; // We specify this.
 }
 
-void LibRetroSink::EnqueueSamples(const s16* samples, size_t sample_count) {
-    LibRetro::SubmitAudio(samples, sample_count);
+void LibRetroSink::SetCallback(std::function<void(s16*, std::size_t)> cb) {
+    this->impl->cb = cb;
 }
 
-size_t LibRetroSink::SamplesInQueue() const {
-    return 0;
+void LibRetroSink::OnAudioSubmission(std::size_t frames) {
+    std::vector<s16> buffer(frames * 2);
+
+    this->impl->cb(buffer.data(), buffer.size() / 2);
+
+    LibRetro::SubmitAudio(buffer.data(), buffer.size() / 2);
 }
 
 std::vector<std::string> ListLibretroSinkDevices() {

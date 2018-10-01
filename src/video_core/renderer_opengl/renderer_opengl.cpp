@@ -980,7 +980,7 @@ void RendererOpenGL::DrawScreens(const Layout::FramebufferLayout& layout, bool f
 
     glViewport(0, 0, layout.width, layout.height);
 
-    if (render_window->NeedsClearing()) {
+    if (render_window.NeedsClearing()) {
         glClear(GL_COLOR_BUFFER_BIT);
     }
 

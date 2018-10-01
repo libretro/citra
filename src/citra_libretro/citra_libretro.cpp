@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <common/file_util.h>
 
 #include "glad/glad.h"
 #include "libretro.h"
@@ -308,8 +309,8 @@ void UpdateSettings() {
             if (!FileUtil::CreateDir(target_dir)) {
                 LOG_ERROR(Frontend, "Failed to create \"{}\". Using Citra's default paths.", target_dir);
             } else {
-                FileUtil::GetUserPath(D_ROOT_IDX, target_dir);
-                const auto& target_dir_result = FileUtil::GetUserPath(D_USER_IDX, target_dir);
+                FileUtil::GetUserPath(FileUtil::UserPath::RootDir, target_dir);
+                const auto& target_dir_result = FileUtil::GetUserPath(FileUtil::UserPath::UserDir, target_dir);
                 LOG_INFO(Frontend, "User dir set to \"{}\".", target_dir_result);
             }
         }
@@ -345,9 +346,6 @@ void retro_run() {
             switch (result) {
             case Core::System::ResultStatus::ErrorSystemFiles:
                 msg = "Citra was unable to locate a 3DS system archive: " + errorContent;
-                break;
-            case Core::System::ResultStatus::ErrorSharedFont:
-                msg = "Citra was unable to locate the 3DS shared fonts.";
                 break;
             default:
                 msg = "Fatal Error encountered: " + errorContent;
@@ -389,9 +387,8 @@ void context_reset() {
                   "Likely memory leak: context_destroy() was not called before context_reset()!");
     }
 
-    VideoCore::g_renderer = std::make_unique<RendererOpenGL>();
-    VideoCore::g_renderer->SetWindow(emu_instance->emu_window.get());
-    if (VideoCore::g_renderer->Init()) {
+    VideoCore::g_renderer = std::make_unique<RendererOpenGL>(*emu_instance->emu_window);
+    if (VideoCore::g_renderer->Init() != Core::System::ResultStatus::Success) {
         LOG_DEBUG(Render, "initialized OK");
     } else {
         LOG_ERROR(Render, "initialization failed!");
@@ -412,7 +409,7 @@ void context_destroy() {
 
 void retro_reset() {
     Core::System::GetInstance().Shutdown();
-    Core::System::GetInstance().Load(emu_instance->emu_window.get(), LibRetro::settings.file_path);
+    Core::System::GetInstance().Load(*emu_instance->emu_window, LibRetro::settings.file_path);
     context_reset(); // Force the renderer to appear
 }
 
@@ -449,7 +446,7 @@ bool retro_load_game(const struct retro_game_info* info) {
     UpdateSettings();
 
     const Core::System::ResultStatus load_result{Core::System::GetInstance().Load(
-        emu_instance->emu_window.get(), LibRetro::settings.file_path)};
+        *emu_instance->emu_window, LibRetro::settings.file_path)};
 
     switch (load_result) {
     case Core::System::ResultStatus::ErrorGetLoader:

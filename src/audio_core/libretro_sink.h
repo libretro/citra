@@ -26,9 +26,14 @@ public:
 
     unsigned int GetNativeSampleRate() const override;
 
-    void EnqueueSamples(const s16* samples, size_t sample_count) override;
+    void SetCallback(std::function<void(s16*, std::size_t)> cb) override;
 
-    size_t SamplesInQueue() const override;
+    void OnAudioSubmission(std::size_t frames) override;
+
+    struct Impl;
+
+private:
+    std::unique_ptr<Impl> impl;
 };
 
 void audio_callback();

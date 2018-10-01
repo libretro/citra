@@ -51,10 +51,9 @@ ResultStatus Init(Frontend::EmuWindow& emu_window, Memory::MemorySystem& memory)
     if (result != ResultStatus::Success) {
         LOG_ERROR(Render, "initialization failed !");
     } else {
-        LOG_DEBUG(Render, "initialized OK");
+        // We will come back to it later
+        return Core::System::ResultStatus::Success;
     }
-
-    return result;
 }
 
 /// Shutdown the video core

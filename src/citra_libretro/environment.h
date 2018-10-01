@@ -51,6 +51,9 @@ bool SetHWRenderer(retro_hw_render_callback* cb);
 /// Sets the async audio callback.
 bool SetAudioCallback(retro_audio_callback* cb);
 
+/// Sets the frame time callback.
+bool SetFrameTimeCallback(retro_frame_time_callback* cb);
+
 /// Set the size of the new screen buffer.
 bool SetGeometry(retro_system_av_info* cb);
 
