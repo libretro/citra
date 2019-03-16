@@ -94,7 +94,8 @@ void LibRetro::OnConfigureEnvironment() {
         {"citra_use_acc_geo_shaders", "Enable accurate geometry shaders (only for H/W shaders); enabled|disabled"},
         {"citra_use_acc_mul", "Enable accurate shaders multiplication (only for H/W shaders); enabled|disabled"},
         {"citra_resolution_factor",
-         "Resolution scale factor; 1x (Native)|2x|3x|4x|5x|6x|7x|8x|9x|10x"},
+         "Resolution scale factor; 1x (Native)|2x|3x|4x|5x|6x|7x|8x|9x|10x|1x custom 1920/1080 (New 3DS XL)|2x custom 1920/1080 (New 3DS XL)|4x custom 1920/1080 (New 3DS XL)"},
+        {"citra_test", "TEST; 0"},
         {"citra_layout_option", "Screen layout positioning; Default Top-Bottom Screen|Single "
                                 "Screen Only|Large Screen, Small Screen|Side by Side"},
         {"citra_swap_screen", "Prominent 3DS screen; Top|Bottom"},
@@ -186,6 +187,7 @@ void UpdateSettings() {
         LibRetro::FetchVariable("citra_use_gdbstub", "disabled") == "enabled";
 
     // These values are a bit more hard to define, unfortunately.
+    Settings::values.custom_layout = false;
     auto scaling = LibRetro::FetchVariable("citra_resolution_factor", "1x (Native)");
     auto endOfScale = scaling.find('x'); // All before 'x' in "_x ...", e.g "1x (Native)"
     if (endOfScale == std::string::npos) {
@@ -194,6 +196,44 @@ void UpdateSettings() {
     } else {
         int scale = stoi(scaling.substr(0, endOfScale));
         Settings::values.resolution_factor = scale;
+        auto custom = scaling.find("custom");
+        if (custom != std::string::npos) {
+            switch(scale) {
+                case 1:
+                    Settings::values.custom_layout = true;
+                    Settings::values.custom_top_left = 35;
+                    Settings::values.custom_top_top = 15;
+                    Settings::values.custom_top_right = 35 + 330;
+                    Settings::values.custom_top_bottom = 15 + 198;
+                    Settings::values.custom_bottom_left = 68;
+                    Settings::values.custom_bottom_top = 273;
+                    Settings::values.custom_bottom_right = 68 + 264;
+                    Settings::values.custom_bottom_bottom = 273 + 198;
+                break;
+                case 2:
+                    Settings::values.custom_layout = true;
+                    Settings::values.custom_top_left = 70;
+                    Settings::values.custom_top_top = 29;
+                    Settings::values.custom_top_right = 70 + 660;
+                    Settings::values.custom_top_bottom = 29 + 396;
+                    Settings::values.custom_bottom_left = 136;
+                    Settings::values.custom_bottom_top = 546;
+                    Settings::values.custom_bottom_right = 136 + 528;
+                    Settings::values.custom_bottom_bottom = 546 + 396;
+                break;
+                case 4:
+                    Settings::values.custom_layout = true;
+                    Settings::values.custom_top_left = 526;
+                    Settings::values.custom_top_top = 158;
+                    Settings::values.custom_top_right = 526 + 550;
+                    Settings::values.custom_top_bottom = 158 + 705;
+                    Settings::values.custom_bottom_left = 581;
+                    Settings::values.custom_bottom_top = 1077;
+                    Settings::values.custom_bottom_right = 581 + 440;
+                    Settings::values.custom_bottom_bottom = 1077 + 705;
+                break;
+            }
+        }
     }
 
     auto layout = LibRetro::FetchVariable("citra_layout_option", "Default Top-Bottom Screen");
