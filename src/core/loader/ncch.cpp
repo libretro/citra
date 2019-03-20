@@ -8,12 +8,12 @@
 #include <cstring>
 #include <locale>
 #include <memory>
+#include <vector>
 #include <fmt/format.h>
 #include "common/logging/log.h"
 #include "common/string_util.h"
 #include "common/swap.h"
 #include "core/core.h"
-#include "core/file_sys/archive_selfncch.h"
 #include "core/file_sys/ncch_container.h"
 #include "core/file_sys/title_metadata.h"
 #include "core/hle/kernel/process.h"
@@ -48,11 +48,11 @@ FileType AppLoader_NCCH::IdentifyType(FileUtil::IOFile& file) {
     return FileType::Error;
 }
 
-std::pair<boost::optional<u32>, ResultStatus> AppLoader_NCCH::LoadKernelSystemMode() {
+std::pair<std::optional<u32>, ResultStatus> AppLoader_NCCH::LoadKernelSystemMode() {
     if (!is_loaded) {
         ResultStatus res = base_ncch.Load();
         if (res != ResultStatus::Success) {
-            return std::make_pair(boost::none, res);
+            return std::make_pair(std::optional<u32>{}, res);
         }
     }
 
@@ -75,7 +75,8 @@ ResultStatus AppLoader_NCCH::LoadExec(Kernel::SharedPtr<Kernel::Process>& proces
         std::string process_name = Common::StringFromFixedZeroTerminatedBuffer(
             (const char*)overlay_ncch->exheader_header.codeset_info.name, 8);
 
-        SharedPtr<CodeSet> codeset = CodeSet::Create(process_name, program_id);
+        SharedPtr<CodeSet> codeset =
+            Core::System::GetInstance().Kernel().CreateCodeSet(process_name, program_id);
 
         codeset->CodeSegment().offset = 0;
         codeset->CodeSegment().addr = overlay_ncch->exheader_header.codeset_info.text.address;
@@ -103,12 +104,13 @@ ResultStatus AppLoader_NCCH::LoadExec(Kernel::SharedPtr<Kernel::Process>& proces
         codeset->entrypoint = codeset->CodeSegment().addr;
         codeset->memory = std::make_shared<std::vector<u8>>(std::move(code));
 
-        process = Kernel::Process::Create(std::move(codeset));
+        process = Core::System::GetInstance().Kernel().CreateProcess(std::move(codeset));
 
         // Attach a resource limit to the process based on the resource limit category
         process->resource_limit =
-            Kernel::ResourceLimit::GetForCategory(static_cast<Kernel::ResourceLimitCategory>(
-                overlay_ncch->exheader_header.arm11_system_local_caps.resource_limit_category));
+            Core::System::GetInstance().Kernel().ResourceLimit().GetForCategory(
+                static_cast<Kernel::ResourceLimitCategory>(
+                    overlay_ncch->exheader_header.arm11_system_local_caps.resource_limit_category));
 
         // Set the default CPU core for this process
         process->ideal_processor =
@@ -136,13 +138,16 @@ void AppLoader_NCCH::ParseRegionLockoutInfo() {
         memcpy(&smdh, smdh_buffer.data(), sizeof(SMDH));
         u32 region_lockout = smdh.region_lockout;
         constexpr u32 REGION_COUNT = 7;
+        std::vector<u32> regions;
         for (u32 region = 0; region < REGION_COUNT; ++region) {
             if (region_lockout & 1) {
-                Service::CFG::GetCurrentModule()->SetPreferredRegionCode(region);
-                break;
+                regions.push_back(region);
             }
             region_lockout >>= 1;
         }
+        auto cfg = Service::CFG::GetModule(Core::System::GetInstance());
+        ASSERT_MSG(cfg, "CFG Module missing!");
+        cfg->SetPreferredRegionCodes(regions);
     }
 }
 
@@ -183,7 +188,7 @@ ResultStatus AppLoader_NCCH::Load(Kernel::SharedPtr<Kernel::Process>& process) {
     if (ResultStatus::Success != result)
         return result;
 
-    Service::FS::RegisterSelfNCCH(*this);
+    Core::System::GetInstance().ArchiveManager().RegisterSelfNCCH(*this);
 
     ParseRegionLockoutInfo();
 
@@ -208,6 +213,14 @@ ResultStatus AppLoader_NCCH::ReadLogo(std::vector<u8>& buffer) {
 
 ResultStatus AppLoader_NCCH::ReadProgramId(u64& out_program_id) {
     ResultStatus result = base_ncch.ReadProgramId(out_program_id);
+    if (result != ResultStatus::Success)
+        return result;
+
+    return ResultStatus::Success;
+}
+
+ResultStatus AppLoader_NCCH::ReadExtdataId(u64& out_extdata_id) {
+    ResultStatus result = base_ncch.ReadExtdataId(out_extdata_id);
     if (result != ResultStatus::Success)
         return result;
 

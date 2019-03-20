@@ -12,6 +12,7 @@
 #include "common/file_util.h"
 #include "common/logging/log.h"
 #include "common/string_util.h"
+#include "common/swap.h"
 #include "core/core.h"
 #include "core/file_sys/archive_ncch.h"
 #include "core/file_sys/errors.h"
@@ -20,6 +21,8 @@
 #include "core/hle/service/am/am.h"
 #include "core/hle/service/fs/archive.h"
 #include "core/loader/loader.h"
+#include "country_list.app.romfs.h"
+#include "mii.app.romfs.h"
 #include "shared_font.app.romfs.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -35,9 +38,9 @@ struct NCCHArchivePath {
 static_assert(sizeof(NCCHArchivePath) == 0x10, "NCCHArchivePath has wrong size!");
 
 struct NCCHFilePath {
-    u32_le open_type;
+    enum_le<NCCHFileOpenType> open_type;
     u32_le content_index;
-    u32_le filepath_type;
+    enum_le<NCCHFilePathType> filepath_type;
     std::array<char, 8> exefs_filepath;
 };
 static_assert(sizeof(NCCHFilePath) == 0x14, "NCCHFilePath has wrong size!");
@@ -55,9 +58,9 @@ Path MakeNCCHArchivePath(u64 tid, Service::FS::MediaType media_type) {
 Path MakeNCCHFilePath(NCCHFileOpenType open_type, u32 content_index, NCCHFilePathType filepath_type,
                       std::array<char, 8>& exefs_filepath) {
     NCCHFilePath path;
-    path.open_type = static_cast<u32_le>(open_type);
+    path.open_type = open_type;
     path.content_index = static_cast<u32_le>(content_index);
-    path.filepath_type = static_cast<u32_le>(filepath_type);
+    path.filepath_type = filepath_type;
     path.exefs_filepath = exefs_filepath;
     std::vector<u8> file(sizeof(path));
     std::memcpy(&file[0], &path, sizeof(path));
@@ -88,15 +91,14 @@ ResultVal<std::unique_ptr<FileBackend>> NCCHArchive::OpenFile(const Path& path,
     std::unique_ptr<FileBackend> file;
 
     // NCCH RomFS
-    NCCHFilePathType filepath_type = static_cast<NCCHFilePathType>(openfile_path.filepath_type);
-    if (filepath_type == NCCHFilePathType::RomFS) {
+    if (openfile_path.filepath_type == NCCHFilePathType::RomFS) {
         std::shared_ptr<RomFSReader> romfs_file;
 
         result = ncch_container.ReadRomFS(romfs_file);
         std::unique_ptr<DelayGenerator> delay_generator = std::make_unique<RomFSDelayGenerator>();
         file = std::make_unique<IVFCFile>(std::move(romfs_file), std::move(delay_generator));
-    } else if (filepath_type == NCCHFilePathType::Code ||
-               filepath_type == NCCHFilePathType::ExeFS) {
+    } else if (openfile_path.filepath_type == NCCHFilePathType::Code ||
+               openfile_path.filepath_type == NCCHFilePathType::ExeFS) {
         std::vector<u8> buffer;
 
         // Load NCCH .code or icon/banner/logo
@@ -104,7 +106,8 @@ ResultVal<std::unique_ptr<FileBackend>> NCCHArchive::OpenFile(const Path& path,
         std::unique_ptr<DelayGenerator> delay_generator = std::make_unique<ExeFSDelayGenerator>();
         file = std::make_unique<NCCHFile>(std::move(buffer), std::move(delay_generator));
     } else {
-        LOG_ERROR(Service_FS, "Unknown NCCH archive type {}!", openfile_path.filepath_type);
+        LOG_ERROR(Service_FS, "Unknown NCCH archive type {}!",
+                  static_cast<u32>(openfile_path.filepath_type));
         result = Loader::ResultStatus::Error;
     }
 
@@ -125,47 +128,43 @@ ResultVal<std::unique_ptr<FileBackend>> NCCHArchive::OpenFile(const Path& path,
         LOG_DEBUG(Service_FS, "Full Path: {}. Category: 0x{:X}. Path: 0x{:X}.", path.DebugStr(),
                   high, low);
 
-        std::string archive_name;
+        std::vector<u8> archive_data;
         if (high == shared_data_archive) {
-            if (low == mii_data)
-                archive_name = "Mii Data";
-            else if (low == region_manifest)
-                archive_name = "Region manifest";
-            else if (low == shared_font) {
+            if (low == mii_data) {
+                LOG_WARNING(Service_FS,
+                            "Mii data file missing. Loading open source replacement from memory");
+                archive_data = std::vector<u8>(std::begin(MII_DATA), std::end(MII_DATA));
+            } else if (low == region_manifest) {
+                LOG_WARNING(
+                    Service_FS,
+                    "Country list file missing. Loading open source replacement from memory");
+                archive_data =
+                    std::vector<u8>(std::begin(COUNTRY_LIST_DATA), std::end(COUNTRY_LIST_DATA));
+            } else if (low == shared_font) {
                 LOG_WARNING(
                     Service_FS,
                     "Shared Font file missing. Loading open source replacement from memory");
-                const std::vector<u8> shared_font_file(std::begin(SHARED_FONT_DATA),
-                                                       std::end(SHARED_FONT_DATA));
-                u64 romfs_offset = 0;
-                u64 romfs_size = shared_font_file.size();
-                std::unique_ptr<DelayGenerator> delay_generator =
-                    std::make_unique<RomFSDelayGenerator>();
-                file = std::make_unique<IVFCFileInMemory>(std::move(shared_font_file), romfs_offset,
-                                                          romfs_size, std::move(delay_generator));
-                return MakeResult<std::unique_ptr<FileBackend>>(std::move(file));
+                archive_data =
+                    std::vector<u8>(std::begin(SHARED_FONT_DATA), std::end(SHARED_FONT_DATA));
             }
         } else if (high == system_data_archive) {
-            if (low == ng_word_list)
+            if (low == ng_word_list) {
                 LOG_WARNING(
                     Service_FS,
                     "Bad Word List file missing. Loading open source replacement from memory");
-            const std::vector<u8> bad_word_list_file(std::begin(BAD_WORD_LIST_DATA),
-                                                     std::end(BAD_WORD_LIST_DATA));
-            u64 romfs_offset = 0;
-            u64 romfs_size = bad_word_list_file.size();
-            std::unique_ptr<DelayGenerator> delay_generator =
-                std::make_unique<RomFSDelayGenerator>();
-            file = std::make_unique<IVFCFileInMemory>(std::move(bad_word_list_file), romfs_offset,
-                                                      romfs_size, std::move(delay_generator));
-            return MakeResult<std::unique_ptr<FileBackend>>(std::move(file));
+                archive_data =
+                    std::vector<u8>(std::begin(BAD_WORD_LIST_DATA), std::end(BAD_WORD_LIST_DATA));
+            }
         }
 
-        if (!archive_name.empty()) {
-            LOG_ERROR(Service_FS, "Failed to get a handle for shared data archive: {}. ",
-                      archive_name);
-            Core::System::GetInstance().SetStatus(Core::System::ResultStatus::ErrorSystemFiles,
-                                                  archive_name.c_str());
+        if (!archive_data.empty()) {
+            u64 romfs_offset = 0;
+            u64 romfs_size = archive_data.size();
+            std::unique_ptr<DelayGenerator> delay_generator =
+                std::make_unique<RomFSDelayGenerator>();
+            file = std::make_unique<IVFCFileInMemory>(std::move(archive_data), romfs_offset,
+                                                      romfs_size, std::move(delay_generator));
+            return MakeResult<std::unique_ptr<FileBackend>>(std::move(file));
         }
         return ERROR_NOT_FOUND;
     }
@@ -271,7 +270,8 @@ bool NCCHFile::SetSize(const u64 size) const {
 
 ArchiveFactory_NCCH::ArchiveFactory_NCCH() {}
 
-ResultVal<std::unique_ptr<ArchiveBackend>> ArchiveFactory_NCCH::Open(const Path& path) {
+ResultVal<std::unique_ptr<ArchiveBackend>> ArchiveFactory_NCCH::Open(const Path& path,
+                                                                     u64 program_id) {
     if (path.GetType() != LowPathType::Binary) {
         LOG_ERROR(Service_FS, "Path need to be Binary");
         return ERROR_INVALID_PATH;
@@ -292,14 +292,16 @@ ResultVal<std::unique_ptr<ArchiveBackend>> ArchiveFactory_NCCH::Open(const Path&
 }
 
 ResultCode ArchiveFactory_NCCH::Format(const Path& path,
-                                       const FileSys::ArchiveFormatInfo& format_info) {
+                                       const FileSys::ArchiveFormatInfo& format_info,
+                                       u64 program_id) {
     LOG_ERROR(Service_FS, "Attempted to format a NCCH archive.");
     // TODO: Verify error code
     return ResultCode(ErrorDescription::NotAuthorized, ErrorModule::FS, ErrorSummary::NotSupported,
                       ErrorLevel::Permanent);
 }
 
-ResultVal<ArchiveFormatInfo> ArchiveFactory_NCCH::GetFormatInfo(const Path& path) const {
+ResultVal<ArchiveFormatInfo> ArchiveFactory_NCCH::GetFormatInfo(const Path& path,
+                                                                u64 program_id) const {
     // TODO(Subv): Implement
     LOG_ERROR(Service_FS, "Unimplemented GetFormatInfo archive {}", GetName());
     return ResultCode(-1);

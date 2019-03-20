@@ -2,32 +2,27 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
-#include "web_service/json.h"
+#include <json.hpp>
+#include "common/web_result.h"
 #include "web_service/verify_login.h"
 #include "web_service/web_backend.h"
 
 namespace WebService {
 
-std::future<bool> VerifyLogin(std::string& username, std::string& token,
-                              const std::string& endpoint_url, std::function<void()> func) {
-    auto get_func = [func, username](const std::string& reply) -> bool {
-        func();
+bool VerifyLogin(const std::string& host, const std::string& username, const std::string& token) {
+    Client client(host, username, token);
+    auto reply = client.GetJson("/profile", false).returned_data;
+    if (reply.empty()) {
+        return false;
+    }
+    nlohmann::json json = nlohmann::json::parse(reply);
+    const auto iter = json.find("username");
 
-        if (reply.empty()) {
-            return false;
-        }
+    if (iter == json.end()) {
+        return username.empty();
+    }
 
-        nlohmann::json json = nlohmann::json::parse(reply);
-        const auto iter = json.find("username");
-
-        if (iter == json.end()) {
-            return username.empty();
-        }
-
-        return username == *iter;
-    };
-    UpdateCoreJWT(true, username, token);
-    return GetJson<bool>(get_func, endpoint_url, false);
+    return username == *iter;
 }
 
 } // namespace WebService

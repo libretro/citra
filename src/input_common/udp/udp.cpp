@@ -26,7 +26,7 @@ private:
 class UDPMotionDevice final : public Input::MotionDevice {
 public:
     explicit UDPMotionDevice(std::shared_ptr<DeviceStatus> status_) : status(std::move(status_)) {}
-    std::tuple<Math::Vec3<float>, Math::Vec3<float>> GetStatus() const {
+    std::tuple<Common::Vec3<float>, Common::Vec3<float>> GetStatus() const {
         std::lock_guard<std::mutex> guard(status->update_mutex);
         return status->motion_status;
     }
@@ -42,7 +42,7 @@ public:
     std::unique_ptr<Input::TouchDevice> Create(const Common::ParamPackage& params) override {
         {
             std::lock_guard<std::mutex> guard(status->update_mutex);
-            status->touch_calibration.reset({});
+            status->touch_calibration.emplace();
             // These default values work well for DS4 but probably not other touch inputs
             status->touch_calibration->min_x = params.Get("min_x", 100);
             status->touch_calibration->min_y = params.Get("min_y", 50);
@@ -71,8 +71,9 @@ private:
 State::State() {
     auto status = std::make_shared<DeviceStatus>();
     client =
-        std::make_unique<Client>(status, Settings::values.udp_input_address,
-                                 Settings::values.udp_input_port, Settings::values.udp_pad_index);
+        std::make_unique<Client>(status, Settings::values.current_input_profile.udp_input_address,
+                                 Settings::values.current_input_profile.udp_input_port,
+                                 Settings::values.current_input_profile.udp_pad_index);
 
     Input::RegisterFactory<Input::TouchDevice>("cemuhookudp",
                                                std::make_shared<UDPTouchFactory>(status));
@@ -86,8 +87,9 @@ State::~State() {
 }
 
 void State::ReloadUDPClient() {
-    client->ReloadSocket(Settings::values.udp_input_address, Settings::values.udp_input_port,
-                         Settings::values.udp_pad_index);
+    client->ReloadSocket(Settings::values.current_input_profile.udp_input_address,
+                         Settings::values.current_input_profile.udp_input_port,
+                         Settings::values.current_input_profile.udp_pad_index);
 }
 
 std::unique_ptr<State> Init() {

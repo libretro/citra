@@ -7,11 +7,26 @@
 #include "common/common_types.h"
 #include "core/hle/service/service.h"
 
+namespace Core {
+class System;
+}
+
 namespace Service::FS {
 
-class FS_USER final : public ServiceFramework<FS_USER> {
+class ArchiveManager;
+
+struct ClientSlot : public Kernel::SessionRequestHandler::SessionDataBase {
+    // We retrieves program ID for client process on FS::Initialize(WithSDKVersion)
+    // Real 3DS matches program ID and process ID based on data registered by loader via fs:REG, so
+    // theoretically the program ID for FS client and for process codeset can mismatch if the loader
+    // behaviour is modified. Since we don't emulate fs:REG mechanism, we assume the program ID is
+    // the same as codeset ID and fetch from there directly.
+    u64 program_id = 0;
+};
+
+class FS_USER final : public ServiceFramework<FS_USER, ClientSlot> {
 public:
-    FS_USER();
+    explicit FS_USER(Core::System& system);
 
 private:
     void Initialize(Kernel::HLERequestContext& ctx);
@@ -486,6 +501,18 @@ private:
     void GetNumSeeds(Kernel::HLERequestContext& ctx);
 
     /**
+     * FS_User::AddSeed service function.
+     *  Inputs:
+     *      0 : 0x087A0180
+     *    1-2 : u64, Title ID
+     *    3-6 : Seed
+     *  Outputs:
+     *      0 : 0x087A0040
+     *      1 : Result of function, 0 on success, otherwise error code
+     */
+    void AddSeed(Kernel::HLERequestContext& ctx);
+
+    /**
      * FS_User::SetSaveDataSecureValue service function.
      *  Inputs:
      *      0 : 0x08650140
@@ -515,8 +542,11 @@ private:
     void GetSaveDataSecureValue(Kernel::HLERequestContext& ctx);
 
     u32 priority = -1; ///< For SetPriority and GetPriority service functions
+
+    Core::System& system;
+    ArchiveManager& archives;
 };
 
-void InstallInterfaces(SM::ServiceManager& service_manager);
+void InstallInterfaces(Core::System& system);
 
 } // namespace Service::FS

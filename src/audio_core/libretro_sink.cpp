@@ -15,7 +15,7 @@ struct LibRetroSink::Impl {
     std::function<void(s16*, std::size_t)> cb;
 };
 
-LibRetroSink::LibRetroSink(std::string target_device_name) : impl(std::make_unique<Impl>()) {}
+LibRetroSink::LibRetroSink(std::string_view target_device_name) : impl(std::make_unique<Impl>()) {}
 
 LibRetroSink::~LibRetroSink() {}
 

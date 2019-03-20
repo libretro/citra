@@ -18,6 +18,7 @@
 #include "video_core/renderer_opengl/gl_shader_decompiler.h"
 #include "video_core/renderer_opengl/gl_shader_gen.h"
 #include "video_core/renderer_opengl/gl_shader_util.h"
+#include "video_core/renderer_opengl/gl_vars.h"
 #include "video_core/video_core.h"
 
 using Pica::FramebufferRegs;
@@ -27,7 +28,7 @@ using Pica::TexturingRegs;
 using TevStageConfig = TexturingRegs::TevStageConfig;
 using VSOutputAttributes = RasterizerRegs::VSOutputAttributes;
 
-namespace GLShader {
+namespace OpenGL {
 
 static const std::string UniformBlockDef = R"(
 #define NUM_TEV_STAGES 6
@@ -63,6 +64,7 @@ layout (std140) uniform shader_data {
     int proctex_lut_offset;
     int proctex_diff_lut_offset;
     float proctex_bias;
+    int shadow_texture_bias;
     ivec4 lighting_lut_offset[NUM_LIGHTING_SAMPLERS / 4];
     vec3 fog_color;
     vec2 proctex_noise_f;
@@ -118,7 +120,7 @@ PicaFSConfig PicaFSConfig::BuildFromRegs(const Pica::Regs& regs) {
 
     state.alpha_test_func = regs.framebuffer.output_merger.alpha_test.enable
                                 ? regs.framebuffer.output_merger.alpha_test.func.Value()
-                                : Pica::FramebufferRegs::CompareFunc::Always;
+                                : FramebufferRegs::CompareFunc::Always;
 
     state.texture0_type = regs.texturing.texture0.type;
 
@@ -237,10 +239,9 @@ PicaFSConfig PicaFSConfig::BuildFromRegs(const Pica::Regs& regs) {
     }
 
     state.shadow_rendering = regs.framebuffer.output_merger.fragment_operation_mode ==
-                             Pica::FramebufferRegs::FragmentOperationMode::Shadow;
+                             FramebufferRegs::FragmentOperationMode::Shadow;
 
     state.shadow_texture_orthographic = regs.texturing.shadow.orthographic != 0;
-    state.shadow_texture_bias = regs.texturing.shadow.bias << 1;
 
     return res;
 }
@@ -1250,7 +1251,6 @@ std::string GenerateFragmentShader(const PicaFSConfig& config, bool separable_sh
     const auto& state = config.state;
 
     std::string out = R"(
-#version 330 core
 #extension GL_ARB_shader_image_load_store : enable
 #extension GL_ARB_shader_image_size : enable
 #define ALLOW_SHADOW (defined(GL_ARB_shader_image_load_store) && defined(GL_ARB_shader_image_size))
@@ -1260,10 +1260,16 @@ std::string GenerateFragmentShader(const PicaFSConfig& config, bool separable_sh
         out += "#extension GL_ARB_separate_shader_objects : enable\n";
     }
 
+    if (GLES) {
+        out += fragment_shader_precision_OES;
+    }
+
     out += GetVertexInterfaceDeclaration(false, separable_shader);
 
     out += R"(
+#ifndef CITRA_GLES
 in vec4 gl_FragCoord;
+#endif // CITRA_GLES
 
 out vec4 color;
 
@@ -1300,13 +1306,13 @@ float LookupLightingLUT(int lut_index, int index, float delta) {
 
 float LookupLightingLUTUnsigned(int lut_index, float pos) {
     int index = clamp(int(pos * 256.0), 0, 255);
-    float delta = pos * 256.0 - index;
+    float delta = pos * 256.0 - float(index);
     return LookupLightingLUT(lut_index, index, delta);
 }
 
 float LookupLightingLUTSigned(int lut_index, float pos) {
     int index = clamp(int(pos * 128.0), -128, 127);
-    float delta = pos * 128.0 - index;
+    float delta = pos * 128.0 - float(index);
     if (index < 0) index += 256;
     return LookupLightingLUT(lut_index, index, delta);
 }
@@ -1358,8 +1364,7 @@ vec4 shadowTexture(vec2 uv, float w) {
     if (!config.state.shadow_texture_orthographic) {
         out += "uv /= w;";
     }
-    out += "uint z = uint(max(0, int(min(abs(w), 1.0) * 0xFFFFFF) - " +
-           std::to_string(state.shadow_texture_bias) + "));";
+    out += "uint z = uint(max(0, int(min(abs(w), 1.0) * 0xFFFFFF) - shadow_texture_bias));";
     out += R"(
     vec2 coord = vec2(imageSize(shadow_texture_px)) * uv - vec2(0.5);
     vec2 coord_floor = floor(coord);
@@ -1391,8 +1396,7 @@ vec4 shadowTextureCube(vec2 uv, float w) {
         if (c.z > 0.0) uv.x = -uv.x;
     }
 )";
-    out += "uint z = uint(max(0, int(min(w, 1.0) * 0xFFFFFF) - " +
-           std::to_string(state.shadow_texture_bias) + "));";
+    out += "uint z = uint(max(0, int(min(w, 1.0) * 0xFFFFFF) - shadow_texture_bias));";
     out += R"(
     vec2 coord = vec2(size) * (uv / w * vec2(0.5) + vec2(0.5)) - vec2(0.5);
     vec2 coord_floor = floor(coord);
@@ -1494,10 +1498,10 @@ vec4 secondary_fragment_color = vec4(0.0);
         // Negate the condition if we have to keep only the pixels outside the scissor box
         if (state.scissor_test_mode == RasterizerRegs::ScissorMode::Include)
             out += "!";
-        out += "(gl_FragCoord.x >= scissor_x1 && "
-               "gl_FragCoord.y >= scissor_y1 && "
-               "gl_FragCoord.x < scissor_x2 && "
-               "gl_FragCoord.y < scissor_y2)) discard;\n";
+        out += "(gl_FragCoord.x >= float(scissor_x1) && "
+               "gl_FragCoord.y >= float(scissor_y1) && "
+               "gl_FragCoord.x < float(scissor_x2) && "
+               "gl_FragCoord.y < float(scissor_y2))) discard;\n";
     }
 
     // After perspective divide, OpenGL transform z_over_w from [-1, 1] to [near, far]. Here we use
@@ -1529,7 +1533,7 @@ vec4 secondary_fragment_color = vec4(0.0);
     if (state.fog_mode == TexturingRegs::FogMode::Fog) {
         // Get index into fog LUT
         if (state.fog_flip) {
-            out += "float fog_index = (1.0 - depth) * 128.0;\n";
+            out += "float fog_index = (1.0 - float(depth)) * 128.0;\n";
         } else {
             out += "float fog_index = depth * 128.0;\n";
         }
@@ -1591,7 +1595,7 @@ do {
 }
 
 std::string GenerateTrivialVertexShader(bool separable_shader) {
-    std::string out = "#version 330 core\n";
+    std::string out = "";
     if (separable_shader) {
         out += "#extension GL_ARB_separate_shader_objects : enable\n";
     }
@@ -1626,23 +1630,24 @@ void main() {
     normquat = vert_normquat;
     view = vert_view;
     gl_Position = vert_position;
+#if !defined(CITRA_GLES) || defined(GL_EXT_clip_cull_distance)
     gl_ClipDistance[0] = -vert_position.z; // fixed PICA clipping plane z <= 0
     gl_ClipDistance[1] = dot(clip_coef, vert_position);
+#endif // !defined(CITRA_GLES) || defined(GL_EXT_clip_cull_distance)
 }
 )";
 
     return out;
 }
 
-boost::optional<std::string> GenerateVertexShader(const Pica::Shader::ShaderSetup& setup,
-                                                  const PicaVSConfig& config,
-                                                  bool separable_shader) {
-    std::string out = "#version 330 core\n";
+std::optional<std::string> GenerateVertexShader(const Pica::Shader::ShaderSetup& setup,
+                                                const PicaVSConfig& config, bool separable_shader) {
+    std::string out = "";
     if (separable_shader) {
         out += "#extension GL_ARB_separate_shader_objects : enable\n";
     }
 
-    out += Pica::Shader::Decompiler::GetCommonDeclarations();
+    out += ShaderDecompiler::GetCommonDeclarations();
 
     std::array<bool, 16> used_regs{};
     auto get_input_reg = [&](u32 reg) -> std::string {
@@ -1659,14 +1664,14 @@ boost::optional<std::string> GenerateVertexShader(const Pica::Shader::ShaderSetu
         return "";
     };
 
-    auto program_source_opt = Pica::Shader::Decompiler::DecompileProgram(
+    auto program_source_opt = ShaderDecompiler::DecompileProgram(
         setup.program_code, setup.swizzle_data, config.state.main_offset, get_input_reg,
         get_output_reg, config.state.sanitize_mul, false);
 
     if (!program_source_opt)
-        return boost::none;
+        return {};
 
-    std::string& program_source = program_source_opt.get();
+    std::string& program_source = *program_source_opt;
 
     out += R"(
 #define uniforms vs_uniforms
@@ -1704,7 +1709,7 @@ layout (std140) uniform vs_config {
 static std::string GetGSCommonSource(const PicaGSConfigCommonRaw& config, bool separable_shader) {
     std::string out = GetVertexInterfaceDeclaration(true, separable_shader);
     out += UniformBlockDef;
-    out += Pica::Shader::Decompiler::GetCommonDeclarations();
+    out += ShaderDecompiler::GetCommonDeclarations();
 
     out += '\n';
     for (u32 i = 0; i < config.vs_output_attributes; ++i) {
@@ -1745,9 +1750,12 @@ struct Vertex {
            semantic(VSOutputAttributes::POSITION_Y) + ", " +
            semantic(VSOutputAttributes::POSITION_Z) + ", " +
            semantic(VSOutputAttributes::POSITION_W) + ");\n";
+    semantic(VSOutputAttributes::POSITION_W) + ");\n";
     out += "    gl_Position = vtx_pos;\n";
+    out += "#if !defined(CITRA_GLES) || defined(GL_EXT_clip_cull_distance)\n";
     out += "    gl_ClipDistance[0] = -vtx_pos.z;\n"; // fixed PICA clipping plane z <= 0
-    out += "    gl_ClipDistance[1] = dot(clip_coef, vtx_pos);\n\n";
+    out += "    gl_ClipDistance[1] = dot(clip_coef, vtx_pos);\n";
+    out += "#endif // !defined(CITRA_GLES) || defined(GL_EXT_clip_cull_distance)\n\n";
 
     out += "    vec4 vtx_quat = GetVertexQuaternion(vtx);\n";
     out += "    normquat = mix(vtx_quat, -vtx_quat, bvec4(quats_opposite));\n\n";
@@ -1790,7 +1798,7 @@ void EmitPrim(Vertex vtx0, Vertex vtx1, Vertex vtx2) {
 };
 
 std::string GenerateFixedGeometryShader(const PicaFixedGSConfig& config, bool separable_shader) {
-    std::string out = "#version 330 core\n";
+    std::string out = "";
     if (separable_shader) {
         out += "#extension GL_ARB_separate_shader_objects : enable\n\n";
     }
@@ -1822,16 +1830,16 @@ void main() {
     return out;
 }
 
-boost::optional<std::string> GenerateGeometryShader(const Pica::Shader::ShaderSetup& setup,
-                                                    const PicaGSConfig& config,
-                                                    bool separable_shader) {
-    std::string out = "#version 330 core\n";
+std::optional<std::string> GenerateGeometryShader(const Pica::Shader::ShaderSetup& setup,
+                                                  const PicaGSConfig& config,
+                                                  bool separable_shader) {
+    std::string out = "";
     if (separable_shader) {
         out += "#extension GL_ARB_separate_shader_objects : enable\n";
     }
 
     if (config.state.num_inputs % config.state.attributes_per_vertex != 0)
-        return boost::none;
+        return {};
 
     switch (config.state.num_inputs / config.state.attributes_per_vertex) {
     case 1:
@@ -1850,7 +1858,7 @@ boost::optional<std::string> GenerateGeometryShader(const Pica::Shader::ShaderSe
         out += "layout(triangles_adjacency) in;\n";
         break;
     default:
-        return boost::none;
+        return {};
     }
     out += "layout(triangle_strip, max_vertices = 30) out;\n\n";
 
@@ -1874,14 +1882,14 @@ boost::optional<std::string> GenerateGeometryShader(const Pica::Shader::ShaderSe
         return "";
     };
 
-    auto program_source_opt = Pica::Shader::Decompiler::DecompileProgram(
+    auto program_source_opt = ShaderDecompiler::DecompileProgram(
         setup.program_code, setup.swizzle_data, config.state.main_offset, get_input_reg,
         get_output_reg, config.state.sanitize_mul, true);
 
     if (!program_source_opt)
-        return boost::none;
+        return {};
 
-    std::string& program_source = program_source_opt.get();
+    std::string& program_source = *program_source_opt;
 
     out += R"(
 Vertex output_buffer;
@@ -1933,4 +1941,4 @@ void emit() {
     return out;
 }
 
-} // namespace GLShader
+} // namespace OpenGL

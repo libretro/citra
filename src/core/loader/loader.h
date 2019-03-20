@@ -7,10 +7,10 @@
 #include <algorithm>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
-#include <boost/optional.hpp>
 #include "common/common_types.h"
 #include "common/file_util.h"
 #include "core/file_sys/romfs_reader.h"
@@ -107,7 +107,7 @@ public:
      * information.
      * @returns A pair with the optional system mode, and and the status.
      */
-    virtual std::pair<boost::optional<u32>, ResultStatus> LoadKernelSystemMode() {
+    virtual std::pair<std::optional<u32>, ResultStatus> LoadKernelSystemMode() {
         // 96MB allocated to the application.
         return std::make_pair(2, ResultStatus::Success);
     }
@@ -154,6 +154,15 @@ public:
      * @return ResultStatus result of function
      */
     virtual ResultStatus ReadProgramId(u64& out_program_id) {
+        return ResultStatus::ErrorNotImplemented;
+    }
+
+    /**
+     * Get the extdata id for the application
+     * @param out_extdata_id Reference to store extdata id into
+     * @return ResultStatus result of function
+     */
+    virtual ResultStatus ReadExtdataId(u64& out_extdata_id) {
         return ResultStatus::ErrorNotImplemented;
     }
 

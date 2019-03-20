@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <functional>
 #include <vector>
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 #include "common/common_types.h"
@@ -16,6 +17,8 @@ class Thread;
 /// Class that represents a Kernel object that a thread can be waiting on
 class WaitObject : public Object {
 public:
+    using Object::Object;
+
     /**
      * Check if the specified thread should wait until the object is available
      * @param thread The thread about which we're deciding.
@@ -50,16 +53,22 @@ public:
     /// Get a const reference to the waiting threads list for debug use
     const std::vector<SharedPtr<Thread>>& GetWaitingThreads() const;
 
+    /// Sets a callback which is called when the object becomes available
+    void SetHLENotifier(std::function<void()> callback);
+
 private:
     /// Threads waiting for this object to become available
     std::vector<SharedPtr<Thread>> waiting_threads;
+
+    /// Function to call when this object becomes available
+    std::function<void()> hle_notifier;
 };
 
 // Specialization of DynamicObjectCast for WaitObjects
 template <>
 inline SharedPtr<WaitObject> DynamicObjectCast<WaitObject>(SharedPtr<Object> object) {
     if (object != nullptr && object->IsWaitable()) {
-        return boost::static_pointer_cast<WaitObject>(std::move(object));
+        return boost::static_pointer_cast<WaitObject>(object);
     }
     return nullptr;
 }

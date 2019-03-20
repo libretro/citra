@@ -11,6 +11,7 @@
 #include "core/hle/ipc_helpers.h"
 #include "core/hle/kernel/handle_table.h"
 #include "core/hle/kernel/shared_memory.h"
+#include "core/hle/kernel/shared_page.h"
 #include "core/hle/result.h"
 #include "core/hle/service/gsp/gsp_gpu.h"
 #include "core/hw/gpu.h"
@@ -54,6 +55,29 @@ constexpr u32 MaxGSPThreads = 4;
 
 /// Thread ids currently in use by the sessions connected to the GSPGPU service.
 static std::array<bool, MaxGSPThreads> used_thread_ids = {false, false, false, false};
+
+static PAddr VirtualToPhysicalAddress(VAddr addr) {
+    if (addr == 0) {
+        return 0;
+    }
+
+    // Note: the region end check is inclusive because the game can pass in an address that
+    // represents an open right boundary
+    if (addr >= Memory::VRAM_VADDR && addr <= Memory::VRAM_VADDR_END) {
+        return addr - Memory::VRAM_VADDR + Memory::VRAM_PADDR;
+    }
+    if (addr >= Memory::LINEAR_HEAP_VADDR && addr <= Memory::LINEAR_HEAP_VADDR_END) {
+        return addr - Memory::LINEAR_HEAP_VADDR + Memory::FCRAM_PADDR;
+    }
+    if (addr >= Memory::NEW_LINEAR_HEAP_VADDR && addr <= Memory::NEW_LINEAR_HEAP_VADDR_END) {
+        return addr - Memory::NEW_LINEAR_HEAP_VADDR + Memory::FCRAM_PADDR;
+    }
+
+    LOG_ERROR(HW_Memory, "Unknown virtual address @ 0x{:08X}", addr);
+    // To help with debugging, set bit on address so that it's obviously invalid.
+    // TODO: find the correct way to handle this error
+    return addr | 0x80000000;
+}
 
 static u32 GetUnusedThreadId() {
     for (u32 id = 0; id < MaxGSPThreads; ++id) {
@@ -257,8 +281,8 @@ void GSP_GPU::ReadHWRegs(Kernel::HLERequestContext& ctx) {
 
 ResultCode SetBufferSwap(u32 screen_id, const FrameBufferInfo& info) {
     u32 base_address = 0x400000;
-    PAddr phys_address_left = Memory::VirtualToPhysicalAddress(info.address_left);
-    PAddr phys_address_right = Memory::VirtualToPhysicalAddress(info.address_right);
+    PAddr phys_address_left = VirtualToPhysicalAddress(info.address_left);
+    PAddr phys_address_right = VirtualToPhysicalAddress(info.address_right);
     if (info.active_fb == 0) {
         WriteSingleHWReg(base_address + 4 * static_cast<u32>(GPU_REG_INDEX(
                                                 framebuffer_config[screen_id].address_left1)),
@@ -467,6 +491,7 @@ static void ExecuteCommand(const Command& command, u32 thread_id) {
     // GX request DMA - typically used for copying memory from GSP heap to VRAM
     case CommandId::REQUEST_DMA: {
         MICROPROFILE_SCOPE(GPU_GSP_DMA);
+        Memory::MemorySystem& memory = Core::System::GetInstance().Memory();
 
         // TODO: Consider attempting rasterizer-accelerated surface blit if that usage is ever
         // possible/likely
@@ -478,8 +503,9 @@ static void ExecuteCommand(const Command& command, u32 thread_id) {
 
         // TODO(Subv): These memory accesses should not go through the application's memory mapping.
         // They should go through the GSP module's memory mapping.
-        Memory::CopyBlock(command.dma_request.dest_address, command.dma_request.source_address,
-                          command.dma_request.size);
+        memory.CopyBlock(*Core::System::GetInstance().Kernel().GetCurrentProcess(),
+                         command.dma_request.dest_address, command.dma_request.source_address,
+                         command.dma_request.size);
         SignalInterrupt(InterruptId::DMA);
         break;
     }
@@ -494,7 +520,7 @@ static void ExecuteCommand(const Command& command, u32 thread_id) {
         }
 
         WriteGPURegister(static_cast<u32>(GPU_REG_INDEX(command_processor_config.address)),
-                         Memory::VirtualToPhysicalAddress(params.address) >> 3);
+                         VirtualToPhysicalAddress(params.address) >> 3);
         WriteGPURegister(static_cast<u32>(GPU_REG_INDEX(command_processor_config.size)),
                          params.size);
 
@@ -514,9 +540,9 @@ static void ExecuteCommand(const Command& command, u32 thread_id) {
 
         if (params.start1 != 0) {
             WriteGPURegister(static_cast<u32>(GPU_REG_INDEX(memory_fill_config[0].address_start)),
-                             Memory::VirtualToPhysicalAddress(params.start1) >> 3);
+                             VirtualToPhysicalAddress(params.start1) >> 3);
             WriteGPURegister(static_cast<u32>(GPU_REG_INDEX(memory_fill_config[0].address_end)),
-                             Memory::VirtualToPhysicalAddress(params.end1) >> 3);
+                             VirtualToPhysicalAddress(params.end1) >> 3);
             WriteGPURegister(static_cast<u32>(GPU_REG_INDEX(memory_fill_config[0].value_32bit)),
                              params.value1);
             WriteGPURegister(static_cast<u32>(GPU_REG_INDEX(memory_fill_config[0].control)),
@@ -525,9 +551,9 @@ static void ExecuteCommand(const Command& command, u32 thread_id) {
 
         if (params.start2 != 0) {
             WriteGPURegister(static_cast<u32>(GPU_REG_INDEX(memory_fill_config[1].address_start)),
-                             Memory::VirtualToPhysicalAddress(params.start2) >> 3);
+                             VirtualToPhysicalAddress(params.start2) >> 3);
             WriteGPURegister(static_cast<u32>(GPU_REG_INDEX(memory_fill_config[1].address_end)),
-                             Memory::VirtualToPhysicalAddress(params.end2) >> 3);
+                             VirtualToPhysicalAddress(params.end2) >> 3);
             WriteGPURegister(static_cast<u32>(GPU_REG_INDEX(memory_fill_config[1].value_32bit)),
                              params.value2);
             WriteGPURegister(static_cast<u32>(GPU_REG_INDEX(memory_fill_config[1].control)),
@@ -539,9 +565,9 @@ static void ExecuteCommand(const Command& command, u32 thread_id) {
     case CommandId::SET_DISPLAY_TRANSFER: {
         auto& params = command.display_transfer;
         WriteGPURegister(static_cast<u32>(GPU_REG_INDEX(display_transfer_config.input_address)),
-                         Memory::VirtualToPhysicalAddress(params.in_buffer_address) >> 3);
+                         VirtualToPhysicalAddress(params.in_buffer_address) >> 3);
         WriteGPURegister(static_cast<u32>(GPU_REG_INDEX(display_transfer_config.output_address)),
-                         Memory::VirtualToPhysicalAddress(params.out_buffer_address) >> 3);
+                         VirtualToPhysicalAddress(params.out_buffer_address) >> 3);
         WriteGPURegister(static_cast<u32>(GPU_REG_INDEX(display_transfer_config.input_size)),
                          params.in_buffer_size);
         WriteGPURegister(static_cast<u32>(GPU_REG_INDEX(display_transfer_config.output_size)),
@@ -555,9 +581,9 @@ static void ExecuteCommand(const Command& command, u32 thread_id) {
     case CommandId::SET_TEXTURE_COPY: {
         auto& params = command.texture_copy;
         WriteGPURegister((u32)GPU_REG_INDEX(display_transfer_config.input_address),
-                         Memory::VirtualToPhysicalAddress(params.in_buffer_address) >> 3);
+                         VirtualToPhysicalAddress(params.in_buffer_address) >> 3);
         WriteGPURegister((u32)GPU_REG_INDEX(display_transfer_config.output_address),
-                         Memory::VirtualToPhysicalAddress(params.out_buffer_address) >> 3);
+                         VirtualToPhysicalAddress(params.out_buffer_address) >> 3);
         WriteGPURegister((u32)GPU_REG_INDEX(display_transfer_config.texture_copy.size),
                          params.size);
         WriteGPURegister((u32)GPU_REG_INDEX(display_transfer_config.texture_copy.input_size),
@@ -731,7 +757,7 @@ void GSP_GPU::SetLedForceOff(Kernel::HLERequestContext& ctx) {
 
     u8 state = rp.Pop<u8>();
 
-    Core::System::GetInstance().GetSharedPageHandler()->Set3DLed(state);
+    system.Kernel().GetSharedPageHandler().Set3DLed(state);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
     rb.Push(RESULT_SUCCESS);
@@ -749,7 +775,7 @@ SessionData* GSP_GPU::FindRegisteredThreadData(u32 thread_id) {
     return nullptr;
 }
 
-GSP_GPU::GSP_GPU() : ServiceFramework("gsp::Gpu", 2) {
+GSP_GPU::GSP_GPU(Core::System& system) : ServiceFramework("gsp::Gpu", 2), system(system) {
     static const FunctionInfo functions[] = {
         {0x00010082, &GSP_GPU::WriteHWRegs, "WriteHWRegs"},
         {0x00020084, &GSP_GPU::WriteHWRegsWithMask, "WriteHWRegsWithMask"},
@@ -786,9 +812,11 @@ GSP_GPU::GSP_GPU() : ServiceFramework("gsp::Gpu", 2) {
     RegisterHandlers(functions);
 
     using Kernel::MemoryPermission;
-    shared_memory = Kernel::SharedMemory::Create(nullptr, 0x1000, MemoryPermission::ReadWrite,
-                                                 MemoryPermission::ReadWrite, 0,
-                                                 Kernel::MemoryRegion::BASE, "GSP:SharedMemory");
+    shared_memory = system.Kernel()
+                        .CreateSharedMemory(nullptr, 0x1000, MemoryPermission::ReadWrite,
+                                            MemoryPermission::ReadWrite, 0,
+                                            Kernel::MemoryRegion::BASE, "GSP:SharedMemory")
+                        .Unwrap();
 
     first_initialization = true;
 };

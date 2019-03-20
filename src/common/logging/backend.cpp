@@ -8,10 +8,12 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <regex>
 #include <thread>
 #include <vector>
 #ifdef _WIN32
-#include <share.h> // For _SH_DENYWR
+#include <share.h>   // For _SH_DENYWR
+#include <windows.h> // For OutputDebugStringW
 #else
 #define _SH_DENYWR 0
 #endif
@@ -59,6 +61,9 @@ public:
     ~Impl() {
         running = false;
         message_cv.notify_one();
+        Entry entry;
+        entry.final_entry = true;
+        message_queue.Push(entry);
         backend_thread.join();
     }
 
@@ -66,9 +71,7 @@ public:
     const Impl& operator=(Impl const&) = delete;
 
     void PushEntry(Entry e) {
-        std::lock_guard<std::mutex> lock(message_mutex);
         message_queue.Push(std::move(e));
-        message_cv.notify_one();
     }
 
     void AddBackend(std::unique_ptr<Backend> backend) {
@@ -103,8 +106,8 @@ public:
 
 private:
     std::atomic_bool running{true};
-    std::mutex message_mutex, writing_mutex;
     std::condition_variable message_cv;
+    std::mutex message_mutex, writing_mutex;
     std::thread backend_thread;
     std::vector<std::unique_ptr<Backend>> backends;
     Common::MPSCQueue<Log::Entry> message_queue;
@@ -141,10 +144,16 @@ void FileBackend::Write(const Entry& entry) {
     if (!file.IsOpen() || bytes_written > MAX_BYTES_WRITTEN) {
         return;
     }
-    bytes_written += file.WriteString(FormatLogMessage(entry) + '\n');
+    bytes_written += file.WriteString(FormatLogMessage(entry).append(1, '\n'));
     if (entry.log_level >= Level::Error) {
         file.Flush();
     }
+}
+
+void DebuggerBackend::Write(const Entry& entry) {
+#ifdef _WIN32
+    ::OutputDebugStringW(Common::UTF8ToUTF16W(FormatLogMessage(entry).append(1, '\n')).c_str());
+#endif
 }
 
 /// Macro listing all log classes. Code should define CLS and SUB as desired before invoking this.
@@ -156,6 +165,7 @@ void FileBackend::Write(const Entry& entry) {
     CLS(Core)                                                                                      \
     SUB(Core, ARM11)                                                                               \
     SUB(Core, Timing)                                                                              \
+    SUB(Core, Cheats)                                                                              \
     CLS(Config)                                                                                    \
     CLS(Debug)                                                                                     \
     SUB(Debug, Emulated)                                                                           \
@@ -253,13 +263,15 @@ Entry CreateEntry(Class log_class, Level log_level, const char* filename, unsign
     using std::chrono::duration_cast;
     using std::chrono::steady_clock;
 
+    // matches from the beginning up to the last '../' or 'src/'
+    static const std::regex trim_source_path(R"(.*([\/\\]|^)((\.\.)|(src))[\/\\])");
     static steady_clock::time_point time_origin = steady_clock::now();
 
     Entry entry;
     entry.timestamp = duration_cast<std::chrono::microseconds>(steady_clock::now() - time_origin);
     entry.log_class = log_class;
     entry.log_level = log_level;
-    entry.filename = Common::TrimSourcePath(filename);
+    entry.filename = std::regex_replace(filename, trim_source_path, "");
     entry.line_num = line_nr;
     entry.function = function;
     entry.message = std::move(message);

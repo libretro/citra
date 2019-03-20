@@ -6,10 +6,13 @@
 #include <cinttypes>
 #include <cstddef>
 #include <cstring>
+#include <cryptopp/aes.h>
+#include <cryptopp/modes.h>
 #include <fmt/format.h>
 #include "common/file_util.h"
 #include "common/logging/log.h"
 #include "common/string_util.h"
+#include "core/core.h"
 #include "core/file_sys/errors.h"
 #include "core/file_sys/ncch_container.h"
 #include "core/file_sys/title_metadata.h"
@@ -73,13 +76,31 @@ struct TicketInfo {
 
 static_assert(sizeof(TicketInfo) == 0x18, "Ticket info structure size is wrong");
 
+class CIAFile::DecryptionState {
+public:
+    std::vector<CryptoPP::CBC_Mode<CryptoPP::AES>::Decryption> content;
+};
+
+CIAFile::CIAFile(Service::FS::MediaType media_type)
+    : media_type(media_type), decryption_state(std::make_unique<DecryptionState>()) {}
+
+CIAFile::~CIAFile() {
+    Close();
+}
+
 ResultVal<std::size_t> CIAFile::Read(u64 offset, std::size_t length, u8* buffer) const {
     UNIMPLEMENTED();
     return MakeResult<std::size_t>(length);
 }
 
-ResultVal<std::size_t> CIAFile::WriteTitleMetadata(u64 offset, std::size_t length,
-                                                   const u8* buffer) {
+ResultCode CIAFile::WriteTicket() {
+    container.LoadTicket(data, container.GetTicketOffset());
+
+    install_state = CIAInstallState::TicketLoaded;
+    return RESULT_SUCCESS;
+}
+
+ResultCode CIAFile::WriteTitleMetadata() {
     container.LoadTitleMetadata(data, container.GetTitleMetadataOffset());
     FileSys::TitleMetadata tmd = container.GetTitleMetadata();
     tmd.Print();
@@ -108,10 +129,21 @@ ResultVal<std::size_t> CIAFile::WriteTitleMetadata(u64 offset, std::size_t lengt
                       &app_folder, nullptr, nullptr);
     FileUtil::CreateFullPath(app_folder);
 
-    content_written.resize(container.GetTitleMetadata().GetContentCount());
+    auto content_count = container.GetTitleMetadata().GetContentCount();
+    content_written.resize(content_count);
+
+    if (auto title_key = container.GetTicket().GetTitleKey()) {
+        decryption_state->content.resize(content_count);
+        for (std::size_t i = 0; i < content_count; ++i) {
+            auto ctr = tmd.GetContentCTRByIndex(i);
+            decryption_state->content[i].SetKeyWithIV(title_key->data(), title_key->size(),
+                                                      ctr.data());
+        }
+    }
+
     install_state = CIAInstallState::TMDLoaded;
 
-    return MakeResult<std::size_t>(length);
+    return RESULT_SUCCESS;
 }
 
 ResultVal<std::size_t> CIAFile::WriteContentData(u64 offset, std::size_t length, const u8* buffer) {
@@ -143,7 +175,15 @@ ResultVal<std::size_t> CIAFile::WriteContentData(u64 offset, std::size_t length,
             if (!file.IsOpen())
                 return FileSys::ERROR_INSUFFICIENT_SPACE;
 
-            file.WriteBytes(buffer + (range_min - offset), available_to_write);
+            std::vector<u8> temp(buffer + (range_min - offset),
+                                 buffer + (range_min - offset) + available_to_write);
+
+            if (tmd.GetContentTypeByIndex(static_cast<u16>(i)) &
+                FileSys::TMDContentTypeFlag::Encrypted) {
+                decryption_state->content[i].ProcessData(temp.data(), temp.data(), temp.size());
+            }
+
+            file.WriteBytes(temp.data(), temp.size());
 
             // Keep tabs on how much of this content ID has been written so new range_min
             // values can be calculated.
@@ -206,8 +246,12 @@ ResultVal<std::size_t> CIAFile::Write(u64 offset, std::size_t length, bool flush
     // The end of our TMD is at the beginning of Content data, so ensure we have that much
     // buffered before trying to parse.
     if (written >= container.GetContentOffset() && install_state != CIAInstallState::TMDLoaded) {
-        auto result = WriteTitleMetadata(offset, length, buffer);
-        if (result.Failed())
+        auto result = WriteTicket();
+        if (result.IsError())
+            return result;
+
+        result = WriteTitleMetadata();
+        if (result.IsError())
             return result;
     }
 
@@ -295,9 +339,12 @@ InstallStatus InstallCIA(const std::string& path,
         Service::AM::CIAFile installFile(
             Service::AM::GetTitleMediaType(container.GetTitleMetadata().GetTitleID()));
 
+        bool title_key_available = container.GetTicket().GetTitleKey().has_value();
+
         for (std::size_t i = 0; i < container.GetTitleMetadata().GetContentCount(); i++) {
-            if (container.GetTitleMetadata().GetContentTypeByIndex(static_cast<u16>(i)) &
-                FileSys::TMDContentTypeFlag::Encrypted) {
+            if ((container.GetTitleMetadata().GetContentTypeByIndex(static_cast<u16>(i)) &
+                 FileSys::TMDContentTypeFlag::Encrypted) &&
+                !title_key_available) {
                 LOG_ERROR(Service_AM, "File {} is encrypted! Aborting...", path);
                 return InstallStatus::ErrorEncrypted;
             }
@@ -979,8 +1026,8 @@ void Module::Interface::BeginImportProgram(Kernel::HLERequestContext& ctx) {
     // Create our CIAFile handle for the app to write to, and while the app writes
     // Citra will store contents out to sdmc/nand
     const FileSys::Path cia_path = {};
-    auto file =
-        std::make_shared<Service::FS::File>(std::make_unique<CIAFile>(media_type), cia_path);
+    auto file = std::make_shared<Service::FS::File>(
+        am->system, std::make_unique<CIAFile>(media_type), cia_path);
 
     am->cia_installing = true;
 
@@ -989,6 +1036,33 @@ void Module::Interface::BeginImportProgram(Kernel::HLERequestContext& ctx) {
     rb.PushCopyObjects(file->Connect());
 
     LOG_WARNING(Service_AM, "(STUBBED) media_type={}", static_cast<u32>(media_type));
+}
+
+void Module::Interface::BeginImportProgramTemporarily(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx, 0x0403, 0, 0); // 0x04030000
+
+    if (am->cia_installing) {
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(ResultCode(ErrCodes::CIACurrentlyInstalling, ErrorModule::AM,
+                           ErrorSummary::InvalidState, ErrorLevel::Permanent));
+        return;
+    }
+
+    // Note: This function should register the title in the temp_i.db database, but we can get away
+    // with not doing that because we traverse the file system to detect installed titles.
+    // Create our CIAFile handle for the app to write to, and while the app writes Citra will store
+    // contents out to sdmc/nand
+    const FileSys::Path cia_path = {};
+    auto file = std::make_shared<Service::FS::File>(
+        am->system, std::make_unique<CIAFile>(FS::MediaType::NAND), cia_path);
+
+    am->cia_installing = true;
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
+    rb.Push(RESULT_SUCCESS); // No error
+    rb.PushCopyObjects(file->Connect());
+
+    LOG_WARNING(Service_AM, "(STUBBED)");
 }
 
 void Module::Interface::EndImportProgram(Kernel::HLERequestContext& ctx) {
@@ -1002,7 +1076,68 @@ void Module::Interface::EndImportProgram(Kernel::HLERequestContext& ctx) {
     rb.Push(RESULT_SUCCESS);
 }
 
-ResultVal<std::shared_ptr<Service::FS::File>> GetFileFromSession(
+void Module::Interface::EndImportProgramWithoutCommit(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx, 0x0406, 0, 2); // 0x04060002
+    auto cia = rp.PopObject<Kernel::ClientSession>();
+
+    // Note: This function is basically a no-op for us since we don't use title.db or ticket.db
+    // files to keep track of installed titles.
+    am->ScanForAllTitles();
+
+    am->cia_installing = false;
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(RESULT_SUCCESS);
+}
+
+void Module::Interface::CommitImportPrograms(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx, 0x0407, 3, 2); // 0x040700C2
+    auto media_type = static_cast<Service::FS::MediaType>(rp.Pop<u8>());
+    u32 title_count = rp.Pop<u32>();
+    u8 database = rp.Pop<u8>();
+    auto buffer = rp.PopMappedBuffer();
+
+    // Note: This function is basically a no-op for us since we don't use title.db or ticket.db
+    // files to keep track of installed titles.
+    am->ScanForAllTitles();
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
+    rb.Push(RESULT_SUCCESS);
+    rb.PushMappedBuffer(buffer);
+}
+
+/// Wraps all File operations to allow adding an offset to them.
+class AMFileWrapper : public FileSys::FileBackend {
+public:
+    AMFileWrapper(std::shared_ptr<Service::FS::File> file, std::size_t offset, std::size_t size)
+        : file(std::move(file)), file_offset(offset), file_size(size) {}
+
+    ResultVal<std::size_t> Read(u64 offset, std::size_t length, u8* buffer) const override {
+        return file->backend->Read(offset + file_offset, length, buffer);
+    }
+
+    ResultVal<std::size_t> Write(u64 offset, std::size_t length, bool flush,
+                                 const u8* buffer) override {
+        return file->backend->Write(offset + file_offset, length, flush, buffer);
+    }
+
+    u64 GetSize() const override {
+        return file_size;
+    }
+    bool SetSize(u64 size) const override {
+        return false;
+    }
+    bool Close() const override {
+        return false;
+    }
+    void Flush() const override {}
+
+private:
+    std::shared_ptr<Service::FS::File> file;
+    std::size_t file_offset;
+    std::size_t file_size;
+};
+
+ResultVal<std::unique_ptr<AMFileWrapper>> GetFileFromSession(
     Kernel::SharedPtr<Kernel::ClientSession> file_session) {
     // Step up the chain from ClientSession->ServerSession and then
     // cast to File. For AM on 3DS, invalid handles actually hang the system.
@@ -1022,8 +1157,13 @@ ResultVal<std::shared_ptr<Service::FS::File>> GetFileFromSession(
         auto file = std::dynamic_pointer_cast<Service::FS::File>(server->hle_handler);
 
         // TODO(shinyquagsire23): This requires RTTI, use service calls directly instead?
-        if (file != nullptr)
-            return MakeResult<std::shared_ptr<Service::FS::File>>(file);
+        if (file != nullptr) {
+            // Grab the session file offset in case we were given a subfile opened with
+            // File::OpenSubFile
+            std::size_t offset = file->GetSessionFileOffset(server);
+            std::size_t size = file->GetSessionFileSize(server);
+            return MakeResult(std::make_unique<AMFileWrapper>(file, offset, size));
+        }
 
         LOG_ERROR(Service_AM, "Failed to cast handle to FSFile!");
         return Kernel::ERR_INVALID_HANDLE;
@@ -1047,9 +1187,8 @@ void Module::Interface::GetProgramInfoFromCia(Kernel::HLERequestContext& ctx) {
         return;
     }
 
-    auto file = file_res.Unwrap();
     FileSys::CIAContainer container;
-    if (container.Load(*file->backend) != Loader::ResultStatus::Success) {
+    if (container.Load(*file_res.Unwrap()) != Loader::ResultStatus::Success) {
         IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
         rb.Push(ResultCode(ErrCodes::InvalidCIAHeader, ErrorModule::AM,
                            ErrorSummary::InvalidArgument, ErrorLevel::Permanent));
@@ -1088,9 +1227,9 @@ void Module::Interface::GetSystemMenuDataFromCia(Kernel::HLERequestContext& ctx)
 
     std::size_t output_buffer_size = std::min(output_buffer.GetSize(), sizeof(Loader::SMDH));
 
-    auto file = file_res.Unwrap();
+    auto file = std::move(file_res.Unwrap());
     FileSys::CIAContainer container;
-    if (container.Load(*file->backend) != Loader::ResultStatus::Success) {
+    if (container.Load(*file) != Loader::ResultStatus::Success) {
         IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
         rb.Push(ResultCode(ErrCodes::InvalidCIAHeader, ErrorModule::AM,
                            ErrorSummary::InvalidArgument, ErrorLevel::Permanent));
@@ -1100,8 +1239,8 @@ void Module::Interface::GetSystemMenuDataFromCia(Kernel::HLERequestContext& ctx)
     std::vector<u8> temp(output_buffer_size);
 
     //  Read from the Meta offset + 0x400 for the 0x36C0-large SMDH
-    auto read_result = file->backend->Read(
-        container.GetMetadataOffset() + FileSys::CIA_METADATA_SIZE, temp.size(), temp.data());
+    auto read_result = file->Read(container.GetMetadataOffset() + FileSys::CIA_METADATA_SIZE,
+                                  temp.size(), temp.data());
     if (read_result.Failed() || *read_result != temp.size()) {
         IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
         rb.Push(ResultCode(ErrCodes::InvalidCIAHeader, ErrorModule::AM,
@@ -1128,9 +1267,8 @@ void Module::Interface::GetDependencyListFromCia(Kernel::HLERequestContext& ctx)
         return;
     }
 
-    auto file = file_res.Unwrap();
     FileSys::CIAContainer container;
-    if (container.Load(*file->backend) != Loader::ResultStatus::Success) {
+    if (container.Load(*file_res.Unwrap()) != Loader::ResultStatus::Success) {
         IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
         rb.Push(ResultCode(ErrCodes::InvalidCIAHeader, ErrorModule::AM,
                            ErrorSummary::InvalidArgument, ErrorLevel::Permanent));
@@ -1156,9 +1294,8 @@ void Module::Interface::GetTransferSizeFromCia(Kernel::HLERequestContext& ctx) {
         return;
     }
 
-    auto file = file_res.Unwrap();
     FileSys::CIAContainer container;
-    if (container.Load(*file->backend) != Loader::ResultStatus::Success) {
+    if (container.Load(*file_res.Unwrap()) != Loader::ResultStatus::Success) {
         IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
         rb.Push(ResultCode(ErrCodes::InvalidCIAHeader, ErrorModule::AM,
                            ErrorSummary::InvalidArgument, ErrorLevel::Permanent));
@@ -1181,9 +1318,8 @@ void Module::Interface::GetCoreVersionFromCia(Kernel::HLERequestContext& ctx) {
         return;
     }
 
-    auto file = file_res.Unwrap();
     FileSys::CIAContainer container;
-    if (container.Load(*file->backend) != Loader::ResultStatus::Success) {
+    if (container.Load(*file_res.Unwrap()) != Loader::ResultStatus::Success) {
         IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
         rb.Push(ResultCode(ErrCodes::InvalidCIAHeader, ErrorModule::AM,
                            ErrorSummary::InvalidArgument, ErrorLevel::Permanent));
@@ -1207,9 +1343,8 @@ void Module::Interface::GetRequiredSizeFromCia(Kernel::HLERequestContext& ctx) {
         return;
     }
 
-    auto file = file_res.Unwrap();
     FileSys::CIAContainer container;
-    if (container.Load(*file->backend) != Loader::ResultStatus::Success) {
+    if (container.Load(*file_res.Unwrap()) != Loader::ResultStatus::Success) {
         IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
         rb.Push(ResultCode(ErrCodes::InvalidCIAHeader, ErrorModule::AM,
                            ErrorSummary::InvalidArgument, ErrorLevel::Permanent));
@@ -1244,6 +1379,14 @@ void Module::Interface::DeleteProgram(Kernel::HLERequestContext& ctx) {
         LOG_ERROR(Service_AM, "FileUtil::DeleteDirRecursively unexpectedly failed");
 }
 
+void Module::Interface::GetSystemUpdaterMutex(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx, 0x412, 0, 0); // 0x04120000
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
+    rb.Push(RESULT_SUCCESS);
+    rb.PushCopyObjects(am->system_updater_mutex);
+}
+
 void Module::Interface::GetMetaSizeFromCia(Kernel::HLERequestContext& ctx) {
     IPC::RequestParser rp(ctx, 0x0413, 0, 2); // 0x04130002
     auto cia = rp.PopObject<Kernel::ClientSession>();
@@ -1255,9 +1398,8 @@ void Module::Interface::GetMetaSizeFromCia(Kernel::HLERequestContext& ctx) {
         return;
     }
 
-    auto file = file_res.Unwrap();
     FileSys::CIAContainer container;
-    if (container.Load(*file->backend) != Loader::ResultStatus::Success) {
+    if (container.Load(*file_res.Unwrap()) != Loader::ResultStatus::Success) {
 
         IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
         rb.Push(ResultCode(ErrCodes::InvalidCIAHeader, ErrorModule::AM,
@@ -1287,9 +1429,9 @@ void Module::Interface::GetMetaDataFromCia(Kernel::HLERequestContext& ctx) {
     // Don't write beyond the actual static buffer size.
     output_size = std::min(static_cast<u32>(output_buffer.GetSize()), output_size);
 
-    auto file = file_res.Unwrap();
+    auto file = std::move(file_res.Unwrap());
     FileSys::CIAContainer container;
-    if (container.Load(*file->backend) != Loader::ResultStatus::Success) {
+    if (container.Load(*file) != Loader::ResultStatus::Success) {
         IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
         rb.Push(ResultCode(ErrCodes::InvalidCIAHeader, ErrorModule::AM,
                            ErrorSummary::InvalidArgument, ErrorLevel::Permanent));
@@ -1299,7 +1441,7 @@ void Module::Interface::GetMetaDataFromCia(Kernel::HLERequestContext& ctx) {
 
     //  Read from the Meta offset for the specified size
     std::vector<u8> temp(output_size);
-    auto read_result = file->backend->Read(container.GetMetadataOffset(), output_size, temp.data());
+    auto read_result = file->Read(container.GetMetadataOffset(), output_size, temp.data());
     if (read_result.Failed() || *read_result != output_size) {
         IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
         rb.Push(ResultCode(ErrCodes::InvalidCIAHeader, ErrorModule::AM,
@@ -1313,14 +1455,16 @@ void Module::Interface::GetMetaDataFromCia(Kernel::HLERequestContext& ctx) {
     rb.PushMappedBuffer(output_buffer);
 }
 
-Module::Module() {
+Module::Module(Core::System& system) : system(system) {
     ScanForAllTitles();
+    system_updater_mutex = system.Kernel().CreateMutex(false, "AM::SystemUpdaterMutex");
 }
 
 Module::~Module() = default;
 
-void InstallInterfaces(SM::ServiceManager& service_manager) {
-    auto am = std::make_shared<Module>();
+void InstallInterfaces(Core::System& system) {
+    auto& service_manager = system.ServiceManager();
+    auto am = std::make_shared<Module>(system);
     std::make_shared<AM_APP>(am)->InstallAsService(service_manager);
     std::make_shared<AM_NET>(am)->InstallAsService(service_manager);
     std::make_shared<AM_SYS>(am)->InstallAsService(service_manager);

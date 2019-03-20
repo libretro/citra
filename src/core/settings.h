@@ -5,8 +5,10 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <string>
 #include <unordered_map>
+#include <vector>
 #include "common/common_types.h"
 #include "core/hle/service/cam/cam.h"
 
@@ -24,6 +26,12 @@ enum class LayoutOption {
     SideScreen,
 };
 
+enum class MicInputType {
+    None,
+    Real,
+    Static,
+};
+
 namespace NativeButton {
 enum Values {
     A,
@@ -38,6 +46,8 @@ enum Values {
     R,
     Start,
     Select,
+    Debug,
+    Gpio14,
 
     ZL,
     ZR,
@@ -72,6 +82,8 @@ static const std::array<const char*, NumButtons> mapping = {{
     "button_r",
     "button_start",
     "button_select",
+    "button_debug",
+    "button_gpio14",
     "button_zl",
     "button_zr",
     "button_home",
@@ -92,11 +104,8 @@ static const std::array<const char*, NumAnalogs> mapping = {{
 }};
 } // namespace NativeAnalog
 
-struct Values {
-    // CheckNew3DS
-    bool is_new_3ds;
-
-    // Controls
+struct InputProfile {
+    std::string name;
     std::array<std::string, NativeButton::NumButtons> buttons;
     std::array<std::string, NativeAnalog::NumAnalogs> analogs;
     std::string motion_device;
@@ -104,6 +113,16 @@ struct Values {
     std::string udp_input_address;
     u16 udp_input_port;
     u8 udp_pad_index;
+};
+
+struct Values {
+    // CheckNew3DS
+    bool is_new_3ds;
+
+    // Controls
+    InputProfile current_input_profile;       ///< The current input profile
+    int current_input_profile_index;          ///< The current input profile index
+    std::vector<InputProfile> input_profiles; ///< The list of input profiles
 
     // Core
     bool use_cpu_jit;
@@ -117,13 +136,14 @@ struct Values {
     u64 init_time;
 
     // Renderer
+    bool use_gles;
     bool use_hw_renderer;
     bool use_hw_shader;
     bool shaders_accurate_gs;
     bool shaders_accurate_mul;
     bool use_shader_jit;
     u16 resolution_factor;
-    bool use_vsync;
+    bool vsync_enabled;
     bool use_frame_limit;
     u16 frame_limit;
 
@@ -144,13 +164,17 @@ struct Values {
     float bg_blue;
 
     bool toggle_3d;
-    u8 factor_3d;
+    std::atomic<u8> factor_3d;
 
     // Audio
+    bool enable_dsp_lle;
+    bool enable_dsp_lle_multithread;
     std::string sink_id;
     bool enable_audio_stretching;
     std::string audio_device_id;
     float volume;
+    MicInputType mic_input_type;
+    std::string mic_input_device;
 
     // Camera
     std::array<std::string, Service::CAM::NumCameras> camera_name;
@@ -176,4 +200,11 @@ static constexpr int REGION_VALUE_AUTO_SELECT = -1;
 
 void Apply();
 void LogSettings();
+
+// Input profiles
+void LoadProfile(int index);
+void SaveProfile(int index);
+void CreateProfile(std::string name);
+void DeleteProfile(int index);
+void RenameCurrentProfile(std::string new_name);
 } // namespace Settings

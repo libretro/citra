@@ -160,7 +160,7 @@ BreakpointMap breakpoints_write;
 } // Anonymous namespace
 
 static Kernel::Thread* FindThreadById(int id) {
-    const auto& threads = Kernel::GetThreadList();
+    const auto& threads = Core::System::GetInstance().Kernel().GetThreadManager().GetThreadList();
     for (auto& thread : threads) {
         if (thread->GetThreadId() == static_cast<u32>(id)) {
             return thread.get();
@@ -409,8 +409,13 @@ static void RemoveBreakpoint(BreakpointType type, VAddr addr) {
 
     LOG_DEBUG(Debug_GDBStub, "gdb: removed a breakpoint: {:08x} bytes at {:08x} of type {}",
               bp->second.len, bp->second.addr, static_cast<int>(type));
-    Memory::WriteBlock(bp->second.addr, bp->second.inst.data(), bp->second.inst.size());
-    Core::CPU().ClearInstructionCache();
+
+    if (type == BreakpointType::Execute) {
+        Core::System::GetInstance().Memory().WriteBlock(
+            *Core::System::GetInstance().Kernel().GetCurrentProcess(), bp->second.addr,
+            bp->second.inst.data(), bp->second.inst.size());
+        Core::CPU().ClearInstructionCache();
+    }
     p.erase(addr);
 }
 
@@ -535,7 +540,8 @@ static void HandleQuery() {
         SendReply(target_xml);
     } else if (strncmp(query, "fThreadInfo", strlen("fThreadInfo")) == 0) {
         std::string val = "m";
-        const auto& threads = Kernel::GetThreadList();
+        const auto& threads =
+            Core::System::GetInstance().Kernel().GetThreadManager().GetThreadList();
         for (const auto& thread : threads) {
             val += fmt::format("{:x},", thread->GetThreadId());
         }
@@ -547,7 +553,8 @@ static void HandleQuery() {
         std::string buffer;
         buffer += "l<?xml version=\"1.0\"?>";
         buffer += "<threads>";
-        const auto& threads = Kernel::GetThreadList();
+        const auto& threads =
+            Core::System::GetInstance().Kernel().GetThreadManager().GetThreadList();
         for (const auto& thread : threads) {
             buffer += fmt::format(R"*(<thread id="{:x}" name="Thread {:x}"></thread>)*",
                                   thread->GetThreadId(), thread->GetThreadId());
@@ -828,12 +835,14 @@ static void ReadMemory() {
         SendReply("E01");
     }
 
-    if (!Memory::IsValidVirtualAddress(addr)) {
+    if (!Memory::IsValidVirtualAddress(*Core::System::GetInstance().Kernel().GetCurrentProcess(),
+                                       addr)) {
         return SendReply("E00");
     }
 
     std::vector<u8> data(len);
-    Memory::ReadBlock(addr, data.data(), len);
+    Core::System::GetInstance().Memory().ReadBlock(
+        *Core::System::GetInstance().Kernel().GetCurrentProcess(), addr, data.data(), len);
 
     MemToGdbHex(reply, data.data(), len);
     reply[len * 2] = '\0';
@@ -850,14 +859,16 @@ static void WriteMemory() {
     auto len_pos = std::find(start_offset, command_buffer + command_length, ':');
     u32 len = HexToInt(start_offset, static_cast<u32>(len_pos - start_offset));
 
-    if (!Memory::IsValidVirtualAddress(addr)) {
+    if (!Memory::IsValidVirtualAddress(*Core::System::GetInstance().Kernel().GetCurrentProcess(),
+                                       addr)) {
         return SendReply("E00");
     }
 
     std::vector<u8> data(len);
 
     GdbHexToMem(data.data(), len_pos + 1, len);
-    Memory::WriteBlock(addr, data.data(), len);
+    Core::System::GetInstance().Memory().WriteBlock(
+        *Core::System::GetInstance().Kernel().GetCurrentProcess(), addr, data.data(), len);
     Core::CPU().ClearInstructionCache();
     SendReply("OK");
 }
@@ -881,7 +892,7 @@ static void Step() {
 }
 
 bool IsMemoryBreak() {
-    if (IsConnected()) {
+    if (!IsConnected()) {
         return false;
     }
 
@@ -910,10 +921,17 @@ static bool CommitBreakpoint(BreakpointType type, VAddr addr, u32 len) {
     breakpoint.active = true;
     breakpoint.addr = addr;
     breakpoint.len = len;
-    Memory::ReadBlock(addr, breakpoint.inst.data(), breakpoint.inst.size());
+    Core::System::GetInstance().Memory().ReadBlock(
+        *Core::System::GetInstance().Kernel().GetCurrentProcess(), addr, breakpoint.inst.data(),
+        breakpoint.inst.size());
+
     static constexpr std::array<u8, 4> btrap{0x70, 0x00, 0x20, 0xe1};
-    Memory::WriteBlock(addr, btrap.data(), btrap.size());
-    Core::CPU().ClearInstructionCache();
+    if (type == BreakpointType::Execute) {
+        Core::System::GetInstance().Memory().WriteBlock(
+            *Core::System::GetInstance().Kernel().GetCurrentProcess(), addr, btrap.data(),
+            btrap.size());
+        Core::CPU().ClearInstructionCache();
+    }
     p.insert({addr, breakpoint});
 
     LOG_DEBUG(Debug_GDBStub, "gdb: added {} breakpoint: {:08x} bytes at {:08x}\n",

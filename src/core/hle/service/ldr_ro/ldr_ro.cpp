@@ -108,37 +108,14 @@ void RO::Initialize(Kernel::HLERequestContext& ctx) {
 
     ResultCode result = RESULT_SUCCESS;
 
-    if (crs_buffer_ptr != crs_address) {
-        // TODO(wwylele): should be memory aliasing
-        std::shared_ptr<std::vector<u8>> crs_mem = std::make_shared<std::vector<u8>>(crs_size);
-        Memory::ReadBlock(crs_buffer_ptr, crs_mem->data(), crs_size);
-        result = process->vm_manager
-                     .MapMemoryBlock(crs_address, crs_mem, 0, crs_size, Kernel::MemoryState::Code)
-                     .Code();
-        if (result.IsError()) {
-            LOG_ERROR(Service_LDR, "Error mapping memory block {:08X}", result.raw);
-            rb.Push(result);
-            return;
-        }
-
-        result =
-            process->vm_manager.ReprotectRange(crs_address, crs_size, Kernel::VMAPermission::Read);
-        if (result.IsError()) {
-            LOG_ERROR(Service_LDR, "Error reprotecting memory block {:08X}", result.raw);
-            rb.Push(result);
-            return;
-        }
-
-        slot->memory_synchronizer.AddMemoryBlock(crs_address, crs_buffer_ptr, crs_size);
-    } else {
-        // Do nothing if buffer_ptr == address
-        // TODO(wwylele): verify this behaviour. This is only seen in the web browser app,
-        //     and the actual behaviour is unclear. "Do nothing" is probably an incorrect implement.
-        //     There is also a chance that another issue causes the app passing wrong arguments.
-        LOG_WARNING(Service_LDR, "crs_buffer_ptr == crs_address (0x{:08X})", crs_address);
+    result = process->Map(crs_address, crs_buffer_ptr, crs_size, Kernel::VMAPermission::Read, true);
+    if (result.IsError()) {
+        LOG_ERROR(Service_LDR, "Error mapping memory block {:08X}", result.raw);
+        rb.Push(result);
+        return;
     }
 
-    CROHelper crs(crs_address);
+    CROHelper crs(crs_address, *process, system.Memory(), system.CPU());
     crs.InitCRS();
 
     result = crs.Rebase(0, crs_size, 0, 0, 0, 0, true);
@@ -147,8 +124,6 @@ void RO::Initialize(Kernel::HLERequestContext& ctx) {
         rb.Push(result);
         return;
     }
-
-    slot->memory_synchronizer.SynchronizeOriginalMemory(*process);
 
     slot->loaded_crs = crs_address;
 
@@ -266,46 +241,21 @@ void RO::LoadCRO(Kernel::HLERequestContext& ctx, bool link_on_load_bug_fix) {
 
     ResultCode result = RESULT_SUCCESS;
 
-    if (cro_buffer_ptr != cro_address) {
-        // TODO(wwylele): should be memory aliasing
-        std::shared_ptr<std::vector<u8>> cro_mem = std::make_shared<std::vector<u8>>(cro_size);
-        Memory::ReadBlock(cro_buffer_ptr, cro_mem->data(), cro_size);
-        result = process->vm_manager
-                     .MapMemoryBlock(cro_address, cro_mem, 0, cro_size, Kernel::MemoryState::Code)
-                     .Code();
-        if (result.IsError()) {
-            LOG_ERROR(Service_LDR, "Error mapping memory block {:08X}", result.raw);
-            rb.Push(result);
-            rb.Push<u32>(0);
-            return;
-        }
-
-        result =
-            process->vm_manager.ReprotectRange(cro_address, cro_size, Kernel::VMAPermission::Read);
-        if (result.IsError()) {
-            LOG_ERROR(Service_LDR, "Error reprotecting memory block {:08X}", result.raw);
-            process->vm_manager.UnmapRange(cro_address, cro_size);
-            rb.Push(result);
-            rb.Push<u32>(0);
-            return;
-        }
-
-        slot->memory_synchronizer.AddMemoryBlock(cro_address, cro_buffer_ptr, cro_size);
-    } else {
-        // Do nothing if buffer_ptr == address
-        // TODO(wwylele): verify this behaviour.
-        //     This is derived from the case of LoadCRS with buffer_ptr==address,
-        //     and is never seen in any game. "Do nothing" is probably an incorrect implement.
-        //     There is also a chance that this case is just prohibited.
-        LOG_WARNING(Service_LDR, "cro_buffer_ptr == cro_address (0x{:08X})", cro_address);
+    result = process->Map(cro_address, cro_buffer_ptr, cro_size, Kernel::VMAPermission::Read, true);
+    if (result.IsError()) {
+        LOG_ERROR(Service_LDR, "Error mapping memory block {:08X}", result.raw);
+        rb.Push(result);
+        rb.Push<u32>(0);
+        return;
     }
 
-    CROHelper cro(cro_address);
+    CROHelper cro(cro_address, *process, system.Memory(), system.CPU());
 
     result = cro.VerifyHash(cro_size, crr_address);
     if (result.IsError()) {
         LOG_ERROR(Service_LDR, "Error verifying CRO in CRR {:08X}", result.raw);
-        process->vm_manager.UnmapRange(cro_address, cro_size);
+        process->Unmap(cro_address, cro_buffer_ptr, cro_size, Kernel::VMAPermission::ReadWrite,
+                       true);
         rb.Push(result);
         rb.Push<u32>(0);
         return;
@@ -315,7 +265,8 @@ void RO::LoadCRO(Kernel::HLERequestContext& ctx, bool link_on_load_bug_fix) {
                         bss_segment_address, bss_segment_size, false);
     if (result.IsError()) {
         LOG_ERROR(Service_LDR, "Error rebasing CRO {:08X}", result.raw);
-        process->vm_manager.UnmapRange(cro_address, cro_size);
+        process->Unmap(cro_address, cro_buffer_ptr, cro_size, Kernel::VMAPermission::ReadWrite,
+                       true);
         rb.Push(result);
         rb.Push<u32>(0);
         return;
@@ -324,7 +275,8 @@ void RO::LoadCRO(Kernel::HLERequestContext& ctx, bool link_on_load_bug_fix) {
     result = cro.Link(slot->loaded_crs, link_on_load_bug_fix);
     if (result.IsError()) {
         LOG_ERROR(Service_LDR, "Error linking CRO {:08X}", result.raw);
-        process->vm_manager.UnmapRange(cro_address, cro_size);
+        process->Unmap(cro_address, cro_buffer_ptr, cro_size, Kernel::VMAPermission::ReadWrite,
+                       true);
         rb.Push(result);
         rb.Push<u32>(0);
         return;
@@ -334,41 +286,34 @@ void RO::LoadCRO(Kernel::HLERequestContext& ctx, bool link_on_load_bug_fix) {
 
     u32 fix_size = cro.Fix(fix_level);
 
-    slot->memory_synchronizer.SynchronizeOriginalMemory(*process);
-
-    // TODO(wwylele): verify the behaviour when buffer_ptr == address
-    if (cro_buffer_ptr != cro_address) {
-        if (fix_size != cro_size) {
-            result = process->vm_manager.UnmapRange(cro_address + fix_size, cro_size - fix_size);
-            if (result.IsError()) {
-                LOG_ERROR(Service_LDR, "Error unmapping memory block {:08X}", result.raw);
-                process->vm_manager.UnmapRange(cro_address, cro_size);
-                rb.Push(result);
-                rb.Push<u32>(0);
-                return;
-            }
-        }
-
-        // Changes the block size
-        slot->memory_synchronizer.ResizeMemoryBlock(cro_address, cro_buffer_ptr, fix_size);
-    }
-
-    VAddr exe_begin;
-    u32 exe_size;
-    std::tie(exe_begin, exe_size) = cro.GetExecutablePages();
-    if (exe_begin) {
-        result = process->vm_manager.ReprotectRange(exe_begin, exe_size,
-                                                    Kernel::VMAPermission::ReadExecute);
+    if (fix_size != cro_size) {
+        result = process->Unmap(cro_address + fix_size, cro_buffer_ptr + fix_size,
+                                cro_size - fix_size, Kernel::VMAPermission::ReadWrite, true);
         if (result.IsError()) {
-            LOG_ERROR(Service_LDR, "Error reprotecting memory block {:08X}", result.raw);
-            process->vm_manager.UnmapRange(cro_address, fix_size);
+            LOG_ERROR(Service_LDR, "Error unmapping memory block {:08X}", result.raw);
+            process->Unmap(cro_address, cro_buffer_ptr, cro_size, Kernel::VMAPermission::ReadWrite,
+                           true);
             rb.Push(result);
             rb.Push<u32>(0);
             return;
         }
     }
 
-    Core::CPU().InvalidateCacheRange(cro_address, cro_size);
+    auto [exe_begin, exe_size] = cro.GetExecutablePages();
+    if (exe_begin) {
+        result = process->vm_manager.ReprotectRange(exe_begin, exe_size,
+                                                    Kernel::VMAPermission::ReadExecute);
+        if (result.IsError()) {
+            LOG_ERROR(Service_LDR, "Error reprotecting memory block {:08X}", result.raw);
+            process->Unmap(cro_address, cro_buffer_ptr, cro_size, Kernel::VMAPermission::ReadWrite,
+                           true);
+            rb.Push(result);
+            rb.Push<u32>(0);
+            return;
+        }
+    }
+
+    system.CPU().InvalidateCacheRange(cro_address, cro_size);
 
     LOG_INFO(Service_LDR, "CRO \"{}\" loaded at 0x{:08X}, fixed_end=0x{:08X}", cro.ModuleName(),
              cro_address, cro_address + fix_size);
@@ -386,7 +331,7 @@ void RO::UnloadCRO(Kernel::HLERequestContext& ctx) {
     LOG_DEBUG(Service_LDR, "called, cro_address=0x{:08X}, zero={}, cro_buffer_ptr=0x{:08X}",
               cro_address, zero, cro_buffer_ptr);
 
-    CROHelper cro(cro_address);
+    CROHelper cro(cro_address, *process, system.Memory(), system.CPU());
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
 
@@ -435,18 +380,13 @@ void RO::UnloadCRO(Kernel::HLERequestContext& ctx) {
 
     cro.Unrebase(false);
 
-    slot->memory_synchronizer.SynchronizeOriginalMemory(*process);
-
-    // TODO(wwylele): verify the behaviour when buffer_ptr == address
-    if (cro_address != cro_buffer_ptr) {
-        result = process->vm_manager.UnmapRange(cro_address, fixed_size);
-        if (result.IsError()) {
-            LOG_ERROR(Service_LDR, "Error unmapping CRO {:08X}", result.raw);
-        }
-        slot->memory_synchronizer.RemoveMemoryBlock(cro_address, cro_buffer_ptr);
+    result = process->Unmap(cro_address, cro_buffer_ptr, fixed_size,
+                            Kernel::VMAPermission::ReadWrite, true);
+    if (result.IsError()) {
+        LOG_ERROR(Service_LDR, "Error unmapping CRO {:08X}", result.raw);
     }
 
-    Core::CPU().InvalidateCacheRange(cro_address, fixed_size);
+    system.CPU().InvalidateCacheRange(cro_address, fixed_size);
 
     rb.Push(result);
 }
@@ -458,7 +398,7 @@ void RO::LinkCRO(Kernel::HLERequestContext& ctx) {
 
     LOG_DEBUG(Service_LDR, "called, cro_address=0x{:08X}", cro_address);
 
-    CROHelper cro(cro_address);
+    CROHelper cro(cro_address, *process, system.Memory(), system.CPU());
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
 
@@ -488,8 +428,6 @@ void RO::LinkCRO(Kernel::HLERequestContext& ctx) {
         LOG_ERROR(Service_LDR, "Error linking CRO {:08X}", result.raw);
     }
 
-    slot->memory_synchronizer.SynchronizeOriginalMemory(*process);
-
     rb.Push(result);
 }
 
@@ -500,7 +438,7 @@ void RO::UnlinkCRO(Kernel::HLERequestContext& ctx) {
 
     LOG_DEBUG(Service_LDR, "called, cro_address=0x{:08X}", cro_address);
 
-    CROHelper cro(cro_address);
+    CROHelper cro(cro_address, *process, system.Memory(), system.CPU());
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
 
@@ -530,8 +468,6 @@ void RO::UnlinkCRO(Kernel::HLERequestContext& ctx) {
         LOG_ERROR(Service_LDR, "Error unlinking CRO {:08X}", result.raw);
     }
 
-    slot->memory_synchronizer.SynchronizeOriginalMemory(*process);
-
     rb.Push(result);
 }
 
@@ -551,27 +487,22 @@ void RO::Shutdown(Kernel::HLERequestContext& ctx) {
         return;
     }
 
-    CROHelper crs(slot->loaded_crs);
+    CROHelper crs(slot->loaded_crs, *process, system.Memory(), system.CPU());
     crs.Unrebase(true);
-
-    slot->memory_synchronizer.SynchronizeOriginalMemory(*process);
 
     ResultCode result = RESULT_SUCCESS;
 
-    // TODO(wwylele): verify the behaviour when buffer_ptr == address
-    if (slot->loaded_crs != crs_buffer_ptr) {
-        result = process->vm_manager.UnmapRange(slot->loaded_crs, crs.GetFileSize());
-        if (result.IsError()) {
-            LOG_ERROR(Service_LDR, "Error unmapping CRS {:08X}", result.raw);
-        }
-        slot->memory_synchronizer.RemoveMemoryBlock(slot->loaded_crs, crs_buffer_ptr);
+    result = process->Unmap(slot->loaded_crs, crs_buffer_ptr, crs.GetFileSize(),
+                            Kernel::VMAPermission::ReadWrite, true);
+    if (result.IsError()) {
+        LOG_ERROR(Service_LDR, "Error unmapping CRS {:08X}", result.raw);
     }
 
     slot->loaded_crs = 0;
     rb.Push(result);
 }
 
-RO::RO() : ServiceFramework("ldr:ro", 2) {
+RO::RO(Core::System& system) : ServiceFramework("ldr:ro", 2), system(system) {
     static const FunctionInfo functions[] = {
         {0x000100C2, &RO::Initialize, "Initialize"},
         {0x00020082, &RO::LoadCRR, "LoadCRR"},
@@ -586,8 +517,9 @@ RO::RO() : ServiceFramework("ldr:ro", 2) {
     RegisterHandlers(functions);
 }
 
-void InstallInterfaces(SM::ServiceManager& service_manager) {
-    std::make_shared<RO>()->InstallAsService(service_manager);
+void InstallInterfaces(Core::System& system) {
+    auto& service_manager = system.ServiceManager();
+    std::make_shared<RO>(system)->InstallAsService(service_manager);
 }
 
 } // namespace Service::LDR

@@ -7,10 +7,12 @@
 #include <memory>
 #include <cryptopp/aes.h>
 #include <cryptopp/modes.h>
+#include <cryptopp/sha.h>
 #include "common/common_types.h"
 #include "common/logging/log.h"
 #include "core/core.h"
 #include "core/file_sys/ncch_container.h"
+#include "core/file_sys/seed_db.h"
 #include "core/hw/aes/key.h"
 #include "core/loader/loader.h"
 
@@ -21,6 +23,53 @@ namespace FileSys {
 
 static const int kMaxSections = 8;   ///< Maximum number of sections (files) in an ExeFs
 static const int kBlockSize = 0x200; ///< Size of ExeFS blocks (in bytes)
+
+/**
+ * Attempts to patch a buffer using an IPS
+ * @param ips Vector of the patches to apply
+ * @param buffer Vector to patch data into
+ */
+static void ApplyIPS(std::vector<u8>& ips, std::vector<u8>& buffer) {
+    u32 cursor = 5;
+    u32 patch_length = ips.size() - 3;
+    std::string ips_header(ips.begin(), ips.begin() + 5);
+
+    if (ips_header != "PATCH") {
+        LOG_INFO(Service_FS, "Attempted to load invalid IPS");
+        return;
+    }
+
+    while (cursor < patch_length) {
+        std::string eof_check(ips.begin() + cursor, ips.begin() + cursor + 3);
+
+        if (eof_check == "EOF")
+            return;
+
+        u32 offset = ips[cursor] << 16 | ips[cursor + 1] << 8 | ips[cursor + 2];
+        std::size_t length = ips[cursor + 3] << 8 | ips[cursor + 4];
+
+        // check for an rle record
+        if (length == 0) {
+            length = ips[cursor + 5] << 8 | ips[cursor + 6];
+
+            if (buffer.size() < offset + length)
+                return;
+
+            for (u32 i = 0; i < length; ++i)
+                buffer[offset + i] = ips[cursor + 7];
+
+            cursor += 8;
+
+            continue;
+        }
+
+        if (buffer.size() < offset + length)
+            return;
+
+        std::memcpy(&buffer[offset], &ips[cursor + 5], length);
+        cursor += length + 5;
+    }
+}
 
 /**
  * Get the decompressed size of an LZSS compressed ExeFS file
@@ -166,9 +215,21 @@ Loader::ResultStatus NCCHContainer::Load() {
                 if (!ncch_header.seed_crypto) {
                     key_y_secondary = key_y_primary;
                 } else {
-                    // Seed crypto is unimplemented.
-                    LOG_ERROR(Service_FS, "Unsupported seed crypto");
-                    failed_to_decrypt = true;
+                    auto opt{FileSys::GetSeed(ncch_header.program_id)};
+                    if (!opt.has_value()) {
+                        LOG_ERROR(Service_FS, "Seed for program {:016X} not found",
+                                  ncch_header.program_id);
+                        failed_to_decrypt = true;
+                    } else {
+                        auto seed{*opt};
+                        std::array<u8, 32> input;
+                        std::memcpy(input.data(), key_y_primary.data(), key_y_primary.size());
+                        std::memcpy(input.data() + key_y_primary.size(), seed.data(), seed.size());
+                        CryptoPP::SHA256 sha;
+                        std::array<u8, CryptoPP::SHA256::DIGESTSIZE> hash;
+                        sha.CalculateDigest(hash.data(), input.data(), input.size());
+                        std::memcpy(key_y_secondary.data(), hash.data(), key_y_secondary.size());
+                    }
                 }
 
                 SetKeyY(KeySlotID::NCCHSecure1, key_y_primary);
@@ -469,6 +530,21 @@ Loader::ResultStatus NCCHContainer::LoadSectionExeFS(const char* name, std::vect
                     dec.ProcessData(&buffer[0], &buffer[0], section.size);
                 }
             }
+
+            std::string override_ips = filepath + ".exefsdir/code.ips";
+
+            if (FileUtil::Exists(override_ips) && strcmp(name, ".code") == 0) {
+                FileUtil::IOFile ips_file(override_ips, "rb");
+                std::size_t ips_file_size = ips_file.GetSize();
+                std::vector<u8> ips(ips_file_size);
+
+                if (ips_file.IsOpen() &&
+                    ips_file.ReadBytes(&ips[0], ips_file_size) == ips_file_size) {
+                    LOG_INFO(Service_FS, "File {} patching code.bin", override_ips);
+                    ApplyIPS(ips, buffer);
+                }
+            }
+
             return Loader::ResultStatus::Success;
         }
     }
@@ -573,6 +649,41 @@ Loader::ResultStatus NCCHContainer::ReadProgramId(u64_le& program_id) {
         return Loader::ResultStatus::ErrorNotUsed;
 
     program_id = ncch_header.program_id;
+    return Loader::ResultStatus::Success;
+}
+
+Loader::ResultStatus NCCHContainer::ReadExtdataId(u64& extdata_id) {
+    Loader::ResultStatus result = Load();
+    if (result != Loader::ResultStatus::Success)
+        return result;
+
+    if (!has_exheader)
+        return Loader::ResultStatus::ErrorNotUsed;
+
+    if (exheader_header.arm11_system_local_caps.storage_info.other_attributes >> 1) {
+        // Using extended save data access
+        // There would be multiple possible extdata IDs in this case. The best we can do for now is
+        // guessing that the first one would be the main save.
+        const std::array<u64, 6> extdata_ids{{
+            exheader_header.arm11_system_local_caps.storage_info.extdata_id0.Value(),
+            exheader_header.arm11_system_local_caps.storage_info.extdata_id1.Value(),
+            exheader_header.arm11_system_local_caps.storage_info.extdata_id2.Value(),
+            exheader_header.arm11_system_local_caps.storage_info.extdata_id3.Value(),
+            exheader_header.arm11_system_local_caps.storage_info.extdata_id4.Value(),
+            exheader_header.arm11_system_local_caps.storage_info.extdata_id5.Value(),
+        }};
+        for (u64 id : extdata_ids) {
+            if (id) {
+                // Found a non-zero ID, use it
+                extdata_id = id;
+                return Loader::ResultStatus::Success;
+            }
+        }
+
+        return Loader::ResultStatus::ErrorNotUsed;
+    }
+
+    extdata_id = exheader_header.arm11_system_local_caps.storage_info.ext_save_data_id;
     return Loader::ResultStatus::Success;
 }
 

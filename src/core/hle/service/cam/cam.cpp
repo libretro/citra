@@ -5,6 +5,7 @@
 #include <algorithm>
 #include "common/bit_set.h"
 #include "common/logging/log.h"
+#include "core/core.h"
 #include "core/core_timing.h"
 #include "core/frontend/camera/factory.h"
 #include "core/hle/ipc.h"
@@ -20,8 +21,6 @@
 #include "core/settings.h"
 
 namespace Service::CAM {
-
-static std::weak_ptr<Module> current_cam;
 
 // built-in resolution parameters
 constexpr std::array<Resolution, 8> PRESET_RESOLUTION{{
@@ -114,7 +113,7 @@ void Module::CompletionEventCallBack(u64 port_id, s64) {
             if (copy_length <= 0) {
                 break;
             }
-            Memory::WriteBlock(*port.dest_process, dest_ptr, src_ptr, copy_length);
+            system.Memory().WriteBlock(*port.dest_process, dest_ptr, src_ptr, copy_length);
             dest_ptr += copy_length;
             dest_size_left -= copy_length;
             src_ptr += original_width;
@@ -126,8 +125,8 @@ void Module::CompletionEventCallBack(u64 port_id, s64) {
             LOG_ERROR(Service_CAM, "The destination size ({}) doesn't match the source ({})!",
                       port.dest_size, buffer_size);
         }
-        Memory::WriteBlock(*port.dest_process, port.dest, buffer.data(),
-                           std::min<std::size_t>(port.dest_size, buffer_size));
+        system.Memory().WriteBlock(*port.dest_process, port.dest, buffer.data(),
+                                   std::min<std::size_t>(port.dest_size, buffer_size));
     }
 
     port.is_receiving = false;
@@ -152,7 +151,7 @@ void Module::StartReceiving(int port_id) {
 
     // schedules a completion event according to the frame rate. The event will block on the
     // capture task if it is not finished within the expected time
-    CoreTiming::ScheduleEvent(
+    system.CoreTiming().ScheduleEvent(
         msToCycles(LATENCY_BY_FRAME_RATE[static_cast<int>(camera.frame_rate)]),
         completion_event_callback, port_id);
 }
@@ -161,7 +160,7 @@ void Module::CancelReceiving(int port_id) {
     if (!ports[port_id].is_receiving)
         return;
     LOG_WARNING(Service_CAM, "tries to cancel an ongoing receiving process.");
-    CoreTiming::UnscheduleEvent(completion_event_callback, port_id);
+    system.CoreTiming().UnscheduleEvent(completion_event_callback, port_id);
     ports[port_id].capture_result.wait();
     ports[port_id].is_receiving = false;
 }
@@ -198,6 +197,10 @@ Module::Interface::Interface(std::shared_ptr<Module> cam, const char* name, u32 
     : ServiceFramework(name, max_session), cam(std::move(cam)) {}
 
 Module::Interface::~Interface() = default;
+
+std::shared_ptr<Module> Module::Interface::GetModule() const {
+    return cam;
+}
 
 void Module::Interface::StartCapture(Kernel::HLERequestContext& ctx) {
     IPC::RequestParser rp(ctx, 0x01, 1, 0);
@@ -1016,16 +1019,17 @@ void Module::Interface::DriverFinalize(Kernel::HLERequestContext& ctx) {
     LOG_DEBUG(Service_CAM, "called");
 }
 
-Module::Module() {
+Module::Module(Core::System& system) : system(system) {
     using namespace Kernel;
     for (PortConfig& port : ports) {
-        port.completion_event = Event::Create(ResetType::Sticky, "CAM::completion_event");
+        port.completion_event =
+            system.Kernel().CreateEvent(ResetType::Sticky, "CAM::completion_event");
         port.buffer_error_interrupt_event =
-            Event::Create(ResetType::OneShot, "CAM::buffer_error_interrupt_event");
+            system.Kernel().CreateEvent(ResetType::OneShot, "CAM::buffer_error_interrupt_event");
         port.vsync_interrupt_event =
-            Event::Create(ResetType::OneShot, "CAM::vsync_interrupt_event");
+            system.Kernel().CreateEvent(ResetType::OneShot, "CAM::vsync_interrupt_event");
     }
-    completion_event_callback = CoreTiming::RegisterEvent(
+    completion_event_callback = system.CoreTiming().RegisterEvent(
         "CAM::CompletionEventCallBack",
         [this](u64 userdata, s64 cycles_late) { CompletionEventCallBack(userdata, cycles_late); });
 }
@@ -1049,14 +1053,16 @@ void Module::LoadCameraImplementation(CameraConfig& camera, int camera_id) {
     camera.impl->SetResolution(camera.contexts[0].resolution);
 }
 
-void ReloadCameraDevices() {
-    if (auto cam = current_cam.lock())
-        cam->ReloadCameraDevices();
+std::shared_ptr<Module> GetModule(Core::System& system) {
+    auto cam = system.ServiceManager().GetService<Service::CAM::Module::Interface>("cam:u");
+    if (!cam)
+        return nullptr;
+    return cam->GetModule();
 }
 
-void InstallInterfaces(SM::ServiceManager& service_manager) {
-    auto cam = std::make_shared<Module>();
-    current_cam = cam;
+void InstallInterfaces(Core::System& system) {
+    auto& service_manager = system.ServiceManager();
+    auto cam = std::make_shared<Module>(system);
 
     std::make_shared<CAM_U>(cam)->InstallAsService(service_manager);
     std::make_shared<CAM_S>(cam)->InstallAsService(service_manager);

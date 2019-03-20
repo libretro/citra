@@ -3,12 +3,15 @@
 // Refer to the license.txt file included.
 
 #include <algorithm>
+#include <tuple>
 #include <cryptopp/osrng.h>
 #include <cryptopp/sha.h>
+#include "common/common_paths.h"
 #include "common/file_util.h"
 #include "common/logging/log.h"
 #include "common/string_util.h"
 #include "common/swap.h"
+#include "core/core.h"
 #include "core/file_sys/archive_systemsavedata.h"
 #include "core/file_sys/errors.h"
 #include "core/file_sys/file_backend.h"
@@ -111,14 +114,6 @@ static const std::vector<u8> cfg_system_savedata_id = {
     0x00, 0x00, 0x00, 0x00, 0x17, 0x00, 0x01, 0x00,
 };
 
-static std::weak_ptr<Module> current_cfg;
-
-std::shared_ptr<Module> GetCurrentModule() {
-    auto cfg = current_cfg.lock();
-    ASSERT_MSG(cfg, "No CFG module running!");
-    return cfg;
-}
-
 Module::Interface::Interface(std::shared_ptr<Module> cfg, const char* name, u32 max_session)
     : ServiceFramework(name, max_session), cfg(std::move(cfg)) {}
 
@@ -140,6 +135,10 @@ void Module::Interface::GetCountryCodeString(Kernel::HLERequestContext& ctx) {
     rb.Push(RESULT_SUCCESS);
     // the real CFG service copies only three bytes (including the null-terminator) here
     rb.Push<u32>(country_codes[country_code_id]);
+}
+
+std::shared_ptr<Module> Module::Interface::Interface::GetModule() const {
+    return cfg;
 }
 
 void Module::Interface::GetCountryCodeID(Kernel::HLERequestContext& ctx) {
@@ -388,7 +387,7 @@ ResultCode Module::CreateConfigInfoBlk(u32 block_id, u16 size, u16 flags, const 
 
 ResultCode Module::DeleteConfigNANDSaveFile() {
     FileSys::Path path("/config");
-    return Service::FS::DeleteFileFromArchive(cfg_system_save_data_archive, path);
+    return cfg_system_save_data_archive->DeleteFile(path);
 }
 
 ResultCode Module::UpdateConfigNANDSavegame() {
@@ -398,11 +397,11 @@ ResultCode Module::UpdateConfigNANDSavegame() {
 
     FileSys::Path path("/config");
 
-    auto config_result = Service::FS::OpenFileFromArchive(cfg_system_save_data_archive, path, mode);
+    auto config_result = cfg_system_save_data_archive->OpenFile(path, mode);
     ASSERT_MSG(config_result.Succeeded(), "could not open file");
 
     auto config = std::move(config_result).Unwrap();
-    config->backend->Write(0, CONFIG_SAVEFILE_SIZE, 1, cfg_config_file_buffer.data());
+    config->Write(0, CONFIG_SAVEFILE_SIZE, 1, cfg_config_file_buffer.data());
 
     return RESULT_SUCCESS;
 }
@@ -527,36 +526,36 @@ ResultCode Module::FormatConfig() {
 }
 
 ResultCode Module::LoadConfigNANDSaveFile() {
+    std::string nand_directory = FileUtil::GetUserPath(FileUtil::UserPath::NANDDir);
+    FileSys::ArchiveFactory_SystemSaveData systemsavedata_factory(nand_directory);
+
     // Open the SystemSaveData archive 0x00010017
     FileSys::Path archive_path(cfg_system_savedata_id);
-    auto archive_result =
-        Service::FS::OpenArchive(Service::FS::ArchiveIdCode::SystemSaveData, archive_path);
+    auto archive_result = systemsavedata_factory.Open(archive_path, 0);
 
     // If the archive didn't exist, create the files inside
     if (archive_result.Code() == FileSys::ERR_NOT_FORMATTED) {
         // Format the archive to create the directories
-        Service::FS::FormatArchive(Service::FS::ArchiveIdCode::SystemSaveData,
-                                   FileSys::ArchiveFormatInfo(), archive_path);
+        systemsavedata_factory.Format(archive_path, FileSys::ArchiveFormatInfo(), 0);
 
         // Open it again to get a valid archive now that the folder exists
-        archive_result =
-            Service::FS::OpenArchive(Service::FS::ArchiveIdCode::SystemSaveData, archive_path);
+        cfg_system_save_data_archive = systemsavedata_factory.Open(archive_path, 0).Unwrap();
+    } else {
+        ASSERT_MSG(archive_result.Succeeded(), "Could not open the CFG SystemSaveData archive!");
+
+        cfg_system_save_data_archive = std::move(archive_result).Unwrap();
     }
-
-    ASSERT_MSG(archive_result.Succeeded(), "Could not open the CFG SystemSaveData archive!");
-
-    cfg_system_save_data_archive = *archive_result;
 
     FileSys::Path config_path("/config");
     FileSys::Mode open_mode = {};
     open_mode.read_flag.Assign(1);
 
-    auto config_result = Service::FS::OpenFileFromArchive(*archive_result, config_path, open_mode);
+    auto config_result = cfg_system_save_data_archive->OpenFile(config_path, open_mode);
 
     // Read the file if it already exists
     if (config_result.Succeeded()) {
         auto config = std::move(config_result).Unwrap();
-        config->backend->Read(0, CONFIG_SAVEFILE_SIZE, cfg_config_file_buffer.data());
+        config->Read(0, CONFIG_SAVEFILE_SIZE, cfg_config_file_buffer.data());
         return RESULT_SUCCESS;
     }
 
@@ -570,7 +569,8 @@ Module::Module() {
 Module::~Module() = default;
 
 /// Checks if the language is available in the chosen region, and returns a proper one
-static SystemLanguage AdjustLanguageInfoBlock(u32 region, SystemLanguage language) {
+static std::tuple<u32 /*region*/, SystemLanguage> AdjustLanguageInfoBlock(
+    const std::vector<u32>& region_code, SystemLanguage language) {
     static const std::array<std::vector<SystemLanguage>, 7> region_languages{{
         // JPN
         {LANGUAGE_JP},
@@ -589,21 +589,28 @@ static SystemLanguage AdjustLanguageInfoBlock(u32 region, SystemLanguage languag
         // TWN
         {LANGUAGE_TW},
     }};
-    const auto& available = region_languages[region];
-    if (std::find(available.begin(), available.end(), language) == available.end()) {
-        return available[0];
+    // Check if any available region supports the languages
+    for (u32 region : region_code) {
+        const auto& available = region_languages[region];
+        if (std::find(available.begin(), available.end(), language) != available.end()) {
+            // found a proper region, so return this region - language pair
+            return {region, language};
+        }
     }
-    return language;
+    // The language is not available in any available region, so default to the first region and
+    // language
+    u32 default_region = region_code[0];
+    return {default_region, region_languages[default_region][0]};
 }
 
-void Module::SetPreferredRegionCode(u32 region_code) {
-    preferred_region_code = region_code;
+void Module::SetPreferredRegionCodes(const std::vector<u32>& region_codes) {
+    const SystemLanguage current_language = GetSystemLanguage();
+    auto [region, adjusted_language] = AdjustLanguageInfoBlock(region_codes, current_language);
+
+    preferred_region_code = region;
     LOG_INFO(Service_CFG, "Preferred region code set to {}", preferred_region_code);
 
     if (Settings::values.region_value == Settings::REGION_VALUE_AUTO_SELECT) {
-        const SystemLanguage current_language = GetSystemLanguage();
-        const SystemLanguage adjusted_language =
-            AdjustLanguageInfoBlock(region_code, current_language);
         if (current_language != adjusted_language) {
             LOG_WARNING(Service_CFG, "System language {} does not fit the region. Adjusted to {}",
                         static_cast<int>(current_language), static_cast<int>(adjusted_language));
@@ -711,13 +718,37 @@ u64 Module::GetConsoleUniqueId() {
     return console_id_le;
 }
 
-void InstallInterfaces(SM::ServiceManager& service_manager) {
+std::shared_ptr<Module> GetModule(Core::System& system) {
+    auto cfg = system.ServiceManager().GetService<Service::CFG::Module::Interface>("cfg:u");
+    if (!cfg)
+        return nullptr;
+    return cfg->GetModule();
+}
+
+void InstallInterfaces(Core::System& system) {
+    auto& service_manager = system.ServiceManager();
     auto cfg = std::make_shared<Module>();
     std::make_shared<CFG_I>(cfg)->InstallAsService(service_manager);
     std::make_shared<CFG_S>(cfg)->InstallAsService(service_manager);
     std::make_shared<CFG_U>(cfg)->InstallAsService(service_manager);
     std::make_shared<CFG_NOR>()->InstallAsService(service_manager);
-    current_cfg = cfg;
+}
+
+std::string GetConsoleIdHash(Core::System& system) {
+    u64_le console_id{};
+    std::array<u8, sizeof(console_id)> buffer;
+    if (system.IsPoweredOn()) {
+        auto cfg = GetModule(system);
+        ASSERT_MSG(cfg, "CFG Module missing!");
+        console_id = cfg->GetConsoleUniqueId();
+    } else {
+        console_id = std::make_unique<Service::CFG::Module>()->GetConsoleUniqueId();
+    }
+    std::memcpy(buffer.data(), &console_id, sizeof(console_id));
+
+    std::array<u8, CryptoPP::SHA256::DIGESTSIZE> hash;
+    CryptoPP::SHA256().CalculateDigest(hash.data(), buffer.data(), sizeof(buffer));
+    return fmt::format("{:02x}", fmt::join(hash.begin(), hash.end(), ""));
 }
 
 } // namespace Service::CFG

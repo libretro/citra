@@ -2,6 +2,7 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include "core/core.h"
 #include "core/core_timing.h"
 #include "core/hle/ipc_helpers.h"
 #include "core/hle/kernel/event.h"
@@ -34,11 +35,11 @@ static_assert(sizeof(SharedMem) == 0x98, "SharedMem has wrong size!");
 
 void IR_RST::LoadInputDevices() {
     zl_button = Input::CreateDevice<Input::ButtonDevice>(
-        Settings::values.buttons[Settings::NativeButton::ZL]);
+        Settings::values.current_input_profile.buttons[Settings::NativeButton::ZL]);
     zr_button = Input::CreateDevice<Input::ButtonDevice>(
-        Settings::values.buttons[Settings::NativeButton::ZR]);
+        Settings::values.current_input_profile.buttons[Settings::NativeButton::ZR]);
     c_stick = Input::CreateDevice<Input::AnalogDevice>(
-        Settings::values.analogs[Settings::NativeAnalog::CStick]);
+        Settings::values.current_input_profile.analogs[Settings::NativeAnalog::CStick]);
 }
 
 void IR_RST::UnloadInputDevices() {
@@ -99,13 +100,13 @@ void IR_RST::UpdateCallback(u64 userdata, s64 cycles_late) {
     // If we just updated index 0, provide a new timestamp
     if (mem->index == 0) {
         mem->index_reset_ticks_previous = mem->index_reset_ticks;
-        mem->index_reset_ticks = CoreTiming::GetTicks();
+        mem->index_reset_ticks = system.CoreTiming().GetTicks();
     }
 
     update_event->Signal();
 
     // Reschedule recurrent event
-    CoreTiming::ScheduleEvent(msToCycles(update_period) - cycles_late, update_callback_id);
+    system.CoreTiming().ScheduleEvent(msToCycles(update_period) - cycles_late, update_callback_id);
 }
 
 void IR_RST::GetHandles(Kernel::HLERequestContext& ctx) {
@@ -125,7 +126,7 @@ void IR_RST::Initialize(Kernel::HLERequestContext& ctx) {
 
     next_pad_index = 0;
     is_device_reload_pending.store(true);
-    CoreTiming::ScheduleEvent(msToCycles(update_period), update_callback_id);
+    system.CoreTiming().ScheduleEvent(msToCycles(update_period), update_callback_id);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
     rb.Push(RESULT_SUCCESS);
@@ -136,7 +137,7 @@ void IR_RST::Initialize(Kernel::HLERequestContext& ctx) {
 void IR_RST::Shutdown(Kernel::HLERequestContext& ctx) {
     IPC::RequestParser rp(ctx, 0x03, 0, 0);
 
-    CoreTiming::UnscheduleEvent(update_callback_id, 0);
+    system.CoreTiming().UnscheduleEvent(update_callback_id, 0);
     UnloadInputDevices();
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
@@ -144,19 +145,20 @@ void IR_RST::Shutdown(Kernel::HLERequestContext& ctx) {
     LOG_DEBUG(Service_IR, "called");
 }
 
-IR_RST::IR_RST() : ServiceFramework("ir:rst", 1) {
+IR_RST::IR_RST(Core::System& system) : ServiceFramework("ir:rst", 1), system(system) {
     using namespace Kernel;
     // Note: these two kernel objects are even available before Initialize service function is
     // called.
     shared_memory =
-        SharedMemory::Create(nullptr, 0x1000, MemoryPermission::ReadWrite, MemoryPermission::Read,
-                             0, MemoryRegion::BASE, "IRRST:SharedMemory");
-    update_event = Event::Create(ResetType::OneShot, "IRRST:UpdateEvent");
+        system.Kernel()
+            .CreateSharedMemory(nullptr, 0x1000, MemoryPermission::ReadWrite,
+                                MemoryPermission::Read, 0, MemoryRegion::BASE, "IRRST:SharedMemory")
+            .Unwrap();
+    update_event = system.Kernel().CreateEvent(ResetType::OneShot, "IRRST:UpdateEvent");
 
-    update_callback_id =
-        CoreTiming::RegisterEvent("IRRST:UpdateCallBack", [this](u64 userdata, s64 cycles_late) {
-            UpdateCallback(userdata, cycles_late);
-        });
+    update_callback_id = system.CoreTiming().RegisterEvent(
+        "IRRST:UpdateCallBack",
+        [this](u64 userdata, s64 cycles_late) { UpdateCallback(userdata, cycles_late); });
 
     static const FunctionInfo functions[] = {
         {0x00010000, &IR_RST::GetHandles, "GetHandles"},

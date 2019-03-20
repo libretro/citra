@@ -14,11 +14,11 @@
 #include "video_core/regs_framebuffer.h"
 #include "video_core/swrasterizer/framebuffer.h"
 #include "video_core/utils.h"
+#include "video_core/video_core.h"
 
-namespace Pica {
-namespace Rasterizer {
+namespace Pica::Rasterizer {
 
-void DrawPixel(int x, int y, const Math::Vec4<u8>& color) {
+void DrawPixel(int x, int y, const Common::Vec4<u8>& color) {
     const auto& framebuffer = g_state.regs.framebuffer.framebuffer;
     const PAddr addr = framebuffer.GetColorBufferPhysicalAddress();
 
@@ -31,7 +31,7 @@ void DrawPixel(int x, int y, const Math::Vec4<u8>& color) {
         GPU::Regs::BytesPerPixel(GPU::Regs::PixelFormat(framebuffer.color_format.Value()));
     u32 dst_offset = VideoCore::GetMortonOffset(x, y, bytes_per_pixel) +
                      coarse_y * framebuffer.width * bytes_per_pixel;
-    u8* dst_pixel = Memory::GetPhysicalPointer(addr) + dst_offset;
+    u8* dst_pixel = VideoCore::g_memory->GetPhysicalPointer(addr) + dst_offset;
 
     switch (framebuffer.color_format) {
     case FramebufferRegs::ColorFormat::RGBA8:
@@ -61,7 +61,7 @@ void DrawPixel(int x, int y, const Math::Vec4<u8>& color) {
     }
 }
 
-const Math::Vec4<u8> GetPixel(int x, int y) {
+const Common::Vec4<u8> GetPixel(int x, int y) {
     const auto& framebuffer = g_state.regs.framebuffer.framebuffer;
     const PAddr addr = framebuffer.GetColorBufferPhysicalAddress();
 
@@ -72,7 +72,7 @@ const Math::Vec4<u8> GetPixel(int x, int y) {
         GPU::Regs::BytesPerPixel(GPU::Regs::PixelFormat(framebuffer.color_format.Value()));
     u32 src_offset = VideoCore::GetMortonOffset(x, y, bytes_per_pixel) +
                      coarse_y * framebuffer.width * bytes_per_pixel;
-    u8* src_pixel = Memory::GetPhysicalPointer(addr) + src_offset;
+    u8* src_pixel = VideoCore::g_memory->GetPhysicalPointer(addr) + src_offset;
 
     switch (framebuffer.color_format) {
     case FramebufferRegs::ColorFormat::RGBA8:
@@ -102,7 +102,7 @@ const Math::Vec4<u8> GetPixel(int x, int y) {
 u32 GetDepth(int x, int y) {
     const auto& framebuffer = g_state.regs.framebuffer.framebuffer;
     const PAddr addr = framebuffer.GetDepthBufferPhysicalAddress();
-    u8* depth_buffer = Memory::GetPhysicalPointer(addr);
+    u8* depth_buffer = VideoCore::g_memory->GetPhysicalPointer(addr);
 
     y = framebuffer.height - y;
 
@@ -131,7 +131,7 @@ u32 GetDepth(int x, int y) {
 u8 GetStencil(int x, int y) {
     const auto& framebuffer = g_state.regs.framebuffer.framebuffer;
     const PAddr addr = framebuffer.GetDepthBufferPhysicalAddress();
-    u8* depth_buffer = Memory::GetPhysicalPointer(addr);
+    u8* depth_buffer = VideoCore::g_memory->GetPhysicalPointer(addr);
 
     y = framebuffer.height - y;
 
@@ -158,7 +158,7 @@ u8 GetStencil(int x, int y) {
 void SetDepth(int x, int y, u32 value) {
     const auto& framebuffer = g_state.regs.framebuffer.framebuffer;
     const PAddr addr = framebuffer.GetDepthBufferPhysicalAddress();
-    u8* depth_buffer = Memory::GetPhysicalPointer(addr);
+    u8* depth_buffer = VideoCore::g_memory->GetPhysicalPointer(addr);
 
     y = framebuffer.height - y;
 
@@ -193,7 +193,7 @@ void SetDepth(int x, int y, u32 value) {
 void SetStencil(int x, int y, u8 value) {
     const auto& framebuffer = g_state.regs.framebuffer.framebuffer;
     const PAddr addr = framebuffer.GetDepthBufferPhysicalAddress();
-    u8* depth_buffer = Memory::GetPhysicalPointer(addr);
+    u8* depth_buffer = VideoCore::g_memory->GetPhysicalPointer(addr);
 
     y = framebuffer.height - y;
 
@@ -257,10 +257,12 @@ u8 PerformStencilAction(FramebufferRegs::StencilAction action, u8 old_stencil, u
     }
 }
 
-Math::Vec4<u8> EvaluateBlendEquation(const Math::Vec4<u8>& src, const Math::Vec4<u8>& srcfactor,
-                                     const Math::Vec4<u8>& dest, const Math::Vec4<u8>& destfactor,
-                                     FramebufferRegs::BlendEquation equation) {
-    Math::Vec4<int> result;
+Common::Vec4<u8> EvaluateBlendEquation(const Common::Vec4<u8>& src,
+                                       const Common::Vec4<u8>& srcfactor,
+                                       const Common::Vec4<u8>& dest,
+                                       const Common::Vec4<u8>& destfactor,
+                                       FramebufferRegs::BlendEquation equation) {
+    Common::Vec4<int> result;
 
     auto src_result = (src * srcfactor).Cast<int>();
     auto dst_result = (dest * destfactor).Cast<int>();
@@ -299,8 +301,8 @@ Math::Vec4<u8> EvaluateBlendEquation(const Math::Vec4<u8>& src, const Math::Vec4
         UNIMPLEMENTED();
     }
 
-    return Math::Vec4<u8>(std::clamp(result.r(), 0, 255), std::clamp(result.g(), 0, 255),
-                          std::clamp(result.b(), 0, 255), std::clamp(result.a(), 0, 255));
+    return Common::Vec4<u8>(std::clamp(result.r(), 0, 255), std::clamp(result.g(), 0, 255),
+                            std::clamp(result.b(), 0, 255), std::clamp(result.a(), 0, 255));
 };
 
 u8 LogicOp(u8 src, u8 dest, FramebufferRegs::LogicOp op) {
@@ -359,7 +361,7 @@ u8 LogicOp(u8 src, u8 dest, FramebufferRegs::LogicOp op) {
 
 // Decode/Encode for shadow map format. It is similar to D24S8 format, but the depth field is in
 // big-endian
-static const Math::Vec2<u32> DecodeD24S8Shadow(const u8* bytes) {
+static const Common::Vec2<u32> DecodeD24S8Shadow(const u8* bytes) {
     return {static_cast<u32>((bytes[0] << 16) | (bytes[1] << 8) | bytes[2]), bytes[3]};
 }
 
@@ -384,7 +386,7 @@ void DrawShadowMapPixel(int x, int y, u32 depth, u8 stencil) {
     u32 bytes_per_pixel = 4;
     u32 dst_offset = VideoCore::GetMortonOffset(x, y, bytes_per_pixel) +
                      coarse_y * framebuffer.width * bytes_per_pixel;
-    u8* dst_pixel = Memory::GetPhysicalPointer(addr) + dst_offset;
+    u8* dst_pixel = VideoCore::g_memory->GetPhysicalPointer(addr) + dst_offset;
 
     auto ref = DecodeD24S8Shadow(dst_pixel);
     u32 ref_z = ref.x;
@@ -406,5 +408,4 @@ void DrawShadowMapPixel(int x, int y, u32 depth, u8 stencil) {
     }
 }
 
-} // namespace Rasterizer
-} // namespace Pica
+} // namespace Pica::Rasterizer

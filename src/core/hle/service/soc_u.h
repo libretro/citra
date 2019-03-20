@@ -7,6 +7,10 @@
 #include <unordered_map>
 #include "core/hle/service/service.h"
 
+namespace Core {
+class System;
+}
+
 namespace Service::SOC {
 
 /// Holds information about a particular socket
@@ -41,6 +45,11 @@ private:
     void GetSockOpt(Kernel::HLERequestContext& ctx);
     void SetSockOpt(Kernel::HLERequestContext& ctx);
 
+    // Some platforms seem to have GetAddrInfo and GetNameInfo defined as macros,
+    // so we have to use a different name here.
+    void GetAddrInfoImpl(Kernel::HLERequestContext& ctx);
+    void GetNameInfoImpl(Kernel::HLERequestContext& ctx);
+
     /// Close all open sockets
     void CleanupSockets();
 
@@ -48,6 +57,6 @@ private:
     std::unordered_map<u32, SocketHolder> open_sockets;
 };
 
-void InstallInterfaces(SM::ServiceManager& service_manager);
+void InstallInterfaces(Core::System& system);
 
 } // namespace Service::SOC

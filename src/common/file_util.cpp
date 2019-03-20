@@ -14,21 +14,24 @@
 #ifdef _WIN32
 #include <windows.h>
 // windows.h needs to be included before other windows headers
-#include <commdlg.h> // for GetSaveFileName
-#include <direct.h>  // getcwd
+#include <direct.h> // getcwd
 #include <io.h>
 #include <shellapi.h>
 #include <shlobj.h> // for SHGetFolderPath
 #include <tchar.h>
 #include "common/string_util.h"
 
-// 64 bit offsets for windows
+#ifdef _MSC_VER
+// 64 bit offsets for MSVC
 #define fseeko _fseeki64
 #define ftello _ftelli64
-#define atoll _atoi64
+#define fileno _fileno
+#endif
+
+// 64 bit offsets for MSVC and MinGW. MinGW also needs this for using _wstat64
 #define stat _stat64
 #define fstat _fstat64
-#define fileno _fileno
+
 #else
 #ifdef __APPLE__
 #include <sys/param.h>
@@ -540,11 +543,12 @@ std::string GetCurrentDir() {
 // Get the current working directory (getcwd uses malloc)
 #ifdef _WIN32
     wchar_t* dir;
-    if (!(dir = _wgetcwd(nullptr, 0))) {
+    if (!(dir = _wgetcwd(nullptr, 0)))
 #else
     char* dir;
-    if (!(dir = getcwd(nullptr, 0))) {
+    if (!(dir = getcwd(nullptr, 0)))
 #endif
+    {
         LOG_ERROR(Common_Filesystem, "GetCurrentDirectory failed: {}", GetLastErrorMsg());
         return nullptr;
     }
@@ -669,14 +673,19 @@ std::string GetSysDirectory() {
     return sysDir;
 }
 
-// Returns a string with a Citra data dir or file in the user's home
-// directory. To be used in "multi-user" mode (that is, installed).
-const std::string& GetUserPath(UserPath path, const std::string& new_path) {
-    static std::unordered_map<UserPath, std::string> paths;
-    auto& user_path = paths[UserPath::UserDir];
+namespace {
+std::unordered_map<UserPath, std::string> g_paths;
+}
 
-    // Set up all paths and files on the first run
-    if (user_path.empty()) {
+void SetUserPath(const std::string& path) {
+    std::string& user_path = g_paths[UserPath::UserDir];
+
+    if (!path.empty() && CreateFullPath(path)) {
+        LOG_INFO(Common_Filesystem, "Using {} as the user directory", path);
+        user_path = path;
+        g_paths.emplace(UserPath::ConfigDir, user_path + CONFIG_DIR DIR_SEP);
+        g_paths.emplace(UserPath::CacheDir, user_path + CACHE_DIR DIR_SEP);
+    } else {
 #ifdef _WIN32
         user_path = GetExeDirectory() + DIR_SEP USERDATA_DIR DIR_SEP;
         if (!FileUtil::IsDirectory(user_path)) {
@@ -685,54 +694,42 @@ const std::string& GetUserPath(UserPath path, const std::string& new_path) {
             LOG_INFO(Common_Filesystem, "Using the local user directory");
         }
 
-        paths.emplace(UserPath::ConfigDir, user_path + CONFIG_DIR DIR_SEP);
-        paths.emplace(UserPath::CacheDir, user_path + CACHE_DIR DIR_SEP);
+        g_paths.emplace(UserPath::ConfigDir, user_path + CONFIG_DIR DIR_SEP);
+        g_paths.emplace(UserPath::CacheDir, user_path + CACHE_DIR DIR_SEP);
+#elif ANDROID
+        ASSERT_MSG(false, "Specified path {} is not valid", path);
 #else
         if (FileUtil::Exists(ROOT_DIR DIR_SEP USERDATA_DIR)) {
             user_path = ROOT_DIR DIR_SEP USERDATA_DIR DIR_SEP;
-            paths.emplace(UserPath::ConfigDir, user_path + CONFIG_DIR DIR_SEP);
-            paths.emplace(UserPath::CacheDir, user_path + CACHE_DIR DIR_SEP);
+            g_paths.emplace(UserPath::ConfigDir, user_path + CONFIG_DIR DIR_SEP);
+            g_paths.emplace(UserPath::CacheDir, user_path + CACHE_DIR DIR_SEP);
         } else {
             std::string data_dir = GetUserDirectory("XDG_DATA_HOME");
             std::string config_dir = GetUserDirectory("XDG_CONFIG_HOME");
             std::string cache_dir = GetUserDirectory("XDG_CACHE_HOME");
 
             user_path = data_dir + DIR_SEP EMU_DATA_DIR DIR_SEP;
-            paths.emplace(UserPath::ConfigDir, config_dir + DIR_SEP EMU_DATA_DIR DIR_SEP);
-            paths.emplace(UserPath::CacheDir, cache_dir + DIR_SEP EMU_DATA_DIR DIR_SEP);
+            g_paths.emplace(UserPath::ConfigDir, config_dir + DIR_SEP EMU_DATA_DIR DIR_SEP);
+            g_paths.emplace(UserPath::CacheDir, cache_dir + DIR_SEP EMU_DATA_DIR DIR_SEP);
         }
 #endif
-        paths.emplace(UserPath::SDMCDir, user_path + SDMC_DIR DIR_SEP);
-        paths.emplace(UserPath::NANDDir, user_path + NAND_DIR DIR_SEP);
-        paths.emplace(UserPath::SysDataDir, user_path + SYSDATA_DIR DIR_SEP);
-        // TODO: Put the logs in a better location for each OS
-        paths.emplace(UserPath::LogDir, user_path + LOG_DIR DIR_SEP);
     }
+    g_paths.emplace(UserPath::SDMCDir, user_path + SDMC_DIR DIR_SEP);
+    g_paths.emplace(UserPath::NANDDir, user_path + NAND_DIR DIR_SEP);
+    g_paths.emplace(UserPath::SysDataDir, user_path + SYSDATA_DIR DIR_SEP);
+    // TODO: Put the logs in a better location for each OS
+    g_paths.emplace(UserPath::LogDir, user_path + LOG_DIR DIR_SEP);
+    g_paths.emplace(UserPath::CheatsDir, user_path + CHEATS_DIR DIR_SEP);
+    g_paths.emplace(UserPath::DLLDir, user_path + DLL_DIR DIR_SEP);
+}
 
-    if (!new_path.empty()) {
-        if (!FileUtil::IsDirectory(new_path)) {
-            LOG_ERROR(Common_Filesystem, "Invalid path specified {}", new_path);
-            return paths[path];
-        } else {
-            paths[path] = new_path;
-        }
-
-        switch (path) {
-        case UserPath::RootDir:
-            user_path = paths[UserPath::RootDir] + DIR_SEP;
-            break;
-
-        case UserPath::UserDir:
-            user_path = paths[UserPath::RootDir] + DIR_SEP;
-            paths[UserPath::ConfigDir] = user_path + CONFIG_DIR DIR_SEP;
-            paths[UserPath::CacheDir] = user_path + CACHE_DIR DIR_SEP;
-            paths[UserPath::SDMCDir] = user_path + SDMC_DIR DIR_SEP;
-            paths[UserPath::NANDDir] = user_path + NAND_DIR DIR_SEP;
-            break;
-        }
-    }
-
-    return paths[path];
+// Returns a string with a Citra data dir or file in the user's home
+// directory. To be used in "multi-user" mode (that is, installed).
+const std::string& GetUserPath(UserPath path) {
+    // Set up all paths and files on the first run
+    if (g_paths.empty())
+        SetUserPath();
+    return g_paths[path];
 }
 
 size_t WriteStringToFile(bool text_file, const std::string& str, const char* filename) {

@@ -14,8 +14,8 @@ struct FramebufferLayout {
     unsigned height;
     bool top_screen_enabled;
     bool bottom_screen_enabled;
-    MathUtil::Rectangle<unsigned> top_screen;
-    MathUtil::Rectangle<unsigned> bottom_screen;
+    Common::Rectangle<unsigned> top_screen;
+    Common::Rectangle<unsigned> bottom_screen;
 
     /**
      * Returns the ration of pixel size of the top screen, compared to the native size of the 3DS
@@ -71,5 +71,12 @@ FramebufferLayout SideFrameLayout(unsigned width, unsigned height, bool is_swapp
  * @return Newly created FramebufferLayout object with default screen regions initialized
  */
 FramebufferLayout CustomFrameLayout(unsigned width, unsigned height);
+
+/**
+ * Convenience method to get frame layout by resolution scale
+ * Read from the current settings to determine which layout to use.
+ * @param res_scale resolution scale factor
+ */
+FramebufferLayout FrameLayoutFromResolutionScale(u16 res_scale);
 
 } // namespace Layout

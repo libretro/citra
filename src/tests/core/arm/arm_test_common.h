@@ -5,8 +5,8 @@
 #include <tuple>
 #include <unordered_map>
 #include <vector>
-
 #include "common/common_types.h"
+#include "core/hle/kernel/kernel.h"
 #include "core/mmio.h"
 
 namespace ArmTests {
@@ -49,6 +49,10 @@ public:
     /// Empties the internal write-record store.
     void ClearWriteRecords();
 
+    Memory::MemorySystem& GetMemory() {
+        return *memory;
+    }
+
 private:
     friend struct TestMemory;
     struct TestMemory final : Memory::MMIORegion {
@@ -79,6 +83,10 @@ private:
     bool mutable_memory;
     std::shared_ptr<TestMemory> test_memory;
     std::vector<WriteRecord> write_records;
+
+    std::unique_ptr<Core::Timing> timing;
+    std::unique_ptr<Memory::MemorySystem> memory;
+    std::unique_ptr<Kernel::KernelSystem> kernel;
 };
 
 } // namespace ArmTests

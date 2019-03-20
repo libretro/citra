@@ -21,12 +21,18 @@ namespace Service {
 class ServiceFrameworkBase;
 }
 
+namespace Memory {
+class MemorySystem;
+}
+
 namespace Kernel {
 
 class HandleTable;
 class Process;
 class Thread;
 class Event;
+class HLERequestContext;
+class KernelSystem;
 
 /**
  * Interface implemented by HLE Session handlers.
@@ -39,13 +45,10 @@ public:
 
     /**
      * Handles a sync request from the emulated application.
-     * @param server_session The ServerSession that was triggered for this sync request,
-     * it should be used to differentiate which client (As in ClientSession) we're answering to.
-     * TODO(Subv): Use a wrapper structure to hold all the information relevant to
-     * this request (ServerSession, Originator thread, Translated command buffer, etc).
-     * @returns ResultCode the result code of the translate operation.
+     * @param context holds all the information relevant to his request (ServerSession, Translated
+     * command buffer, etc).
      */
-    virtual void HandleSyncRequest(SharedPtr<ServerSession> server_session) = 0;
+    virtual void HandleSyncRequest(Kernel::HLERequestContext& context) = 0;
 
     /**
      * Signals that a client has just connected to this HLE handler and keeps the
@@ -95,7 +98,8 @@ protected:
 
 class MappedBuffer {
 public:
-    MappedBuffer(const Process& process, u32 descriptor, VAddr address, u32 id);
+    MappedBuffer(Memory::MemorySystem& memory, const Process& process, u32 descriptor,
+                 VAddr address, u32 id);
 
     // interface for service
     void Read(void* dest_buffer, std::size_t offset, std::size_t size);
@@ -115,6 +119,7 @@ public:
 
 private:
     friend class HLERequestContext;
+    Memory::MemorySystem* memory;
     u32 id;
     VAddr address;
     const Process* process;
@@ -124,8 +129,7 @@ private:
 
 /**
  * Class containing information about an in-flight IPC request being handled by an HLE service
- * implementation. Services should avoid using old global APIs (e.g. Kernel::GetCommandBuffer()) and
- * when possible use the APIs in this class to service the request.
+ * implementation.
  *
  * HLE handle protocol
  * ===================
@@ -154,7 +158,7 @@ private:
  */
 class HLERequestContext {
 public:
-    HLERequestContext(SharedPtr<ServerSession> session);
+    HLERequestContext(KernelSystem& kernel, SharedPtr<ServerSession> session);
     ~HLERequestContext();
 
     /// Returns a pointer to the IPC command buffer for this request.
@@ -226,13 +230,12 @@ public:
     MappedBuffer& GetMappedBuffer(u32 id_from_cmdbuf);
 
     /// Populates this context with data from the requesting process/thread.
-    ResultCode PopulateFromIncomingCommandBuffer(const u32_le* src_cmdbuf, Process& src_process,
-                                                 HandleTable& src_table);
+    ResultCode PopulateFromIncomingCommandBuffer(const u32_le* src_cmdbuf, Process& src_process);
     /// Writes data from this context back to the requesting process/thread.
-    ResultCode WriteToOutgoingCommandBuffer(u32_le* dst_cmdbuf, Process& dst_process,
-                                            HandleTable& dst_table) const;
+    ResultCode WriteToOutgoingCommandBuffer(u32_le* dst_cmdbuf, Process& dst_process) const;
 
 private:
+    KernelSystem& kernel;
     std::array<u32, IPC::COMMAND_BUFFER_LENGTH> cmd_buf;
     SharedPtr<ServerSession> session;
     // TODO(yuriks): Check common usage of this and optimize size accordingly

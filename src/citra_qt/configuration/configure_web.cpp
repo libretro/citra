@@ -4,6 +4,7 @@
 
 #include <QIcon>
 #include <QMessageBox>
+#include <QtConcurrent/QtConcurrentRun>
 #include "citra_qt/configuration/configure_web.h"
 #include "citra_qt/ui_settings.h"
 #include "core/settings.h"
@@ -16,7 +17,7 @@ ConfigureWeb::ConfigureWeb(QWidget* parent)
     connect(ui->button_regenerate_telemetry_id, &QPushButton::clicked, this,
             &ConfigureWeb::RefreshTelemetryID);
     connect(ui->button_verify_login, &QPushButton::clicked, this, &ConfigureWeb::VerifyLogin);
-    connect(this, &ConfigureWeb::LoginVerified, this, &ConfigureWeb::OnLoginVerified);
+    connect(&verify_watcher, &QFutureWatcher<bool>::finished, this, &ConfigureWeb::OnLoginVerified);
 
 #ifndef USE_DISCORD_PRESENCE
     ui->discord_group->setVisible(false);
@@ -24,7 +25,7 @@ ConfigureWeb::ConfigureWeb(QWidget* parent)
     this->setConfiguration();
 }
 
-ConfigureWeb::~ConfigureWeb() {}
+ConfigureWeb::~ConfigureWeb() = default;
 
 void ConfigureWeb::setConfiguration() {
     ui->web_credentials_disclaimer->setWordWrap(true);
@@ -37,7 +38,7 @@ void ConfigureWeb::setConfiguration() {
 
     ui->web_signup_link->setOpenExternalLinks(true);
     ui->web_signup_link->setText(
-        tr("<a href='https://services.citra-emu.org/'><span style=\"text-decoration: underline; "
+        tr("<a href='https://profile.citra-emu.org/'><span style=\"text-decoration: underline; "
            "color:#039be5;\">Sign up</span></a>"));
     ui->web_token_info_link->setOpenExternalLinks(true);
     ui->web_token_info_link->setText(
@@ -89,17 +90,18 @@ void ConfigureWeb::OnLoginChanged() {
 }
 
 void ConfigureWeb::VerifyLogin() {
-    verified =
-        Core::VerifyLogin(ui->edit_username->text().toStdString(),
-                          ui->edit_token->text().toStdString(), [&]() { emit LoginVerified(); });
     ui->button_verify_login->setDisabled(true);
-    ui->button_verify_login->setText(tr("Verifying"));
+    ui->button_verify_login->setText(tr("Verifying..."));
+    verify_watcher.setFuture(QtConcurrent::run([username = ui->edit_username->text().toStdString(),
+                                                token = ui->edit_token->text().toStdString()] {
+        return Core::VerifyLogin(username, token);
+    }));
 }
 
 void ConfigureWeb::OnLoginVerified() {
     ui->button_verify_login->setEnabled(true);
     ui->button_verify_login->setText(tr("Verify"));
-    if (verified.get()) {
+    if (verify_watcher.result()) {
         user_verified = true;
         ui->label_username_verified->setPixmap(QIcon::fromTheme("checked").pixmap(16));
         ui->label_token_verified->setPixmap(QIcon::fromTheme("checked").pixmap(16));

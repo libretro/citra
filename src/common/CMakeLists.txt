@@ -9,6 +9,9 @@ if ($ENV{CI})
   elseif($ENV{APPVEYOR})
     set(BUILD_REPOSITORY $ENV{APPVEYOR_REPO_NAME})
     set(BUILD_TAG $ENV{APPVEYOR_REPO_TAG_NAME})
+  elseif($ENV{BITRISE_IO})
+    set(BUILD_REPOSITORY "$ENV{BITRISEIO_GIT_REPOSITORY_OWNER}/$ENV{BITRISEIO_GIT_REPOSITORY_SLUG}")
+    set(BUILD_TAG $ENV{BITRISE_GIT_TAG})
   endif()
   # regex capture the string nightly or canary into CMAKE_MATCH_1
   string(REGEX MATCH "citra-emu/citra-?(.*)" OUTVAR ${BUILD_REPOSITORY})
@@ -29,7 +32,7 @@ if ($ENV{CI})
       if (BUILD_VERSION)
         # This leaves a trailing space on the last word, but we actually want that
         # because of how it's styled in the title bar.
-        set(BUILD_FULLNAME "${REPO_NAME} #${BUILD_VERSION} ")
+        set(BUILD_FULLNAME "${REPO_NAME} ${BUILD_VERSION} ")
       else()
         set(BUILD_FULLNAME "")
       endif()
@@ -42,6 +45,8 @@ add_library(common STATIC
     alignment.h
     announce_multiplayer_room.h
     assert.h
+    detached_tasks.cpp
+    detached_tasks.h
     bit_field.h
     bit_set.h
     chunk_file.h
@@ -63,8 +68,6 @@ add_library(common STATIC
     logging/text_formatter.cpp
     logging/text_formatter.h
     math_util.h
-    memory_util.cpp
-    memory_util.h
     microprofile.cpp
     microprofile.h
     microprofileui.h
@@ -88,6 +91,7 @@ add_library(common STATIC
     timer.cpp
     timer.h
     vector_math.h
+    web_result.h
 )
 
 if(ARCHITECTURE_x86_64)

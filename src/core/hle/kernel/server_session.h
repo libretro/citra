@@ -8,6 +8,7 @@
 #include <string>
 #include "common/assert.h"
 #include "common/common_types.h"
+#include "core/hle/kernel/ipc.h"
 #include "core/hle/kernel/object.h"
 #include "core/hle/kernel/wait_object.h"
 #include "core/hle/result.h"
@@ -48,17 +49,6 @@ public:
         return HANDLE_TYPE;
     }
 
-    using SessionPair = std::tuple<SharedPtr<ServerSession>, SharedPtr<ClientSession>>;
-
-    /**
-     * Creates a pair of ServerSession and an associated ClientSession.
-     * @param name        Optional name of the ports.
-     * @param client_port Optional The ClientPort that spawned this session.
-     * @return The created session tuple
-     */
-    static SessionPair CreateSessionPair(const std::string& name = "Unknown",
-                                         SharedPtr<ClientPort> client_port = nullptr);
-
     /**
      * Sets the HLE handler for the session. This handler will be called to service IPC requests
      * instead of the regular IPC machinery. (The regular IPC machinery is currently not
@@ -94,17 +84,25 @@ public:
     /// TODO(Subv): Find a better name for this.
     SharedPtr<Thread> currently_handling;
 
+    /// A temporary list holding mapped buffer info from IPC request, used for during IPC reply
+    std::vector<MappedBufferContext> mapped_buffer_context;
+
 private:
-    ServerSession();
+    explicit ServerSession(KernelSystem& kernel);
     ~ServerSession() override;
 
     /**
      * Creates a server session. The server session can have an optional HLE handler,
      * which will be invoked to handle the IPC requests that this session receives.
+     * @param kernel The kernel instance to create the server session on
      * @param name Optional name of the server session.
      * @return The created server session
      */
-    static ResultVal<SharedPtr<ServerSession>> Create(std::string name = "Unknown");
+    static ResultVal<SharedPtr<ServerSession>> Create(KernelSystem& kernel,
+                                                      std::string name = "Unknown");
+
+    friend class KernelSystem;
+    KernelSystem& kernel;
 };
 
 } // namespace Kernel

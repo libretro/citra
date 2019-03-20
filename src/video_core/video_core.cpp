@@ -5,8 +5,10 @@
 #include <memory>
 #include "common/logging/log.h"
 #include "core/frontend/emu_window.h"
+#include "core/settings.h"
 #include "video_core/pica.h"
 #include "video_core/renderer_base.h"
+#include "video_core/renderer_opengl/gl_vars.h"
 #include "video_core/renderer_opengl/renderer_opengl.h"
 #include "video_core/video_core.h"
 
@@ -23,13 +25,21 @@ std::atomic<bool> g_hw_shader_enabled;
 std::atomic<bool> g_hw_shader_accurate_gs;
 std::atomic<bool> g_hw_shader_accurate_mul;
 std::atomic<bool> g_renderer_bg_color_update_requested;
+// Screenshot
+std::atomic<bool> g_renderer_screenshot_requested;
+void* g_screenshot_bits;
+std::function<void()> g_screenshot_complete_callback;
+Layout::FramebufferLayout g_screenshot_framebuffer_layout;
+
+Memory::MemorySystem* g_memory;
 
 /// Initialize the video core
-Core::System::ResultStatus Init(EmuWindow& emu_window) {
+Core::System::ResultStatus Init(EmuWindow& emu_window, Memory::MemorySystem& memory) {
+    g_memory = &memory;
     Pica::Init();
 
     if (!emu_window.ShouldDeferRendererInit()) {
-        g_renderer = std::make_unique<RendererOpenGL>(emu_window);
+        g_renderer = std::make_unique<OpenGL::RendererOpenGL>(emu_window);
         Core::System::ResultStatus result = g_renderer->Init();
 
         if (result != Core::System::ResultStatus::Success) {
@@ -52,6 +62,29 @@ void Shutdown() {
     g_renderer.reset();
 
     LOG_DEBUG(Render, "shutdown OK");
+}
+
+void RequestScreenshot(void* data, std::function<void()> callback,
+                       const Layout::FramebufferLayout& layout) {
+    if (g_renderer_screenshot_requested) {
+        LOG_ERROR(Render, "A screenshot is already requested or in progress, ignoring the request");
+        return;
+    }
+    g_screenshot_bits = data;
+    g_screenshot_complete_callback = std::move(callback);
+    g_screenshot_framebuffer_layout = layout;
+    g_renderer_screenshot_requested = true;
+}
+
+u16 GetResolutionScaleFactor() {
+    if (g_hw_renderer_enabled) {
+        return Settings::values.resolution_factor
+                   ? Settings::values.resolution_factor
+                   : g_renderer->GetRenderWindow().GetFramebufferLayout().GetScalingRatio();
+    } else {
+        // Software renderer always render at native resolution
+        return 1;
+    }
 }
 
 } // namespace VideoCore

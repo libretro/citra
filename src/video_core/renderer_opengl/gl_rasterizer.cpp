@@ -24,6 +24,9 @@
 #include "video_core/renderer_opengl/gl_shader_gen.h"
 #include "video_core/renderer_opengl/pica_to_gl.h"
 #include "video_core/renderer_opengl/renderer_opengl.h"
+#include "video_core/video_core.h"
+
+namespace OpenGL {
 
 using PixelFormat = SurfaceParams::PixelFormat;
 using SurfaceType = SurfaceParams::SurfaceType;
@@ -102,35 +105,35 @@ RasterizerOpenGL::RasterizerOpenGL(EmuWindow& window)
     state.draw.vertex_buffer = vertex_buffer.GetHandle();
     state.Apply();
 
-    glVertexAttribPointer(GLShader::ATTRIBUTE_POSITION, 4, GL_FLOAT, GL_FALSE,
-                          sizeof(HardwareVertex), (GLvoid*)offsetof(HardwareVertex, position));
-    glEnableVertexAttribArray(GLShader::ATTRIBUTE_POSITION);
+    glVertexAttribPointer(ATTRIBUTE_POSITION, 4, GL_FLOAT, GL_FALSE, sizeof(HardwareVertex),
+                          (GLvoid*)offsetof(HardwareVertex, position));
+    glEnableVertexAttribArray(ATTRIBUTE_POSITION);
 
-    glVertexAttribPointer(GLShader::ATTRIBUTE_COLOR, 4, GL_FLOAT, GL_FALSE, sizeof(HardwareVertex),
+    glVertexAttribPointer(ATTRIBUTE_COLOR, 4, GL_FLOAT, GL_FALSE, sizeof(HardwareVertex),
                           (GLvoid*)offsetof(HardwareVertex, color));
-    glEnableVertexAttribArray(GLShader::ATTRIBUTE_COLOR);
+    glEnableVertexAttribArray(ATTRIBUTE_COLOR);
 
-    glVertexAttribPointer(GLShader::ATTRIBUTE_TEXCOORD0, 2, GL_FLOAT, GL_FALSE,
-                          sizeof(HardwareVertex), (GLvoid*)offsetof(HardwareVertex, tex_coord0));
-    glVertexAttribPointer(GLShader::ATTRIBUTE_TEXCOORD1, 2, GL_FLOAT, GL_FALSE,
-                          sizeof(HardwareVertex), (GLvoid*)offsetof(HardwareVertex, tex_coord1));
-    glVertexAttribPointer(GLShader::ATTRIBUTE_TEXCOORD2, 2, GL_FLOAT, GL_FALSE,
-                          sizeof(HardwareVertex), (GLvoid*)offsetof(HardwareVertex, tex_coord2));
-    glEnableVertexAttribArray(GLShader::ATTRIBUTE_TEXCOORD0);
-    glEnableVertexAttribArray(GLShader::ATTRIBUTE_TEXCOORD1);
-    glEnableVertexAttribArray(GLShader::ATTRIBUTE_TEXCOORD2);
+    glVertexAttribPointer(ATTRIBUTE_TEXCOORD0, 2, GL_FLOAT, GL_FALSE, sizeof(HardwareVertex),
+                          (GLvoid*)offsetof(HardwareVertex, tex_coord0));
+    glVertexAttribPointer(ATTRIBUTE_TEXCOORD1, 2, GL_FLOAT, GL_FALSE, sizeof(HardwareVertex),
+                          (GLvoid*)offsetof(HardwareVertex, tex_coord1));
+    glVertexAttribPointer(ATTRIBUTE_TEXCOORD2, 2, GL_FLOAT, GL_FALSE, sizeof(HardwareVertex),
+                          (GLvoid*)offsetof(HardwareVertex, tex_coord2));
+    glEnableVertexAttribArray(ATTRIBUTE_TEXCOORD0);
+    glEnableVertexAttribArray(ATTRIBUTE_TEXCOORD1);
+    glEnableVertexAttribArray(ATTRIBUTE_TEXCOORD2);
 
-    glVertexAttribPointer(GLShader::ATTRIBUTE_TEXCOORD0_W, 1, GL_FLOAT, GL_FALSE,
-                          sizeof(HardwareVertex), (GLvoid*)offsetof(HardwareVertex, tex_coord0_w));
-    glEnableVertexAttribArray(GLShader::ATTRIBUTE_TEXCOORD0_W);
+    glVertexAttribPointer(ATTRIBUTE_TEXCOORD0_W, 1, GL_FLOAT, GL_FALSE, sizeof(HardwareVertex),
+                          (GLvoid*)offsetof(HardwareVertex, tex_coord0_w));
+    glEnableVertexAttribArray(ATTRIBUTE_TEXCOORD0_W);
 
-    glVertexAttribPointer(GLShader::ATTRIBUTE_NORMQUAT, 4, GL_FLOAT, GL_FALSE,
-                          sizeof(HardwareVertex), (GLvoid*)offsetof(HardwareVertex, normquat));
-    glEnableVertexAttribArray(GLShader::ATTRIBUTE_NORMQUAT);
+    glVertexAttribPointer(ATTRIBUTE_NORMQUAT, 4, GL_FLOAT, GL_FALSE, sizeof(HardwareVertex),
+                          (GLvoid*)offsetof(HardwareVertex, normquat));
+    glEnableVertexAttribArray(ATTRIBUTE_NORMQUAT);
 
-    glVertexAttribPointer(GLShader::ATTRIBUTE_VIEW, 3, GL_FLOAT, GL_FALSE, sizeof(HardwareVertex),
+    glVertexAttribPointer(ATTRIBUTE_VIEW, 3, GL_FLOAT, GL_FALSE, sizeof(HardwareVertex),
                           (GLvoid*)offsetof(HardwareVertex, view));
-    glEnableVertexAttribArray(GLShader::ATTRIBUTE_VIEW);
+    glEnableVertexAttribArray(ATTRIBUTE_VIEW);
 
     // Create render framebuffer
     framebuffer.Create();
@@ -200,6 +203,7 @@ void RasterizerOpenGL::SyncEntireState() {
     SyncProcTexNoise();
     SyncProcTexBias();
     SyncShadowBias();
+    SyncShadowTextureBias();
 }
 
 /**
@@ -220,11 +224,11 @@ void RasterizerOpenGL::SyncEntireState() {
  * Fortunately however, the 3DS hardware happens to also use this exact same logic to work around
  * these issues, making this basic implementation actually more accurate to the hardware.
  */
-static bool AreQuaternionsOpposite(Math::Vec4<Pica::float24> qa, Math::Vec4<Pica::float24> qb) {
-    Math::Vec4f a{qa.x.ToFloat32(), qa.y.ToFloat32(), qa.z.ToFloat32(), qa.w.ToFloat32()};
-    Math::Vec4f b{qb.x.ToFloat32(), qb.y.ToFloat32(), qb.z.ToFloat32(), qb.w.ToFloat32()};
+static bool AreQuaternionsOpposite(Common::Vec4<Pica::float24> qa, Common::Vec4<Pica::float24> qb) {
+    Common::Vec4f a{qa.x.ToFloat32(), qa.y.ToFloat32(), qa.z.ToFloat32(), qa.w.ToFloat32()};
+    Common::Vec4f b{qb.x.ToFloat32(), qb.y.ToFloat32(), qb.z.ToFloat32(), qb.w.ToFloat32()};
 
-    return (Math::Dot(a, b) < 0.f);
+    return (Common::Dot(a, b) < 0.f);
 }
 
 void RasterizerOpenGL::AddTriangle(const Pica::Shader::OutputVertex& v0,
@@ -257,7 +261,7 @@ RasterizerOpenGL::VertexArrayInfo RasterizerOpenGL::AnalyzeVertexArray(bool is_i
     if (is_indexed) {
         const auto& index_info = regs.pipeline.index_array;
         PAddr address = vertex_attributes.GetPhysicalBaseAddress() + index_info.offset;
-        const u8* index_address_8 = Memory::GetPhysicalPointer(address);
+        const u8* index_address_8 = VideoCore::g_memory->GetPhysicalPointer(address);
         const u16* index_address_16 = reinterpret_cast<const u16*>(index_address_8);
         bool index_u16 = index_info.format != 0;
 
@@ -338,7 +342,7 @@ void RasterizerOpenGL::SetupVertexArray(u8* array_ptr, GLintptr buffer_offset,
         u32 data_size = loader.byte_count * vertex_num;
 
         res_cache.FlushRegion(data_addr, data_size, nullptr);
-        std::memcpy(array_ptr, Memory::GetPhysicalPointer(data_addr), data_size);
+        std::memcpy(array_ptr, VideoCore::g_memory->GetPhysicalPointer(data_addr), data_size);
 
         array_ptr += data_size;
         buffer_offset += data_size;
@@ -367,7 +371,7 @@ void RasterizerOpenGL::SetupVertexArray(u8* array_ptr, GLintptr buffer_offset,
 
 bool RasterizerOpenGL::SetupVertexShader() {
     MICROPROFILE_SCOPE(OpenGL_VS);
-    GLShader::PicaVSConfig vs_config(Pica::g_state.regs, Pica::g_state.vs);
+    PicaVSConfig vs_config(Pica::g_state.regs, Pica::g_state.vs);
     return shader_program_manager->UseProgrammableVertexShader(vs_config, Pica::g_state.vs);
 }
 
@@ -375,11 +379,11 @@ bool RasterizerOpenGL::SetupGeometryShader() {
     MICROPROFILE_SCOPE(OpenGL_GS);
     const auto& regs = Pica::g_state.regs;
     if (regs.pipeline.use_gs == Pica::PipelineRegs::UseGS::No) {
-        GLShader::PicaFixedGSConfig gs_config(regs);
+        PicaFixedGSConfig gs_config(regs);
         shader_program_manager->UseFixedGeometryShader(gs_config);
         return true;
     } else {
-        GLShader::PicaGSConfig gs_config(regs, Pica::g_state.gs);
+        PicaGSConfig gs_config(regs, Pica::g_state.gs);
         return shader_program_manager->UseProgrammableGeometryShader(gs_config, Pica::g_state.gs);
     }
 }
@@ -469,9 +473,9 @@ bool RasterizerOpenGL::AccelerateDrawBatchInternal(bool is_indexed, bool use_gs)
             return false;
         }
 
-        const u8* index_data =
-            Memory::GetPhysicalPointer(regs.pipeline.vertex_attributes.GetPhysicalBaseAddress() +
-                                       regs.pipeline.index_array.offset);
+        const u8* index_data = VideoCore::g_memory->GetPhysicalPointer(
+            regs.pipeline.vertex_attributes.GetPhysicalBaseAddress() +
+            regs.pipeline.index_array.offset);
         std::tie(buffer_ptr, buffer_offset, std::ignore) = index_buffer.Map(index_buffer_size, 4);
         std::memcpy(buffer_ptr, index_data, index_buffer_size);
         index_buffer.Unmap(index_buffer_size);
@@ -518,7 +522,7 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
         (write_depth_fb || regs.framebuffer.output_merger.depth_test_enable != 0 ||
          (has_stencil && state.stencil.test_enabled));
 
-    MathUtil::Rectangle<s32> viewport_rect_unscaled{
+    Common::Rectangle<s32> viewport_rect_unscaled{
         // These registers hold half-width and half-height, so must be multiplied by 2
         regs.rasterizer.viewport_corner.x,  // left
         regs.rasterizer.viewport_corner.y + // top
@@ -532,7 +536,7 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
 
     Surface color_surface;
     Surface depth_surface;
-    MathUtil::Rectangle<u32> surfaces_rect;
+    Common::Rectangle<u32> surfaces_rect;
     std::tie(color_surface, depth_surface, surfaces_rect) =
         res_cache.GetFramebufferSurfaces(using_color_fb, using_depth_fb, viewport_rect_unscaled);
 
@@ -540,7 +544,7 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
                               ? color_surface->res_scale
                               : (depth_surface == nullptr ? 1u : depth_surface->res_scale);
 
-    MathUtil::Rectangle<u32> draw_rect{
+    Common::Rectangle<u32> draw_rect{
         static_cast<u32>(std::clamp<s32>(static_cast<s32>(surfaces_rect.left) +
                                              viewport_rect_unscaled.left * res_scale,
                                          surfaces_rect.left, surfaces_rect.right)), // Left
@@ -837,9 +841,9 @@ bool RasterizerOpenGL::Draw(bool accelerate, bool is_indexed) {
     }
 
     // Mark framebuffer surfaces as dirty
-    MathUtil::Rectangle<u32> draw_rect_unscaled{
-        draw_rect.left / res_scale, draw_rect.top / res_scale, draw_rect.right / res_scale,
-        draw_rect.bottom / res_scale};
+    Common::Rectangle<u32> draw_rect_unscaled{draw_rect.left / res_scale, draw_rect.top / res_scale,
+                                              draw_rect.right / res_scale,
+                                              draw_rect.bottom / res_scale};
 
     if (color_surface != nullptr && write_color_fb) {
         auto interval = color_surface->GetSubRectInterval(draw_rect_unscaled);
@@ -898,6 +902,11 @@ void RasterizerOpenGL::NotifyPicaRegisterChanged(u32 id) {
         break;
     case PICA_REG_INDEX(framebuffer.output_merger.blend_const):
         SyncBlendColor();
+        break;
+
+    // Shadow texture
+    case PICA_REG_INDEX(texturing.shadow):
+        SyncShadowTextureBias();
         break;
 
     // Fog state
@@ -1383,7 +1392,7 @@ bool RasterizerOpenGL::AccelerateDisplayTransfer(const GPU::Regs::DisplayTransfe
     dst_params.pixel_format = SurfaceParams::PixelFormatFromGPUPixelFormat(config.output_format);
     dst_params.UpdateParams();
 
-    MathUtil::Rectangle<u32> src_rect;
+    Common::Rectangle<u32> src_rect;
     Surface src_surface;
     std::tie(src_surface, src_rect) =
         res_cache.GetSurfaceSubRect(src_params, ScaleMatch::Ignore, true);
@@ -1392,7 +1401,7 @@ bool RasterizerOpenGL::AccelerateDisplayTransfer(const GPU::Regs::DisplayTransfe
 
     dst_params.res_scale = src_surface->res_scale;
 
-    MathUtil::Rectangle<u32> dst_rect;
+    Common::Rectangle<u32> dst_rect;
     Surface dst_surface;
     std::tie(dst_surface, dst_rect) =
         res_cache.GetSurfaceSubRect(dst_params, ScaleMatch::Upscale, false);
@@ -1452,7 +1461,7 @@ bool RasterizerOpenGL::AccelerateTextureCopy(const GPU::Regs::DisplayTransferCon
     src_params.size = ((src_params.height - 1) * src_params.stride) + src_params.width;
     src_params.end = src_params.addr + src_params.size;
 
-    MathUtil::Rectangle<u32> src_rect;
+    Common::Rectangle<u32> src_rect;
     Surface src_surface;
     std::tie(src_surface, src_rect) = res_cache.GetTexCopySurface(src_params);
     if (src_surface == nullptr) {
@@ -1477,7 +1486,7 @@ bool RasterizerOpenGL::AccelerateTextureCopy(const GPU::Regs::DisplayTransferCon
 
     // Since we are going to invalidate the gap if there is one, we will have to load it first
     const bool load_gap = output_gap != 0;
-    MathUtil::Rectangle<u32> dst_rect;
+    Common::Rectangle<u32> dst_rect;
     Surface dst_surface;
     std::tie(dst_surface, dst_rect) =
         res_cache.GetSurfaceSubRect(dst_params, ScaleMatch::Upscale, load_gap);
@@ -1523,7 +1532,7 @@ bool RasterizerOpenGL::AccelerateDisplay(const GPU::Regs::FramebufferConfig& con
     src_params.pixel_format = SurfaceParams::PixelFormatFromGPUPixelFormat(config.color_format);
     src_params.UpdateParams();
 
-    MathUtil::Rectangle<u32> src_rect;
+    Common::Rectangle<u32> src_rect;
     Surface src_surface;
     std::tie(src_surface, src_rect) =
         res_cache.GetSurfaceSubRect(src_params, ScaleMatch::Ignore, true);
@@ -1535,7 +1544,7 @@ bool RasterizerOpenGL::AccelerateDisplay(const GPU::Regs::FramebufferConfig& con
     u32 scaled_width = src_surface->GetScaledWidth();
     u32 scaled_height = src_surface->GetScaledHeight();
 
-    screen_info.display_texcoords = MathUtil::Rectangle<float>(
+    screen_info.display_texcoords = Common::Rectangle<float>(
         (float)src_rect.bottom / (float)scaled_height, (float)src_rect.left / (float)scaled_width,
         (float)src_rect.top / (float)scaled_height, (float)src_rect.right / (float)scaled_width);
 
@@ -1588,7 +1597,7 @@ void RasterizerOpenGL::SamplerInfo::SyncWithConfig(
 }
 
 void RasterizerOpenGL::SetShader() {
-    auto config = GLShader::PicaFSConfig::BuildFromRegs(Pica::g_state.regs);
+    auto config = PicaFSConfig::BuildFromRegs(Pica::g_state.regs);
     shader_program_manager->UseFragmentShader(config);
 }
 
@@ -1903,6 +1912,14 @@ void RasterizerOpenGL::SyncShadowBias() {
     }
 }
 
+void RasterizerOpenGL::SyncShadowTextureBias() {
+    GLint bias = Pica::g_state.regs.texturing.shadow.bias << 1;
+    if (bias != uniform_block_data.data.shadow_texture_bias) {
+        uniform_block_data.data.shadow_texture_bias = bias;
+        uniform_block_data.dirty = true;
+    }
+}
+
 void RasterizerOpenGL::SyncAndUploadLUTs() {
     constexpr std::size_t max_size = sizeof(GLvec2) * 256 * Pica::LightingRegs::NumLightingSampler +
                                      sizeof(GLvec2) * 128 +     // fog
@@ -2105,3 +2122,5 @@ void RasterizerOpenGL::UploadUniforms(bool accelerate_draw, bool use_gs) {
 
     uniform_buffer.Unmap(used_bytes);
 }
+
+} // namespace OpenGL

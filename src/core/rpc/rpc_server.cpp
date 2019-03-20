@@ -1,6 +1,7 @@
 #include "common/logging/log.h"
 #include "core/arm/arm_interface.h"
 #include "core/core.h"
+#include "core/hle/kernel/process.h"
 #include "core/memory.h"
 #include "core/rpc/packet.h"
 #include "core/rpc/rpc_server.h"
@@ -29,7 +30,9 @@ void RPCServer::HandleReadMemory(Packet& packet, u32 address, u32 data_size) {
     }
 
     // Note: Memory read occurs asynchronously from the state of the emulator
-    Memory::ReadBlock(address, packet.GetPacketData().data(), data_size);
+    Core::System::GetInstance().Memory().ReadBlock(
+        *Core::System::GetInstance().Kernel().GetCurrentProcess(), address,
+        packet.GetPacketData().data(), data_size);
     packet.SetPacketDataSize(data_size);
     packet.SendReply();
 }
@@ -40,7 +43,8 @@ void RPCServer::HandleWriteMemory(Packet& packet, u32 address, const u8* data, u
         (address >= Memory::HEAP_VADDR && address <= Memory::HEAP_VADDR_END) ||
         (address >= Memory::N3DS_EXTRA_RAM_VADDR && address <= Memory::N3DS_EXTRA_RAM_VADDR_END)) {
         // Note: Memory write occurs asynchronously from the state of the emulator
-        Memory::WriteBlock(address, data, data_size);
+        Core::System::GetInstance().Memory().WriteBlock(
+            *Core::System::GetInstance().Kernel().GetCurrentProcess(), address, data, data_size);
         // If the memory happens to be executable code, make sure the changes become visible
         Core::CPU().InvalidateCacheRange(address, data_size);
     }
@@ -106,34 +110,24 @@ void RPCServer::HandleRequestsLoop() {
 
     LOG_INFO(RPC_Server, "Request handler started.");
 
-    while (true) {
-        std::unique_lock<std::mutex> lock(request_queue_mutex);
-        request_queue_cv.wait(lock, [&] { return !running || request_queue.Pop(request_packet); });
-        if (!running) {
-            break;
-        }
+    while ((request_packet = request_queue.PopWait())) {
         HandleSingleRequest(std::move(request_packet));
     }
 }
 
 void RPCServer::QueueRequest(std::unique_ptr<RPC::Packet> request) {
-    std::unique_lock<std::mutex> lock(request_queue_mutex);
     request_queue.Push(std::move(request));
-    request_queue_cv.notify_one();
 }
 
 void RPCServer::Start() {
-    running = true;
     const auto threadFunction = [this]() { HandleRequestsLoop(); };
     request_handler_thread = std::thread(threadFunction);
     server.Start();
 }
 
 void RPCServer::Stop() {
-    running = false;
-    request_queue_cv.notify_one();
-    request_handler_thread.join();
     server.Stop();
+    request_handler_thread.join();
 }
 
 }; // namespace RPC

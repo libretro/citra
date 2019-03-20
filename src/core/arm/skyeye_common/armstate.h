@@ -23,6 +23,14 @@
 #include "core/arm/skyeye_common/arm_regformat.h"
 #include "core/gdbstub/gdbstub.h"
 
+namespace Core {
+class System;
+}
+
+namespace Memory {
+class MemorySystem;
+}
+
 // Signal levels
 enum { LOW = 0, HIGH = 1, LOWHIGH = 1, HIGHLOW = 2 };
 
@@ -139,7 +147,8 @@ enum {
 
 struct ARMul_State final {
 public:
-    explicit ARMul_State(PrivilegeMode initial_mode);
+    explicit ARMul_State(Core::System* system, Memory::MemorySystem& memory,
+                         PrivilegeMode initial_mode);
 
     void ChangePrivilegeMode(u32 new_mode);
     void Reset();
@@ -196,6 +205,9 @@ public:
     }
 
     void ServeBreak();
+
+    Core::System* system;
+    Memory::MemorySystem& memory;
 
     std::array<u32, 16> Reg{}; // The current register file
     std::array<u32, 2> Reg_usr{};
@@ -256,5 +268,5 @@ private:
     bool exclusive_state;
 
     GDBStub::BreakpointAddress last_bkpt{};
-    bool last_bkpt_hit;
+    bool last_bkpt_hit = false;
 };

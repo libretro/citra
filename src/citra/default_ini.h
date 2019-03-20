@@ -38,6 +38,8 @@ button_l=
 button_r=
 button_start=
 button_select=
+button_debug=
+button_gpio14=
 button_zl=
 button_zr=
 button_home=
@@ -90,6 +92,10 @@ udp_pad_index=
 use_cpu_jit =
 
 [Renderer]
+# Whether to render using GLES or OpenGL
+# 0 (default): OpenGL, 1: GLES
+use_gles =
+
 # Whether to use software or hardware rendering.
 # 0: Software, 1 (default): Hardware
 use_hw_renderer =
@@ -117,7 +123,7 @@ resolution_factor =
 
 # Whether to enable V-Sync (caps the framerate at 60FPS) or not.
 # 0 (default): Off, 1: On
-use_vsync =
+vsync_enabled =
 
 # Turns on the frame limiter, which will limit frames output to the target game speed
 # 0: Off, 1: On (default)
@@ -167,6 +173,15 @@ custom_bottom_bottom =
 swap_screen =
 
 [Audio]
+# Whether or not to enable DSP LLE
+# 0 (default): No, 1: Yes
+enable_dsp_lle =
+
+# Whether or not to run DSP LLE on a different thread
+# 0 (default): No, 1: Yes
+enable_dsp_lle_thread =
+
+
 # Which audio output engine to use.
 # auto (default): Auto-select, null: No audio output, sdl2: SDL2 (if available)
 output_engine =
@@ -248,7 +263,7 @@ enable_telemetry =
 # URL for Web API
 web_api_url = https://api.citra-emu.org
 # Username and token for Citra Web Service
-# See https://services.citra-emu.org/ for more info
+# See https://profile.citra-emu.org/ for more info
 citra_username =
 citra_token =
 )";

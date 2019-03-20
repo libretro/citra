@@ -13,9 +13,7 @@
 #include "common/common_types.h"
 #include "video_core/renderer_opengl/gl_shader_decompiler.h"
 
-namespace Pica {
-namespace Shader {
-namespace Decompiler {
+namespace OpenGL::ShaderDecompiler {
 
 using nihstro::Instruction;
 using nihstro::OpCode;
@@ -23,7 +21,7 @@ using nihstro::RegisterType;
 using nihstro::SourceRegister;
 using nihstro::SwizzlePattern;
 
-constexpr u32 PROGRAM_END = MAX_PROGRAM_CODE_LENGTH;
+constexpr u32 PROGRAM_END = Pica::Shader::MAX_PROGRAM_CODE_LENGTH;
 
 class DecompileFail : public std::runtime_error {
 public:
@@ -910,11 +908,11 @@ bool exec_shader();
 )";
 }
 
-boost::optional<std::string> DecompileProgram(const ProgramCode& program_code,
-                                              const SwizzleData& swizzle_data, u32 main_offset,
-                                              const RegGetter& inputreg_getter,
-                                              const RegGetter& outputreg_getter, bool sanitize_mul,
-                                              bool is_gs) {
+std::optional<std::string> DecompileProgram(const ProgramCode& program_code,
+                                            const SwizzleData& swizzle_data, u32 main_offset,
+                                            const RegGetter& inputreg_getter,
+                                            const RegGetter& outputreg_getter, bool sanitize_mul,
+                                            bool is_gs) {
 
     try {
         auto subroutines = ControlFlowAnalyzer(program_code, main_offset).MoveSubroutines();
@@ -923,10 +921,8 @@ boost::optional<std::string> DecompileProgram(const ProgramCode& program_code,
         return generator.MoveShaderCode();
     } catch (const DecompileFail& exception) {
         LOG_INFO(HW_GPU, "Shader decompilation failed: {}", exception.what());
-        return boost::none;
+        return {};
     }
 }
 
-} // namespace Decompiler
-} // namespace Shader
-} // namespace Pica
+} // namespace OpenGL::ShaderDecompiler

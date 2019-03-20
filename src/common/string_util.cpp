@@ -4,20 +4,16 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cerrno>
-#include <cstdio>
+#include <codecvt>
 #include <cstdlib>
-#include <cstring>
+#include <locale>
+#include <sstream>
 #include "common/common_paths.h"
 #include "common/logging/log.h"
 #include "common/string_util.h"
 
 #ifdef _WIN32
-#include <codecvt>
 #include <windows.h>
-#include "common/common_funcs.h"
-#else
-#include <iconv.h>
 #endif
 
 namespace Common {
@@ -34,24 +30,6 @@ std::string ToUpper(std::string str) {
     std::transform(str.begin(), str.end(), str.begin(),
                    [](unsigned char c) { return std::toupper(c); });
     return str;
-}
-
-// For Debugging. Read out an u8 array.
-std::string ArrayToString(const u8* data, std::size_t size, int line_len, bool spaces) {
-    std::ostringstream oss;
-    oss << std::setfill('0') << std::hex;
-
-    for (int line = 0; size; ++data, --size) {
-        oss << std::setw(2) << (int)*data;
-
-        if (line_len == ++line) {
-            oss << '\n';
-            line = 0;
-        } else if (spaces)
-            oss << ' ';
-    }
-
-    return oss.str();
 }
 
 // Turns "  hej " into "hej". Also handles tabs.
@@ -72,40 +50,6 @@ std::string StripQuotes(const std::string& s) {
         return s.substr(1, s.size() - 2);
     else
         return s;
-}
-
-bool TryParse(const std::string& str, u32* const output) {
-    char* endptr = nullptr;
-
-    // Reset errno to a value other than ERANGE
-    errno = 0;
-
-    unsigned long value = strtoul(str.c_str(), &endptr, 0);
-
-    if (!endptr || *endptr)
-        return false;
-
-    if (errno == ERANGE)
-        return false;
-
-#if ULONG_MAX > UINT_MAX
-    if (value >= 0x100000000ull && value <= 0xFFFFFFFF00000000ull)
-        return false;
-#endif
-
-    *output = static_cast<u32>(value);
-    return true;
-}
-
-bool TryParse(const std::string& str, bool* const output) {
-    if ("1" == str || "true" == ToLower(str))
-        *output = true;
-    else if ("0" == str || "false" == ToLower(str))
-        *output = false;
-    else
-        return false;
-
-    return true;
 }
 
 std::string StringFromBool(bool value) {
@@ -191,11 +135,9 @@ std::string ReplaceAll(std::string result, const std::string& src, const std::st
     return result;
 }
 
-#ifdef _WIN32
-
 std::string UTF16ToUTF8(const std::u16string& input) {
-#if _MSC_VER >= 1900
-    // Workaround for missing char16_t/char32_t instantiations in MSVC2015
+#ifdef _MSC_VER
+    // Workaround for missing char16_t/char32_t instantiations in MSVC2017
     std::wstring_convert<std::codecvt_utf8_utf16<__int16>, __int16> convert;
     std::basic_string<__int16> tmp_buffer(input.cbegin(), input.cend());
     return convert.to_bytes(tmp_buffer);
@@ -206,8 +148,8 @@ std::string UTF16ToUTF8(const std::u16string& input) {
 }
 
 std::u16string UTF8ToUTF16(const std::string& input) {
-#if _MSC_VER >= 1900
-    // Workaround for missing char16_t/char32_t instantiations in MSVC2015
+#ifdef _MSC_VER
+    // Workaround for missing char16_t/char32_t instantiations in MSVC2017
     std::wstring_convert<std::codecvt_utf8_utf16<__int16>, __int16> convert;
     auto tmp_buffer = convert.from_bytes(input);
     return std::u16string(tmp_buffer.cbegin(), tmp_buffer.cend());
@@ -217,6 +159,7 @@ std::u16string UTF8ToUTF16(const std::string& input) {
 #endif
 }
 
+#ifdef _WIN32
 static std::wstring CPToUTF16(u32 code_page, const std::string& input) {
     const auto size =
         MultiByteToWideChar(code_page, 0, input.data(), static_cast<int>(input.size()), nullptr, 0);
@@ -257,124 +200,6 @@ std::wstring UTF8ToUTF16W(const std::string& input) {
     return CPToUTF16(CP_UTF8, input);
 }
 
-std::string SHIFTJISToUTF8(const std::string& input) {
-    return UTF16ToUTF8(CPToUTF16(932, input));
-}
-
-std::string CP1252ToUTF8(const std::string& input) {
-    return UTF16ToUTF8(CPToUTF16(1252, input));
-}
-
-#else
-
-template <typename T>
-static std::string CodeToUTF8(const char* fromcode, const std::basic_string<T>& input) {
-    iconv_t const conv_desc = iconv_open("UTF-8", fromcode);
-    if ((iconv_t)(-1) == conv_desc) {
-        LOG_ERROR(Common, "Iconv initialization failure [{}]: {}", fromcode, strerror(errno));
-        iconv_close(conv_desc);
-        return {};
-    }
-
-    const std::size_t in_bytes = sizeof(T) * input.size();
-    // Multiply by 4, which is the max number of bytes to encode a codepoint
-    const std::size_t out_buffer_size = 4 * in_bytes;
-
-    std::string out_buffer(out_buffer_size, '\0');
-
-    auto src_buffer = &input[0];
-    std::size_t src_bytes = in_bytes;
-    auto dst_buffer = &out_buffer[0];
-    std::size_t dst_bytes = out_buffer.size();
-
-    while (0 != src_bytes) {
-        std::size_t const iconv_result =
-            iconv(conv_desc, (char**)(&src_buffer), &src_bytes, &dst_buffer, &dst_bytes);
-
-        if (static_cast<std::size_t>(-1) == iconv_result) {
-            if (EILSEQ == errno || EINVAL == errno) {
-                // Try to skip the bad character
-                if (0 != src_bytes) {
-                    --src_bytes;
-                    ++src_buffer;
-                }
-            } else {
-                LOG_ERROR(Common, "iconv failure [{}]: {}", fromcode, strerror(errno));
-                break;
-            }
-        }
-    }
-
-    std::string result;
-    out_buffer.resize(out_buffer_size - dst_bytes);
-    out_buffer.swap(result);
-
-    iconv_close(conv_desc);
-
-    return result;
-}
-
-std::u16string UTF8ToUTF16(const std::string& input) {
-    iconv_t const conv_desc = iconv_open("UTF-16LE", "UTF-8");
-    if ((iconv_t)(-1) == conv_desc) {
-        LOG_ERROR(Common, "Iconv initialization failure [UTF-8]: {}", strerror(errno));
-        iconv_close(conv_desc);
-        return {};
-    }
-
-    const std::size_t in_bytes = sizeof(char) * input.size();
-    // Multiply by 4, which is the max number of bytes to encode a codepoint
-    const std::size_t out_buffer_size = 4 * sizeof(char16_t) * in_bytes;
-
-    std::u16string out_buffer(out_buffer_size, char16_t{});
-
-    char* src_buffer = const_cast<char*>(&input[0]);
-    std::size_t src_bytes = in_bytes;
-    char* dst_buffer = (char*)(&out_buffer[0]);
-    std::size_t dst_bytes = out_buffer.size();
-
-    while (0 != src_bytes) {
-        std::size_t const iconv_result =
-            iconv(conv_desc, &src_buffer, &src_bytes, &dst_buffer, &dst_bytes);
-
-        if (static_cast<std::size_t>(-1) == iconv_result) {
-            if (EILSEQ == errno || EINVAL == errno) {
-                // Try to skip the bad character
-                if (0 != src_bytes) {
-                    --src_bytes;
-                    ++src_buffer;
-                }
-            } else {
-                LOG_ERROR(Common, "iconv failure [UTF-8]: {}", strerror(errno));
-                break;
-            }
-        }
-    }
-
-    std::u16string result;
-    out_buffer.resize(out_buffer_size - dst_bytes);
-    out_buffer.swap(result);
-
-    iconv_close(conv_desc);
-
-    return result;
-}
-
-std::string UTF16ToUTF8(const std::u16string& input) {
-    return CodeToUTF8("UTF-16LE", input);
-}
-
-std::string CP1252ToUTF8(const std::string& input) {
-    // return CodeToUTF8("CP1252//TRANSLIT", input);
-    // return CodeToUTF8("CP1252//IGNORE", input);
-    return CodeToUTF8("CP1252", input);
-}
-
-std::string SHIFTJISToUTF8(const std::string& input) {
-    // return CodeToUTF8("CP932", input);
-    return CodeToUTF8("SJIS", input);
-}
-
 #endif
 
 std::string StringFromFixedZeroTerminatedBuffer(const char* buffer, std::size_t max_len) {
@@ -383,27 +208,5 @@ std::string StringFromFixedZeroTerminatedBuffer(const char* buffer, std::size_t 
         ++len;
 
     return std::string(buffer, len);
-}
-
-const char* TrimSourcePath(const char* path, const char* root) {
-    const char* p = path;
-
-    while (*p != '\0') {
-        const char* next_slash = p;
-        while (*next_slash != '\0' && *next_slash != '/' && *next_slash != '\\') {
-            ++next_slash;
-        }
-
-        bool is_src = Common::ComparePartialString(p, next_slash, root);
-        p = next_slash;
-
-        if (*p != '\0') {
-            ++p;
-        }
-        if (is_src) {
-            path = p;
-        }
-    }
-    return path;
 }
 } // namespace Common

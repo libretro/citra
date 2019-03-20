@@ -7,11 +7,11 @@
 #include <string>
 #include "common/common_types.h"
 #include "core/hle/kernel/object.h"
+#include "core/hle/kernel/server_port.h"
 #include "core/hle/result.h"
 
 namespace Kernel {
 
-class ServerPort;
 class ClientSession;
 
 class ClientPort final : public Object {
@@ -29,6 +29,10 @@ public:
         return HANDLE_TYPE;
     }
 
+    SharedPtr<ServerPort> GetServerPort() const {
+        return server_port;
+    }
+
     /**
      * Creates a new Session pair, adds the created ServerSession to the associated ServerPort's
      * list of pending sessions, and signals the ServerPort, causing any threads
@@ -44,13 +48,16 @@ public:
     void ConnectionClosed();
 
 private:
-    ClientPort();
+    explicit ClientPort(KernelSystem& kernel);
     ~ClientPort() override;
 
+    KernelSystem& kernel;
     SharedPtr<ServerPort> server_port; ///< ServerPort associated with this client port.
     u32 max_sessions = 0;    ///< Maximum number of simultaneous sessions the port can have
     u32 active_sessions = 0; ///< Number of currently open sessions to this port
     std::string name;        ///< Name of client port (optional)
+
+    friend class KernelSystem;
 };
 
 } // namespace Kernel

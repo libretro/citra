@@ -28,6 +28,7 @@ struct Entry {
     unsigned int line_num;
     std::string function;
     std::string message;
+    bool final_entry = false;
 
     Entry() = default;
     Entry(Entry&& o) = default;
@@ -102,6 +103,20 @@ public:
 private:
     FileUtil::IOFile file;
     std::size_t bytes_written;
+};
+
+/**
+ * Backend that writes to Visual Studio's output window
+ */
+class DebuggerBackend : public Backend {
+public:
+    static const char* Name() {
+        return "debugger";
+    }
+    const char* GetName() const override {
+        return Name();
+    }
+    void Write(const Entry& entry) override;
 };
 
 void Init();

@@ -38,6 +38,11 @@
          <string>Input</string>
         </attribute>
        </widget>
+       <widget class="ConfigureHotkeys" name="hotkeysTab">
+        <attribute name="title">
+         <string>Hotkeys</string>
+        </attribute>
+       </widget>
        <widget class="ConfigureGraphics" name="graphicsTab">
         <attribute name="title">
          <string>Graphics</string>
@@ -61,6 +66,11 @@
        <widget class="ConfigureWeb" name="webTab">
         <attribute name="title">
          <string>Web</string>
+        </attribute>
+       </widget>
+       <widget class="ConfigureUi" name="uiTab">
+        <attribute name="title">
+         <string>UI</string>
         </attribute>
        </widget>
       </widget>
@@ -114,6 +124,12 @@
    <container>1</container>
   </customwidget>
   <customwidget>
+   <class>ConfigureHotkeys</class>
+   <extends>QWidget</extends>
+   <header>configuration/configure_hotkeys.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
    <class>ConfigureGraphics</class>
    <extends>QWidget</extends>
    <header>configuration/configure_graphics.h</header>
@@ -123,6 +139,12 @@
    <class>ConfigureWeb</class>
    <extends>QWidget</extends>
    <header>configuration/configure_web.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>ConfigureUi</class>
+   <extends>QWidget</extends>
+   <header>configuration/configure_ui.h</header>
    <container>1</container>
   </customwidget>
  </customwidgets>

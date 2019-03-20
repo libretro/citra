@@ -8,8 +8,7 @@
 #include "common/vector_math.h"
 #include "video_core/regs_texturing.h"
 
-namespace Pica {
-namespace Texture {
+namespace Pica::Texture {
 
 /// Returns the byte size of a 8*8 tile of the specified texture format.
 size_t CalculateTileSize(TexturingRegs::TextureFormat format);
@@ -41,8 +40,8 @@ struct TextureInfo {
  * channel.
  * @todo Eventually we should get rid of the disable_alpha parameter.
  */
-Math::Vec4<u8> LookupTexture(const u8* source, unsigned int x, unsigned int y,
-                             const TextureInfo& info, bool disable_alpha = false);
+Common::Vec4<u8> LookupTexture(const u8* source, unsigned int x, unsigned int y,
+                               const TextureInfo& info, bool disable_alpha = false);
 
 /**
  * Looks up a texel from a single 8x8 texture tile.
@@ -53,8 +52,7 @@ Math::Vec4<u8> LookupTexture(const u8* source, unsigned int x, unsigned int y,
  * @param disable_alpha Used for debugging. Sets the result alpha to 255 and either discards the
  *                      real alpha or inserts it in an otherwise unused channel.
  */
-Math::Vec4<u8> LookupTexelInTile(const u8* source, unsigned int x, unsigned int y,
-                                 const TextureInfo& info, bool disable_alpha);
+Common::Vec4<u8> LookupTexelInTile(const u8* source, unsigned int x, unsigned int y,
+                                   const TextureInfo& info, bool disable_alpha);
 
-} // namespace Texture
-} // namespace Pica
+} // namespace Pica::Texture

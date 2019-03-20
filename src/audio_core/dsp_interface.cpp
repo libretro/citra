@@ -15,8 +15,7 @@ DspInterface::DspInterface() = default;
 DspInterface::~DspInterface() = default;
 
 void DspInterface::SetSink(const std::string& sink_id, const std::string& audio_device) {
-    const SinkDetails& sink_details = GetSinkDetails(sink_id);
-    sink = sink_details.factory(audio_device);
+    sink = CreateSinkFromID(Settings::values.sink_id, Settings::values.audio_device_id);
     sink->SetCallback(
         [this](s16* buffer, std::size_t num_frames) { OutputCallback(buffer, num_frames); });
     time_stretcher.SetOutputSampleRate(sink->GetNativeSampleRate());
@@ -46,6 +45,13 @@ void DspInterface::OutputFrame(StereoFrame16& frame) {
     GetSink().OnAudioSubmission(frame.size());
 }
 
+void DspInterface::OutputSample(std::array<s16, 2> sample) {
+    if (!sink)
+        return;
+
+    fifo.Push(&sample, 1);
+}
+
 void DspInterface::OutputCallback(s16* buffer, std::size_t num_frames) {
     std::size_t frames_written;
     if (perform_time_stretching) {
@@ -73,7 +79,8 @@ void DspInterface::OutputCallback(s16* buffer, std::size_t num_frames) {
     // Implementation of the hardware volume slider with a dynamic range of 60 dB
     const float linear_volume = std::clamp(Settings::values.volume, 0.0f, 1.0f);
     if (linear_volume != 1.0) {
-        const float volume_scale_factor = std::exp(6.90775f * linear_volume) * 0.001f;
+        const float volume_scale_factor =
+            linear_volume == 0 ? 0 : std::exp(6.90775f * linear_volume) * 0.001f;
         for (std::size_t i = 0; i < num_frames; i++) {
             buffer[i * 2 + 0] = static_cast<s16>(buffer[i * 2 + 0] * volume_scale_factor);
             buffer[i * 2 + 1] = static_cast<s16>(buffer[i * 2 + 1] * volume_scale_factor);

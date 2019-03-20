@@ -4,80 +4,74 @@
 
 #pragma once
 
-#include <functional>
-#include <future>
+#include <memory>
 #include <string>
-#include <tuple>
-#include <httplib.h>
-#include "common/announce_multiplayer_room.h"
-#include "common/common_types.h"
 
-namespace LUrlParser {
-class clParseURL;
+namespace Common {
+struct WebResult;
 }
 
 namespace WebService {
 
-/**
- * Requests a new JWT if necessary
- * @param force_new_token If true, force to request a new token from the server.
- * @param username Citra username to use for authentication.
- * @param token Citra token to use for authentication.
- * @return string with the current JWT toke
- */
-std::string UpdateCoreJWT(bool force_new_token, const std::string& username,
-                          const std::string& token);
+class Client {
+public:
+    Client(std::string host, std::string username, std::string token);
+    ~Client();
 
-/**
- * Posts JSON to a api.citra-emu.org.
- * @param url URL of the api.citra-emu.org endpoint to post data to.
- * @param parsed_url Parsed URL used for the POST request.
- * @param params Headers sent for the POST request.
- * @param data String of JSON data to use for the body of the POST request.
- * @param data If true, a JWT is requested in the function
- * @return future with the returned value of the POST
- */
-static Common::WebResult PostJsonAsyncFn(const std::string& url,
-                                         const LUrlParser::clParseURL& parsed_url,
-                                         const httplib::Headers& params, const std::string& data,
-                                         bool is_jwt_requested);
+    /**
+     * Posts JSON to the specified path.
+     * @param path the URL segment after the host address.
+     * @param data String of JSON data to use for the body of the POST request.
+     * @param allow_anonymous If true, allow anonymous unauthenticated requests.
+     * @return the result of the request.
+     */
+    Common::WebResult PostJson(const std::string& path, const std::string& data,
+                               bool allow_anonymous);
 
-/**
- * Posts JSON to api.citra-emu.org.
- * @param url URL of the api.citra-emu.org endpoint to post data to.
- * @param data String of JSON data to use for the body of the POST request.
- * @param allow_anonymous If true, allow anonymous unauthenticated requests.
- * @return future with the returned value of the POST
- */
-std::future<Common::WebResult> PostJson(const std::string& url, const std::string& data,
-                                        bool allow_anonymous);
+    /**
+     * Gets JSON from the specified path.
+     * @param path the URL segment after the host address.
+     * @param allow_anonymous If true, allow anonymous unauthenticated requests.
+     * @return the result of the request.
+     */
+    Common::WebResult GetJson(const std::string& path, bool allow_anonymous);
 
-/**
- * Posts JSON to api.citra-emu.org.
- * @param url URL of the api.citra-emu.org endpoint to post data to.
- * @param username Citra username to use for authentication.
- * @param token Citra token to use for authentication.
- * @return future with the error or result of the POST
- */
-std::future<Common::WebResult> PostJson(const std::string& url, const std::string& username,
-                                        const std::string& token);
+    /**
+     * Deletes JSON to the specified path.
+     * @param path the URL segment after the host address.
+     * @param data String of JSON data to use for the body of the DELETE request.
+     * @param allow_anonymous If true, allow anonymous unauthenticated requests.
+     * @return the result of the request.
+     */
+    Common::WebResult DeleteJson(const std::string& path, const std::string& data,
+                                 bool allow_anonymous);
 
-/**
- * Gets JSON from api.citra-emu.org.
- * @param func A function that gets exectued when the json as a string is received
- * @param url URL of the api.citra-emu.org endpoint to post data to.
- * @param allow_anonymous If true, allow anonymous unauthenticated requests.
- * @return future that holds the return value T of the func
- */
-template <typename T>
-std::future<T> GetJson(std::function<T(const std::string&)> func, const std::string& url,
-                       bool allow_anonymous);
+    /**
+     * Gets a plain string from the specified path.
+     * @param path the URL segment after the host address.
+     * @param allow_anonymous If true, allow anonymous unauthenticated requests.
+     * @return the result of the request.
+     */
+    Common::WebResult GetPlain(const std::string& path, bool allow_anonymous);
 
-/**
- * Delete JSON to api.citra-emu.org.
- * @param url URL of the api.citra-emu.org endpoint to post data to.
- * @param data String of JSON data to use for the body of the DELETE request.
- */
-void DeleteJson(const std::string& url, const std::string& data);
+    /**
+     * Gets an PNG image from the specified path.
+     * @param path the URL segment after the host address.
+     * @param allow_anonymous If true, allow anonymous unauthenticated requests.
+     * @return the result of the request.
+     */
+    Common::WebResult GetImage(const std::string& path, bool allow_anonymous);
+
+    /**
+     * Requests an external JWT for the specific audience provided.
+     * @param audience the audience of the JWT requested.
+     * @return the result of the request.
+     */
+    Common::WebResult GetExternalJWT(const std::string& audience);
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl;
+};
 
 } // namespace WebService

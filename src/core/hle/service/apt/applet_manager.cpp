@@ -3,6 +3,7 @@
 // Refer to the license.txt file included.
 
 #include "common/common_paths.h"
+#include "core/core.h"
 #include "core/hle/applets/applet.h"
 #include "core/hle/service/apt/applet_manager.h"
 #include "core/hle/service/apt/errors.h"
@@ -68,7 +69,7 @@ static constexpr std::array<AppletTitleData, NumApplets> applet_titleids = {{
     // TODO(Subv): Fill in the rest of the titleids
 }};
 
-static u64 GetTitleIdForApplet(AppletId id) {
+static u64 GetTitleIdForApplet(AppletId id, u32 region_value) {
     ASSERT_MSG(id != AppletId::None, "Invalid applet id");
 
     auto itr = std::find_if(applet_titleids.begin(), applet_titleids.end(),
@@ -78,7 +79,7 @@ static u64 GetTitleIdForApplet(AppletId id) {
 
     ASSERT_MSG(itr != applet_titleids.end(), "Unknown applet id 0x{:#05X}", static_cast<u32>(id));
 
-    return itr->title_ids[CFG::GetCurrentModule()->GetRegionValue()];
+    return itr->title_ids[region_value];
 }
 
 AppletManager::AppletSlotData* AppletManager::GetAppletSlotData(AppletId id) {
@@ -207,7 +208,7 @@ ResultVal<MessageParameter> AppletManager::GlanceParameter(AppletId app_id) {
     // Note: The NS module always clears the DSPSleep and DSPWakeup signals even in GlanceParameter.
     if (next_parameter->signal == SignalType::DspSleep ||
         next_parameter->signal == SignalType::DspWakeup)
-        next_parameter = boost::none;
+        next_parameter = {};
 
     return MakeResult<MessageParameter>(parameter);
 }
@@ -216,7 +217,7 @@ ResultVal<MessageParameter> AppletManager::ReceiveParameter(AppletId app_id) {
     auto result = GlanceParameter(app_id);
     if (result.Succeeded()) {
         // Clear the parameter
-        next_parameter = boost::none;
+        next_parameter = {};
     }
     return result;
 }
@@ -236,7 +237,7 @@ bool AppletManager::CancelParameter(bool check_sender, AppletId sender_appid, bo
     }
 
     if (cancellation_success)
-        next_parameter = boost::none;
+        next_parameter = {};
 
     return cancellation_success;
 }
@@ -255,6 +256,9 @@ ResultVal<AppletManager::InitializeResult> AppletManager::Initialize(AppletId ap
     }
 
     slot_data->applet_id = static_cast<AppletId>(app_id);
+    // Note: In the real console the title id of a given applet slot is set by the APT module when
+    // calling StartApplication.
+    slot_data->title_id = system.Kernel().GetCurrentProcess()->codeset->program_id;
     slot_data->attributes.raw = attributes.raw;
 
     if (slot_data->applet_id == AppletId::Application ||
@@ -323,10 +327,13 @@ ResultCode AppletManager::PrepareToStartLibraryApplet(AppletId applet_id) {
     // There are some problems with LLE applets. The rasterizer cache gets out of sync
     // when the applet is closed. To avoid breaking applications because of the issue,
     // we are going to disable loading LLE applets before further fixes are done.
-    //    auto process = NS::LaunchTitle(FS::MediaType::NAND, GetTitleIdForApplet(applet_id));
-    //    if (process) {
-    //        return RESULT_SUCCESS;
-    //    }
+    auto cfg = Service::CFG::GetModule(system);
+    u32 region_value = cfg->GetRegionValue();
+    auto process =
+        NS::LaunchTitle(FS::MediaType::NAND, GetTitleIdForApplet(applet_id, region_value));
+    if (process) {
+        return RESULT_SUCCESS;
+    }
 
     // If we weren't able to load the native applet title, try to fallback to an HLE implementation.
     auto applet = HLE::Applets::Applet::Get(applet_id);
@@ -350,10 +357,13 @@ ResultCode AppletManager::PreloadLibraryApplet(AppletId applet_id) {
     // There are some problems with LLE applets. The rasterizer cache gets out of sync
     // when the applet is closed. To avoid breaking applications because of the issue,
     // we are going to disable loading LLE applets before further fixes are done.
-    //    auto process = NS::LaunchTitle(FS::MediaType::NAND, GetTitleIdForApplet(applet_id));
-    //    if (process) {
-    //        return RESULT_SUCCESS;
-    //    }
+    auto cfg = Service::CFG::GetModule(system);
+    u32 region_value = cfg->GetRegionValue();
+    auto process =
+        NS::LaunchTitle(FS::MediaType::NAND, GetTitleIdForApplet(applet_id, region_value));
+    if (process) {
+        return RESULT_SUCCESS;
+    }
 
     // If we weren't able to load the native applet title, try to fallback to an HLE implementation.
     auto applet = HLE::Applets::Applet::Get(applet_id);
@@ -461,11 +471,105 @@ ResultVal<AppletManager::AppletInfo> AppletManager::GetAppletInfo(AppletId app_i
                           ErrorLevel::Status);
     }
 
-    return MakeResult<AppletInfo>({GetTitleIdForApplet(app_id), Service::FS::MediaType::NAND,
-                                   slot->registered, slot->loaded, slot->attributes.raw});
+    auto cfg = Service::CFG::GetModule(system);
+    ASSERT_MSG(cfg, "CFG Module missing!");
+    u32 region_value = cfg->GetRegionValue();
+    return MakeResult<AppletInfo>({GetTitleIdForApplet(app_id, region_value),
+                                   Service::FS::MediaType::NAND, slot->registered, slot->loaded,
+                                   slot->attributes.raw});
 }
 
-AppletManager::AppletManager() {
+ResultCode AppletManager::PrepareToDoApplicationJump(u64 title_id, FS::MediaType media_type,
+                                                     ApplicationJumpFlags flags) {
+    // A running application can not launch another application directly because the applet state
+    // for the Application slot is already in use. The way this is implemented in hardware is to
+    // launch the Home Menu and tell it to launch our desired application.
+
+    // Save the title data to send it to the Home Menu when DoApplicationJump is called.
+    const auto& application_slot = applet_slots[static_cast<size_t>(AppletSlot::Application)];
+
+    ASSERT_MSG(flags != ApplicationJumpFlags::UseStoredParameters,
+               "Unimplemented application jump flags 1");
+
+    if (flags == ApplicationJumpFlags::UseCurrentParameters) {
+        title_id = application_slot.title_id;
+    }
+
+    app_jump_parameters.current_title_id = application_slot.title_id;
+    // TODO(Subv): Retrieve the correct media type of the currently-running application. For now
+    // just assume NAND.
+    app_jump_parameters.current_media_type = FS::MediaType::NAND;
+    app_jump_parameters.next_title_id = title_id;
+    app_jump_parameters.next_media_type = media_type;
+
+    // Note: The real console uses the Home Menu to perform the application jump, therefore the menu
+    // needs to be running. The real APT module starts the Home Menu here if it's not already
+    // running, we don't have to do this. See `EnsureHomeMenuLoaded` for launching the Home Menu.
+    return RESULT_SUCCESS;
+}
+
+ResultCode AppletManager::DoApplicationJump() {
+    // Note: The real console uses the Home Menu to perform the application jump, it goes
+    // OldApplication->Home Menu->NewApplication. We do not need to use the Home Menu to do this so
+    // we launch the new application directly. In the real APT service, the Home Menu must be
+    // running to do this, otherwise error 0xC8A0CFF0 is returned.
+
+    auto& application_slot = applet_slots[static_cast<size_t>(AppletSlot::Application)];
+    application_slot.Reset();
+
+    // TODO(Subv): Set the delivery parameters.
+
+    // TODO(Subv): Terminate the current Application.
+
+    // Note: The real console sends signal 17 (WakeupToLaunchApplication) to the Home Menu, this
+    // prompts it to call GetProgramIdOnApplicationJump and
+    // PrepareToStartApplication/StartApplication on the title to launch.
+
+    if (app_jump_parameters.next_title_id == app_jump_parameters.current_title_id) {
+        // Perform a soft-reset if we're trying to relaunch the same title.
+        // TODO(Subv): Note that this reboots the entire emulated system, a better way would be to
+        // simply re-launch the title without closing all services, but this would only work for
+        // installed titles since we have no way of getting the file path of an arbitrary game dump
+        // based only on the title id.
+        system.RequestReset();
+        return RESULT_SUCCESS;
+    }
+
+    // Launch the title directly.
+    auto process =
+        NS::LaunchTitle(app_jump_parameters.next_media_type, app_jump_parameters.next_title_id);
+    if (!process) {
+        LOG_CRITICAL(Service_APT, "Failed to launch title during application jump, exiting.");
+        system.RequestShutdown();
+    }
+    return RESULT_SUCCESS;
+}
+
+void AppletManager::EnsureHomeMenuLoaded() {
+    const auto& system_slot = applet_slots[static_cast<size_t>(AppletSlot::SystemApplet)];
+    // TODO(Subv): The real APT service sends signal 12 (WakeupByCancel) to the currently running
+    // System applet, waits for it to finish, and then launches the Home Menu.
+    ASSERT_MSG(!system_slot.registered, "A system applet is already running");
+
+    const auto& menu_slot = applet_slots[static_cast<size_t>(AppletSlot::HomeMenu)];
+
+    if (menu_slot.registered) {
+        // The Home Menu is already running.
+        return;
+    }
+
+    auto cfg = Service::CFG::GetModule(system);
+    ASSERT_MSG(cfg, "CFG Module missing!");
+    u32 region_value = cfg->GetRegionValue();
+    u64 menu_title_id = GetTitleIdForApplet(AppletId::HomeMenu, region_value);
+    auto process = NS::LaunchTitle(FS::MediaType::NAND, menu_title_id);
+    if (!process) {
+        LOG_WARNING(Service_APT,
+                    "The Home Menu failed to launch, application jumping will not work.");
+    }
+}
+
+AppletManager::AppletManager(Core::System& system) : system(system) {
     for (std::size_t slot = 0; slot < applet_slots.size(); ++slot) {
         auto& slot_data = applet_slots[slot];
         slot_data.slot = static_cast<AppletSlot>(slot);
@@ -474,9 +578,9 @@ AppletManager::AppletManager() {
         slot_data.registered = false;
         slot_data.loaded = false;
         slot_data.notification_event =
-            Kernel::Event::Create(Kernel::ResetType::OneShot, "APT:Notification");
+            system.Kernel().CreateEvent(Kernel::ResetType::OneShot, "APT:Notification");
         slot_data.parameter_event =
-            Kernel::Event::Create(Kernel::ResetType::OneShot, "APT:Parameter");
+            system.Kernel().CreateEvent(Kernel::ResetType::OneShot, "APT:Parameter");
     }
     HLE::Applets::Init();
 }

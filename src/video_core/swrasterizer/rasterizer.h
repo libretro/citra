@@ -6,15 +6,14 @@
 
 #include "video_core/shader/shader.h"
 
-namespace Pica {
-namespace Rasterizer {
+namespace Pica::Rasterizer {
 
 struct Vertex : Shader::OutputVertex {
     Vertex(const OutputVertex& v) : OutputVertex(v) {}
 
     // Attributes used to store intermediate results
     // position after perspective divide
-    Math::Vec3<float24> screenpos;
+    Common::Vec3<float24> screenpos;
 
     // Linear interpolation
     // factor: 0=this, 1=vtx
@@ -42,5 +41,4 @@ struct Vertex : Shader::OutputVertex {
 
 void ProcessTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2);
 
-} // namespace Rasterizer
-} // namespace Pica
+} // namespace Pica::Rasterizer

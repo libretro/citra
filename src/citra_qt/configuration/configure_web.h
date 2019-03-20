@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include <future>
 #include <memory>
+#include <QFutureWatcher>
 #include <QWidget>
 
 namespace Ui {
@@ -17,25 +17,20 @@ class ConfigureWeb : public QWidget {
 
 public:
     explicit ConfigureWeb(QWidget* parent = nullptr);
-    ~ConfigureWeb();
+    ~ConfigureWeb() override;
 
     void applyConfiguration();
     void retranslateUi();
+    void setConfiguration();
 
-public slots:
+private:
     void RefreshTelemetryID();
     void OnLoginChanged();
     void VerifyLogin();
     void OnLoginVerified();
 
-signals:
-    void LoginVerified();
-
-private:
-    void setConfiguration();
-
     bool user_verified = true;
-    std::future<bool> verified;
+    QFutureWatcher<bool> verify_watcher;
 
     std::unique_ptr<Ui::ConfigureWeb> ui;
 };

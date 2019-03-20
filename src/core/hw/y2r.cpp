@@ -10,12 +10,12 @@
 #include "common/color.h"
 #include "common/common_types.h"
 #include "common/vector_math.h"
+#include "core/core.h"
 #include "core/hle/service/y2r_u.h"
 #include "core/hw/y2r.h"
 #include "core/memory.h"
 
-namespace HW {
-namespace Y2R {
+namespace HW::Y2R {
 
 using namespace Service::Y2R;
 
@@ -80,7 +80,7 @@ static void ConvertYUVToRGB(InputFormat input_format, const u8* input_Y, const u
 /// formats to 8-bit.
 template <std::size_t N>
 static void ReceiveData(u8* output, ConversionBuffer& buf, std::size_t amount_of_data) {
-    const u8* input = Memory::GetPointer(buf.address);
+    const u8* input = Core::System::GetInstance().Memory().GetPointer(buf.address);
 
     std::size_t output_unit = buf.transfer_unit / N;
     ASSERT(amount_of_data % output_unit == 0);
@@ -104,13 +104,13 @@ static void ReceiveData(u8* output, ConversionBuffer& buf, std::size_t amount_of
 static void SendData(const u32* input, ConversionBuffer& buf, int amount_of_data,
                      OutputFormat output_format, u8 alpha) {
 
-    u8* output = Memory::GetPointer(buf.address);
+    u8* output = Core::System::GetInstance().Memory().GetPointer(buf.address);
 
     while (amount_of_data > 0) {
         u8* unit_end = output + buf.transfer_unit;
         while (output < unit_end) {
             u32 color = *input++;
-            Math::Vec4<u8> col_vec{(u8)(color >> 24), (u8)(color >> 16), (u8)(color >> 8), alpha};
+            Common::Vec4<u8> col_vec{(u8)(color >> 24), (u8)(color >> 16), (u8)(color >> 8), alpha};
 
             switch (output_format) {
             case OutputFormat::RGBA8:
@@ -376,5 +376,4 @@ void PerformConversion(ConversionConfiguration& cvt) {
                  cvt.output_format, (u8)cvt.alpha);
     }
 }
-} // namespace Y2R
-} // namespace HW
+} // namespace HW::Y2R

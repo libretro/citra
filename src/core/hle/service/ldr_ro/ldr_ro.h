@@ -4,19 +4,21 @@
 
 #pragma once
 
-#include "core/hle/service/ldr_ro/memory_synchronizer.h"
 #include "core/hle/service/service.h"
+
+namespace Core {
+class System;
+}
 
 namespace Service::LDR {
 
 struct ClientSlot : public Kernel::SessionRequestHandler::SessionDataBase {
-    MemorySynchronizer memory_synchronizer;
     VAddr loaded_crs = 0; ///< the virtual address of the static module
 };
 
 class RO final : public ServiceFramework<RO, ClientSlot> {
 public:
-    RO();
+    explicit RO(Core::System& system);
 
 private:
     /**
@@ -147,8 +149,10 @@ private:
      *      1 : Result of function, 0 on success, otherwise error code
      */
     void Shutdown(Kernel::HLERequestContext& self);
+
+    Core::System& system;
 };
 
-void InstallInterfaces(SM::ServiceManager& service_manager);
+void InstallInterfaces(Core::System& system);
 
 } // namespace Service::LDR

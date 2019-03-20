@@ -11,23 +11,20 @@
 #include "core/hle/result.h"
 #include "core/memory.h"
 
+namespace Kernel {
+class Process;
+}
+
+class ARM_Interface;
+
 namespace Service::LDR {
 
-// GCC versions < 5.0 do not implement std::is_trivially_copyable.
-// Excluding MSVC because it has weird behaviour for std::is_trivially_copyable.
-#if (__GNUC__ >= 5) || defined(__clang__)
 #define ASSERT_CRO_STRUCT(name, size)                                                              \
     static_assert(std::is_standard_layout<name>::value,                                            \
                   "CRO structure " #name " doesn't use standard layout");                          \
     static_assert(std::is_trivially_copyable<name>::value,                                         \
                   "CRO structure " #name " isn't trivially copyable");                             \
     static_assert(sizeof(name) == (size), "Unexpected struct size for CRO structure " #name)
-#else
-#define ASSERT_CRO_STRUCT(name, size)                                                              \
-    static_assert(std::is_standard_layout<name>::value,                                            \
-                  "CRO structure " #name " doesn't use standard layout");                          \
-    static_assert(sizeof(name) == (size), "Unexpected struct size for CRO structure " #name)
-#endif
 
 static constexpr u32 CRO_HEADER_SIZE = 0x138;
 static constexpr u32 CRO_HASH_SIZE = 0x80;
@@ -36,10 +33,12 @@ static constexpr u32 CRO_HASH_SIZE = 0x80;
 class CROHelper final {
 public:
     // TODO (wwylele): pass in the process handle for memory access
-    explicit CROHelper(VAddr cro_address) : module_address(cro_address) {}
+    explicit CROHelper(VAddr cro_address, Kernel::Process& process, Memory::MemorySystem& memory,
+                       ARM_Interface& cpu)
+        : module_address(cro_address), process(process), memory(memory), cpu(cpu) {}
 
     std::string ModuleName() const {
-        return Memory::ReadCString(GetField(ModuleNameOffset), GetField(ModuleNameSize));
+        return memory.ReadCString(GetField(ModuleNameOffset), GetField(ModuleNameSize));
     }
 
     u32 GetFileSize() const {
@@ -144,6 +143,9 @@ public:
 
 private:
     const VAddr module_address; ///< the virtual address of this module
+    Kernel::Process& process;   ///< the owner process of this module
+    Memory::MemorySystem& memory;
+    ARM_Interface& cpu;
 
     /**
      * Each item in this enum represents a u32 field in the header begin from address+0x80,
@@ -224,8 +226,8 @@ private:
      */
     union SegmentTag {
         u32_le raw;
-        BitField<0, 4, u32_le> segment_index;
-        BitField<4, 28, u32_le> offset_into_segment;
+        BitField<0, 4, u32> segment_index;
+        BitField<4, 28, u32> offset_into_segment;
 
         SegmentTag() = default;
         explicit SegmentTag(u32 raw_) : raw(raw_) {}
@@ -235,7 +237,7 @@ private:
     struct SegmentEntry {
         u32_le offset;
         u32_le size;
-        SegmentType type;
+        enum_le<SegmentType> type;
 
         static constexpr HeaderField TABLE_OFFSET_FIELD = SegmentTableOffset;
     };
@@ -263,8 +265,8 @@ private:
         u16_le test_bit; // bit address into the name to test
         union Child {
             u16_le raw;
-            BitField<0, 15, u16_le> next_index;
-            BitField<15, 1, u16_le> is_end;
+            BitField<0, 15, u16> next_index;
+            BitField<15, 1, u16> is_end;
         } left, right;
         u16_le export_table_index; // index of an ExportNamedSymbolEntry
 
@@ -311,16 +313,20 @@ private:
 
         static constexpr HeaderField TABLE_OFFSET_FIELD = ImportModuleTableOffset;
 
-        void GetImportIndexedSymbolEntry(u32 index, ImportIndexedSymbolEntry& entry) {
-            Memory::ReadBlock(import_indexed_symbol_table_offset +
-                                  index * sizeof(ImportIndexedSymbolEntry),
-                              &entry, sizeof(ImportIndexedSymbolEntry));
+        void GetImportIndexedSymbolEntry(Kernel::Process& process, Memory::MemorySystem& memory,
+                                         u32 index, ImportIndexedSymbolEntry& entry) {
+            memory.ReadBlock(process,
+                             import_indexed_symbol_table_offset +
+                                 index * sizeof(ImportIndexedSymbolEntry),
+                             &entry, sizeof(ImportIndexedSymbolEntry));
         }
 
-        void GetImportAnonymousSymbolEntry(u32 index, ImportAnonymousSymbolEntry& entry) {
-            Memory::ReadBlock(import_anonymous_symbol_table_offset +
-                                  index * sizeof(ImportAnonymousSymbolEntry),
-                              &entry, sizeof(ImportAnonymousSymbolEntry));
+        void GetImportAnonymousSymbolEntry(Kernel::Process& process, Memory::MemorySystem& memory,
+                                           u32 index, ImportAnonymousSymbolEntry& entry) {
+            memory.ReadBlock(process,
+                             import_anonymous_symbol_table_offset +
+                                 index * sizeof(ImportAnonymousSymbolEntry),
+                             &entry, sizeof(ImportAnonymousSymbolEntry));
         }
     };
     ASSERT_CRO_STRUCT(ImportModuleEntry, 20);
@@ -397,11 +403,11 @@ private:
     }
 
     u32 GetField(HeaderField field) const {
-        return Memory::Read32(Field(field));
+        return memory.Read32(Field(field));
     }
 
     void SetField(HeaderField field, u32 value) {
-        Memory::Write32(Field(field), value);
+        memory.Write32(Field(field), value);
     }
 
     /**
@@ -412,9 +418,10 @@ private:
      *       indicating which table the entry is in.
      */
     template <typename T>
-    void GetEntry(std::size_t index, T& data) const {
-        Memory::ReadBlock(GetField(T::TABLE_OFFSET_FIELD) + static_cast<u32>(index * sizeof(T)),
-                          &data, sizeof(T));
+    void GetEntry(Memory::MemorySystem& memory, std::size_t index, T& data) const {
+        memory.ReadBlock(process,
+                         GetField(T::TABLE_OFFSET_FIELD) + static_cast<u32>(index * sizeof(T)),
+                         &data, sizeof(T));
     }
 
     /**
@@ -425,9 +432,10 @@ private:
      *       indicating which table the entry is in.
      */
     template <typename T>
-    void SetEntry(std::size_t index, const T& data) {
-        Memory::WriteBlock(GetField(T::TABLE_OFFSET_FIELD) + static_cast<u32>(index * sizeof(T)),
-                           &data, sizeof(T));
+    void SetEntry(Memory::MemorySystem& memory, std::size_t index, const T& data) {
+        memory.WriteBlock(process,
+                          GetField(T::TABLE_OFFSET_FIELD) + static_cast<u32>(index * sizeof(T)),
+                          &data, sizeof(T));
     }
 
     /**
@@ -466,10 +474,12 @@ private:
      *         otherwise error code of the last iteration.
      */
     template <typename FunctionObject>
-    static ResultCode ForEachAutoLinkCRO(VAddr crs_address, FunctionObject func) {
+    static ResultCode ForEachAutoLinkCRO(Kernel::Process& process, Memory::MemorySystem& memory,
+                                         ARM_Interface& cpu, VAddr crs_address,
+                                         FunctionObject func) {
         VAddr current = crs_address;
         while (current != 0) {
-            CROHelper cro(current);
+            CROHelper cro(current, process, memory, cpu);
             CASCADE_RESULT(bool next, func(cro));
             if (!next)
                 break;

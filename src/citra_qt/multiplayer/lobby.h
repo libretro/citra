@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include <future>
 #include <memory>
 #include <QDialog>
 #include <QFutureWatcher>
@@ -30,6 +29,8 @@ public:
     explicit Lobby(QWidget* parent, QStandardItemModel* list,
                    std::shared_ptr<Core::AnnounceMultiplayerSession> session);
     ~Lobby() = default;
+
+    void RetranslateUi();
 
 public slots:
     /**
@@ -61,11 +62,6 @@ private slots:
     void OnJoinRoom(const QModelIndex&);
 
 signals:
-    /**
-     * Signalled when the latest lobby data is retrieved.
-     */
-    void LobbyRefreshed();
-
     void StateChanged(const Network::RoomMember::State&);
 
 private:
@@ -84,7 +80,7 @@ private:
     QStandardItemModel* game_list;
     LobbyFilterProxyModel* proxy;
 
-    std::future<AnnounceMultiplayerRoom::RoomList> room_list_future;
+    QFutureWatcher<AnnounceMultiplayerRoom::RoomList> room_list_watcher;
     std::weak_ptr<Core::AnnounceMultiplayerSession> announce_multiplayer_session;
     std::unique_ptr<Ui::Lobby> ui;
     QFutureWatcher<void>* watcher;

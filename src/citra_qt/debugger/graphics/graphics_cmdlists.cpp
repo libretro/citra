@@ -17,6 +17,7 @@
 #include "citra_qt/util/spinbox.h"
 #include "citra_qt/util/util.h"
 #include "common/vector_math.h"
+#include "core/core.h"
 #include "core/memory.h"
 #include "video_core/debug_utils/debug_utils.h"
 #include "video_core/pica_state.h"
@@ -28,7 +29,7 @@ QImage LoadTexture(const u8* src, const Pica::Texture::TextureInfo& info) {
     QImage decoded_image(info.width, info.height, QImage::Format_ARGB32);
     for (u32 y = 0; y < info.height; ++y) {
         for (u32 x = 0; x < info.width; ++x) {
-            Math::Vec4<u8> color = Pica::Texture::LookupTexture(src, x, y, info, true);
+            Common::Vec4<u8> color = Pica::Texture::LookupTexture(src, x, y, info, true);
             decoded_image.setPixel(x, y, qRgba(color.r(), color.g(), color.b(), color.a()));
         }
     }
@@ -166,7 +167,8 @@ void GPUCommandListWidget::SetCommandInfo(const QModelIndex& index) {
         const auto format = texture.format;
 
         const auto info = Pica::Texture::TextureInfo::FromPicaRegister(config, format);
-        const u8* src = Memory::GetPhysicalPointer(config.GetPhysicalAddress());
+        const u8* src =
+            Core::System::GetInstance().Memory().GetPhysicalPointer(config.GetPhysicalAddress());
         new_info_widget = new TextureInfoWidget(src, info);
     }
     if (command_info_widget) {

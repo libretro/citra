@@ -11,13 +11,22 @@
 #include "core/hle/kernel/thread.h"
 
 namespace Kernel {
+namespace {
+constexpr u16 GetSlot(Handle handle) {
+    return handle >> 15;
+}
 
-HandleTable g_handle_table;
+constexpr u16 GetGeneration(Handle handle) {
+    return handle & 0x7FFF;
+}
+} // Anonymous namespace
 
-HandleTable::HandleTable() {
+HandleTable::HandleTable(KernelSystem& kernel) : kernel(kernel) {
     next_generation = 1;
     Clear();
 }
+
+HandleTable::~HandleTable() = default;
 
 ResultVal<Handle> HandleTable::Create(SharedPtr<Object> obj) {
     DEBUG_ASSERT(obj != nullptr);
@@ -74,9 +83,9 @@ bool HandleTable::IsValid(Handle handle) const {
 
 SharedPtr<Object> HandleTable::GetGeneric(Handle handle) const {
     if (handle == CurrentThread) {
-        return GetCurrentThread();
+        return kernel.GetThreadManager().GetCurrentThread();
     } else if (handle == CurrentProcess) {
-        return g_current_process;
+        return kernel.GetCurrentProcess();
     }
 
     if (!IsValid(handle)) {

@@ -8,7 +8,6 @@
 #include <string>
 #include "common/common_types.h"
 #include "core/frontend/applets/swkbd.h"
-#include "core/hle/shared_page.h"
 #include "core/loader/loader.h"
 #include "core/memory.h"
 #include "core/perf_stats.h"
@@ -17,23 +16,38 @@
 class EmuWindow;
 class ARM_Interface;
 
+namespace Memory {
+class MemorySystem;
+}
+
 namespace AudioCore {
 class DspInterface;
 }
 
-#ifdef ENABLE_SCRIPTING
 namespace RPC {
 class RPCServer;
 }
-#endif
 
 namespace Service {
 namespace SM {
 class ServiceManager;
 }
+namespace FS {
+class ArchiveManager;
+}
 } // namespace Service
 
+namespace Kernel {
+class KernelSystem;
+}
+
+namespace Cheats {
+class CheatEngine;
+}
+
 namespace Core {
+
+class Timing;
 
 class System {
 public:
@@ -158,6 +172,36 @@ public:
      */
     const Service::SM::ServiceManager& ServiceManager() const;
 
+    /// Gets a reference to the archive manager
+    Service::FS::ArchiveManager& ArchiveManager();
+
+    /// Gets a const reference to the archive manager
+    const Service::FS::ArchiveManager& ArchiveManager() const;
+
+    /// Gets a reference to the kernel
+    Kernel::KernelSystem& Kernel();
+
+    /// Gets a const reference to the kernel
+    const Kernel::KernelSystem& Kernel() const;
+
+    /// Gets a reference to the timing system
+    Timing& CoreTiming();
+
+    /// Gets a const reference to the timing system
+    const Timing& CoreTiming() const;
+
+    /// Gets a reference to the memory system
+    Memory::MemorySystem& Memory();
+
+    /// Gets a const reference to the memory system
+    const Memory::MemorySystem& Memory() const;
+
+    /// Gets a reference to the cheat engine
+    Cheats::CheatEngine& CheatEngine();
+
+    /// Gets a const reference to the cheat engine
+    const Cheats::CheatEngine& CheatEngine() const;
+
     PerfStats perf_stats;
     FrameLimiter frame_limiter;
 
@@ -182,10 +226,6 @@ public:
 
     std::shared_ptr<Frontend::SoftwareKeyboard> GetSoftwareKeyboard() const {
         return registered_swkbd;
-    }
-
-    std::shared_ptr<SharedPage::Handler> GetSharedPageHandler() const {
-        return shared_page_handler;
     }
 
 private:
@@ -222,14 +262,19 @@ private:
     /// Frontend applets
     std::shared_ptr<Frontend::SoftwareKeyboard> registered_swkbd;
 
-#ifdef ENABLE_SCRIPTING
+    /// Cheats manager
+    std::unique_ptr<Cheats::CheatEngine> cheat_engine;
+
     /// RPC Server for scripting support
     std::unique_ptr<RPC::RPCServer> rpc_server;
-#endif
 
-    /// Shared Page
-    std::shared_ptr<SharedPage::Handler> shared_page_handler;
+    std::unique_ptr<Service::FS::ArchiveManager> archive_manager;
 
+    std::unique_ptr<Memory::MemorySystem> memory;
+    std::unique_ptr<Kernel::KernelSystem> kernel;
+    std::unique_ptr<Timing> timing;
+
+private:
     static System s_instance;
 
     ResultStatus status = ResultStatus::Success;

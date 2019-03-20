@@ -26,8 +26,8 @@ struct CubebSink::Impl {
     static void LogCallback(char const* fmt, ...);
 };
 
-CubebSink::CubebSink(std::string target_device_name) : impl(std::make_unique<Impl>()) {
-    if (cubeb_init(&impl->ctx, "Citra", nullptr) != CUBEB_OK) {
+CubebSink::CubebSink(std::string_view target_device_name) : impl(std::make_unique<Impl>()) {
+    if (cubeb_init(&impl->ctx, "Citra Output", nullptr) != CUBEB_OK) {
         LOG_CRITICAL(Audio_Sink, "cubeb_init failed");
         return;
     }
@@ -56,7 +56,8 @@ CubebSink::CubebSink(std::string target_device_name) : impl(std::make_unique<Imp
             const auto collection_end{collection.device + collection.count};
             const auto device{
                 std::find_if(collection.device, collection_end, [&](const cubeb_device_info& info) {
-                    return target_device_name == info.friendly_name;
+                    return info.friendly_name != nullptr &&
+                           target_device_name == info.friendly_name;
                 })};
             if (device != collection_end) {
                 output_device = device->devid;
@@ -178,7 +179,7 @@ std::vector<std::string> ListCubebSinkDevices() {
     } else {
         for (std::size_t i = 0; i < collection.count; i++) {
             const cubeb_device_info& device = collection.device[i];
-            if (device.friendly_name) {
+            if (device.state == CUBEB_DEVICE_STATE_ENABLED && device.friendly_name) {
                 device_list.emplace_back(device.friendly_name);
             }
         }

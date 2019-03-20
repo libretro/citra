@@ -2,10 +2,12 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <algorithm>
+#include <array>
 #include <unordered_map>
+#include <QKeySequence>
 #include <QSettings>
 #include "citra_qt/configuration/config.h"
-#include "citra_qt/ui_settings.h"
 #include "common/file_util.h"
 #include "core/hle/service/service.h"
 #include "input_common/main.h"
@@ -16,14 +18,19 @@ Config::Config() {
     // TODO: Don't hardcode the path; let the frontend decide where to put the config files.
     qt_config_loc = FileUtil::GetUserPath(FileUtil::UserPath::ConfigDir) + "qt-config.ini";
     FileUtil::CreateFullPath(qt_config_loc);
-    qt_config = new QSettings(QString::fromStdString(qt_config_loc), QSettings::IniFormat);
-
+    qt_config =
+        std::make_unique<QSettings>(QString::fromStdString(qt_config_loc), QSettings::IniFormat);
     Reload();
 }
 
+Config::~Config() {
+    Save();
+}
+
 const std::array<int, Settings::NativeButton::NumButtons> Config::default_buttons = {
-    Qt::Key_A, Qt::Key_S, Qt::Key_Z, Qt::Key_X, Qt::Key_T, Qt::Key_G, Qt::Key_F, Qt::Key_H,
-    Qt::Key_Q, Qt::Key_W, Qt::Key_M, Qt::Key_N, Qt::Key_1, Qt::Key_2, Qt::Key_B,
+    Qt::Key_A, Qt::Key_S, Qt::Key_Z, Qt::Key_X, Qt::Key_T, Qt::Key_G,
+    Qt::Key_F, Qt::Key_H, Qt::Key_Q, Qt::Key_W, Qt::Key_M, Qt::Key_N,
+    Qt::Key_O, Qt::Key_P, Qt::Key_1, Qt::Key_2, Qt::Key_B,
 };
 
 const std::array<std::array<int, 5>, Settings::NativeAnalog::NumAnalogs> Config::default_analogs{{
@@ -43,45 +50,96 @@ const std::array<std::array<int, 5>, Settings::NativeAnalog::NumAnalogs> Config:
     },
 }};
 
+// This shouldn't have anything except static initializers (no functions). So
+// QKeySequnce(...).toString() is NOT ALLOWED HERE.
+// This must be in alphabetical order according to action name as it must have the same order as
+// UISetting::values.shortcuts, which is alphabetically ordered.
+const std::array<UISettings::Shortcut, 19> Config::default_hotkeys{
+    {{"Advance Frame", "Main Window", {"\\", Qt::ApplicationShortcut}},
+     {"Capture Screenshot", "Main Window", {"Ctrl+P", Qt::ApplicationShortcut}},
+     {"Continue/Pause Emulation", "Main Window", {"F4", Qt::WindowShortcut}},
+     {"Decrease Speed Limit", "Main Window", {"-", Qt::ApplicationShortcut}},
+     {"Exit Citra", "Main Window", {"Ctrl+Q", Qt::WindowShortcut}},
+     {"Exit Fullscreen", "Main Window", {"Esc", Qt::WindowShortcut}},
+     {"Fullscreen", "Main Window", {"F11", Qt::WindowShortcut}},
+     {"Increase Speed Limit", "Main Window", {"+", Qt::ApplicationShortcut}},
+     {"Load Amiibo", "Main Window", {"F2", Qt::ApplicationShortcut}},
+     {"Load File", "Main Window", {"Ctrl+O", Qt::WindowShortcut}},
+     {"Remove Amiibo", "Main Window", {"F3", Qt::ApplicationShortcut}},
+     {"Restart Emulation", "Main Window", {"F6", Qt::WindowShortcut}},
+     {"Stop Emulation", "Main Window", {"F5", Qt::WindowShortcut}},
+     {"Swap Screens", "Main Window", {"F9", Qt::WindowShortcut}},
+     {"Toggle Filter Bar", "Main Window", {"Ctrl+F", Qt::WindowShortcut}},
+     {"Toggle Frame Advancing", "Main Window", {"Ctrl+A", Qt::ApplicationShortcut}},
+     {"Toggle Screen Layout", "Main Window", {"F10", Qt::WindowShortcut}},
+     {"Toggle Speed Limit", "Main Window", {"Ctrl+Z", Qt::ApplicationShortcut}},
+     {"Toggle Status Bar", "Main Window", {"Ctrl+S", Qt::WindowShortcut}}}};
+
 void Config::ReadValues() {
     qt_config->beginGroup("Controls");
-    for (int i = 0; i < Settings::NativeButton::NumButtons; ++i) {
-        std::string default_param = InputCommon::GenerateKeyboardParam(default_buttons[i]);
-        Settings::values.buttons[i] =
-            ReadSetting(Settings::NativeButton::mapping[i], QString::fromStdString(default_param))
+
+    Settings::values.current_input_profile_index = ReadSetting("profile", 0).toInt();
+
+    const auto append_profile = [this] {
+        Settings::InputProfile profile;
+        profile.name = ReadSetting("name", "default").toString().toStdString();
+        for (int i = 0; i < Settings::NativeButton::NumButtons; ++i) {
+            std::string default_param = InputCommon::GenerateKeyboardParam(default_buttons[i]);
+            profile.buttons[i] = ReadSetting(Settings::NativeButton::mapping[i],
+                                             QString::fromStdString(default_param))
+                                     .toString()
+                                     .toStdString();
+            if (profile.buttons[i].empty())
+                profile.buttons[i] = default_param;
+        }
+        for (int i = 0; i < Settings::NativeAnalog::NumAnalogs; ++i) {
+            std::string default_param = InputCommon::GenerateAnalogParamFromKeys(
+                default_analogs[i][0], default_analogs[i][1], default_analogs[i][2],
+                default_analogs[i][3], default_analogs[i][4], 0.5f);
+            profile.analogs[i] = ReadSetting(Settings::NativeAnalog::mapping[i],
+                                             QString::fromStdString(default_param))
+                                     .toString()
+                                     .toStdString();
+            if (profile.analogs[i].empty())
+                profile.analogs[i] = default_param;
+        }
+        profile.motion_device =
+            ReadSetting("motion_device",
+                        "engine:motion_emu,update_period:100,sensitivity:0.01,tilt_clamp:90.0")
                 .toString()
                 .toStdString();
-        if (Settings::values.buttons[i].empty())
-            Settings::values.buttons[i] = default_param;
-    }
-
-    for (int i = 0; i < Settings::NativeAnalog::NumAnalogs; ++i) {
-        std::string default_param = InputCommon::GenerateAnalogParamFromKeys(
-            default_analogs[i][0], default_analogs[i][1], default_analogs[i][2],
-            default_analogs[i][3], default_analogs[i][4], 0.5f);
-        Settings::values.analogs[i] =
-            ReadSetting(Settings::NativeAnalog::mapping[i], QString::fromStdString(default_param))
+        profile.touch_device =
+            ReadSetting("touch_device", "engine:emu_window").toString().toStdString();
+        profile.udp_input_address =
+            ReadSetting("udp_input_address", InputCommon::CemuhookUDP::DEFAULT_ADDR)
                 .toString()
                 .toStdString();
-        if (Settings::values.analogs[i].empty())
-            Settings::values.analogs[i] = default_param;
+        profile.udp_input_port = static_cast<u16>(
+            ReadSetting("udp_input_port", InputCommon::CemuhookUDP::DEFAULT_PORT).toInt());
+        profile.udp_pad_index = static_cast<u8>(ReadSetting("udp_pad_index", 0).toUInt());
+        Settings::values.input_profiles.emplace_back(std::move(profile));
+    };
+
+    int num_input_profiles = qt_config->beginReadArray("profiles");
+
+    for (int i = 0; i < num_input_profiles; ++i) {
+        qt_config->setArrayIndex(i);
+        append_profile();
     }
 
-    Settings::values.motion_device =
-        ReadSetting("motion_device",
-                    "engine:motion_emu,update_period:100,sensitivity:0.01,tilt_clamp:90.0")
-            .toString()
-            .toStdString();
-    Settings::values.touch_device =
-        ReadSetting("touch_device", "engine:emu_window").toString().toStdString();
+    qt_config->endArray();
 
-    Settings::values.udp_input_address =
-        ReadSetting("udp_input_address", InputCommon::CemuhookUDP::DEFAULT_ADDR)
-            .toString()
-            .toStdString();
-    Settings::values.udp_input_port = static_cast<u16>(
-        ReadSetting("udp_input_port", InputCommon::CemuhookUDP::DEFAULT_PORT).toInt());
-    Settings::values.udp_pad_index = static_cast<u8>(ReadSetting("udp_pad_index", 0).toUInt());
+    // create a input profile if no input profiles exist, with the default or old settings
+    if (num_input_profiles == 0) {
+        append_profile();
+        num_input_profiles = 1;
+    }
+
+    // ensure that the current input profile index is valid.
+    Settings::values.current_input_profile_index =
+        std::clamp(Settings::values.current_input_profile_index, 0, num_input_profiles - 1);
+
+    Settings::LoadProfile(Settings::values.current_input_profile_index);
 
     qt_config->endGroup();
 
@@ -104,7 +162,7 @@ void Config::ReadValues() {
     Settings::values.use_shader_jit = ReadSetting("use_shader_jit", true).toBool();
     Settings::values.resolution_factor =
         static_cast<u16>(ReadSetting("resolution_factor", 1).toInt());
-    Settings::values.use_vsync = ReadSetting("use_vsync", false).toBool();
+    Settings::values.vsync_enabled = ReadSetting("vsync_enabled", false).toBool();
     Settings::values.use_frame_limit = ReadSetting("use_frame_limit", true).toBool();
     Settings::values.frame_limit = ReadSetting("frame_limit", 100).toInt();
 
@@ -131,12 +189,19 @@ void Config::ReadValues() {
     qt_config->endGroup();
 
     qt_config->beginGroup("Audio");
+    Settings::values.enable_dsp_lle = ReadSetting("enable_dsp_lle", false).toBool();
+    Settings::values.enable_dsp_lle_multithread =
+        ReadSetting("enable_dsp_lle_multithread", false).toBool();
     Settings::values.sink_id = ReadSetting("output_engine", "auto").toString().toStdString();
     Settings::values.enable_audio_stretching =
         ReadSetting("enable_audio_stretching", true).toBool();
     Settings::values.audio_device_id =
         ReadSetting("output_device", "auto").toString().toStdString();
     Settings::values.volume = ReadSetting("volume", 1).toFloat();
+    Settings::values.mic_input_type =
+        static_cast<Settings::MicInputType>(ReadSetting("mic_input_type", 0).toInt());
+    Settings::values.mic_input_device =
+        ReadSetting("mic_input_device", "Default").toString().toStdString();
     qt_config->endGroup();
 
     using namespace Service::CAM;
@@ -201,6 +266,8 @@ void Config::ReadValues() {
     UISettings::values.theme = ReadSetting("theme", UISettings::themes[0].second).toString();
     UISettings::values.enable_discord_presence =
         ReadSetting("enable_discord_presence", true).toBool();
+    UISettings::values.screenshot_resolution_factor =
+        static_cast<u16>(ReadSetting("screenshot_resolution_factor", 0).toUInt());
 
     qt_config->beginGroup("Updater");
     UISettings::values.check_for_update_on_start =
@@ -219,11 +286,34 @@ void Config::ReadValues() {
         ReadSetting("microProfileDialogVisible", false).toBool();
     qt_config->endGroup();
 
+    qt_config->beginGroup("GameList");
+    int icon_size = ReadSetting("iconSize", 2).toInt();
+    if (icon_size < 0 || icon_size > 2) {
+        icon_size = 2;
+    }
+    UISettings::values.game_list_icon_size = UISettings::GameListIconSize{icon_size};
+
+    int row_1 = ReadSetting("row1", 2).toInt();
+    if (row_1 < 0 || row_1 > 3) {
+        row_1 = 2;
+    }
+    UISettings::values.game_list_row_1 = UISettings::GameListText{row_1};
+
+    int row_2 = ReadSetting("row2", 0).toInt();
+    if (row_2 < -1 || row_2 > 3) {
+        row_2 = 0;
+    }
+    UISettings::values.game_list_row_2 = UISettings::GameListText{row_2};
+
+    UISettings::values.game_list_hide_no_icon = ReadSetting("hideNoIcon", false).toBool();
+    qt_config->endGroup();
+
     qt_config->beginGroup("Paths");
     UISettings::values.roms_path = ReadSetting("romsPath").toString();
     UISettings::values.symbols_path = ReadSetting("symbolsPath").toString();
     UISettings::values.movie_record_path = ReadSetting("movieRecordPath").toString();
     UISettings::values.movie_playback_path = ReadSetting("moviePlaybackPath").toString();
+    UISettings::values.screenshot_path = ReadSetting("screenshotPath").toString();
     UISettings::values.game_dir_deprecated = ReadSetting("gameListRootDir", ".").toString();
     UISettings::values.game_dir_deprecated_deepscan =
         ReadSetting("gameListDeepScan", false).toBool();
@@ -237,8 +327,8 @@ void Config::ReadValues() {
         UISettings::values.game_dirs.append(game_dir);
     }
     qt_config->endArray();
-    // create NAND and SD card directories if empty, these are not removable through the UI, also
-    // carries over old game list settings if present
+    // create NAND and SD card directories if empty, these are not removable through the UI,
+    // also carries over old game list settings if present
     if (UISettings::values.game_dirs.isEmpty()) {
         UISettings::GameDir game_dir;
         game_dir.path = "INSTALLED";
@@ -257,20 +347,15 @@ void Config::ReadValues() {
     qt_config->endGroup();
 
     qt_config->beginGroup("Shortcuts");
-    QStringList groups = qt_config->childGroups();
-    for (auto group : groups) {
+    for (auto [name, group, shortcut] : default_hotkeys) {
+        auto [keyseq, context] = shortcut;
         qt_config->beginGroup(group);
-
-        QStringList hotkeys = qt_config->childGroups();
-        for (auto hotkey : hotkeys) {
-            qt_config->beginGroup(hotkey);
-            UISettings::values.shortcuts.emplace_back(UISettings::Shortcut(
-                group + "/" + hotkey,
-                UISettings::ContextualShortcut(ReadSetting("KeySeq").toString(),
-                                               ReadSetting("Context").toInt())));
-            qt_config->endGroup();
-        }
-
+        qt_config->beginGroup(name);
+        UISettings::values.shortcuts.push_back(
+            {name,
+             group,
+             {ReadSetting("KeySeq", keyseq).toString(), ReadSetting("Context", context).toInt()}});
+        qt_config->endGroup();
         qt_config->endGroup();
     }
     qt_config->endGroup();
@@ -299,6 +384,22 @@ void Config::ReadValues() {
     }
     UISettings::values.max_player = ReadSetting("max_player", 8).toUInt();
     UISettings::values.game_id = ReadSetting("game_id", 0).toULongLong();
+    UISettings::values.room_description = ReadSetting("room_description", "").toString();
+    // Read ban list back
+    size = qt_config->beginReadArray("username_ban_list");
+    UISettings::values.ban_list.first.resize(size);
+    for (int i = 0; i < size; ++i) {
+        qt_config->setArrayIndex(i);
+        UISettings::values.ban_list.first[i] = ReadSetting("username").toString().toStdString();
+    }
+    qt_config->endArray();
+    size = qt_config->beginReadArray("ip_ban_list");
+    UISettings::values.ban_list.second.resize(size);
+    for (int i = 0; i < size; ++i) {
+        qt_config->setArrayIndex(i);
+        UISettings::values.ban_list.second[i] = ReadSetting("ip").toString().toStdString();
+    }
+    qt_config->endArray();
     qt_config->endGroup();
 
     qt_config->endGroup();
@@ -306,29 +407,37 @@ void Config::ReadValues() {
 
 void Config::SaveValues() {
     qt_config->beginGroup("Controls");
-    for (int i = 0; i < Settings::NativeButton::NumButtons; ++i) {
-        std::string default_param = InputCommon::GenerateKeyboardParam(default_buttons[i]);
-        WriteSetting(QString::fromStdString(Settings::NativeButton::mapping[i]),
-                     QString::fromStdString(Settings::values.buttons[i]),
-                     QString::fromStdString(default_param));
+    WriteSetting("profile", Settings::values.current_input_profile_index, 0);
+    qt_config->beginWriteArray("profiles");
+    for (std::size_t p = 0; p < Settings::values.input_profiles.size(); ++p) {
+        qt_config->setArrayIndex(static_cast<int>(p));
+        const auto& profile = Settings::values.input_profiles[p];
+        WriteSetting("name", QString::fromStdString(profile.name), "default");
+        for (int i = 0; i < Settings::NativeButton::NumButtons; ++i) {
+            std::string default_param = InputCommon::GenerateKeyboardParam(default_buttons[i]);
+            WriteSetting(QString::fromStdString(Settings::NativeButton::mapping[i]),
+                         QString::fromStdString(profile.buttons[i]),
+                         QString::fromStdString(default_param));
+        }
+        for (int i = 0; i < Settings::NativeAnalog::NumAnalogs; ++i) {
+            std::string default_param = InputCommon::GenerateAnalogParamFromKeys(
+                default_analogs[i][0], default_analogs[i][1], default_analogs[i][2],
+                default_analogs[i][3], default_analogs[i][4], 0.5f);
+            WriteSetting(QString::fromStdString(Settings::NativeAnalog::mapping[i]),
+                         QString::fromStdString(profile.analogs[i]),
+                         QString::fromStdString(default_param));
+        }
+        WriteSetting("motion_device", QString::fromStdString(profile.motion_device),
+                     "engine:motion_emu,update_period:100,sensitivity:0.01,tilt_clamp:90.0");
+        WriteSetting("touch_device", QString::fromStdString(profile.touch_device),
+                     "engine:emu_window");
+        WriteSetting("udp_input_address", QString::fromStdString(profile.udp_input_address),
+                     InputCommon::CemuhookUDP::DEFAULT_ADDR);
+        WriteSetting("udp_input_port", profile.udp_input_port,
+                     InputCommon::CemuhookUDP::DEFAULT_PORT);
+        WriteSetting("udp_pad_index", profile.udp_pad_index, 0);
     }
-    for (int i = 0; i < Settings::NativeAnalog::NumAnalogs; ++i) {
-        std::string default_param = InputCommon::GenerateAnalogParamFromKeys(
-            default_analogs[i][0], default_analogs[i][1], default_analogs[i][2],
-            default_analogs[i][3], default_analogs[i][4], 0.5f);
-        WriteSetting(QString::fromStdString(Settings::NativeAnalog::mapping[i]),
-                     QString::fromStdString(Settings::values.analogs[i]),
-                     QString::fromStdString(default_param));
-    }
-    WriteSetting("motion_device", QString::fromStdString(Settings::values.motion_device),
-                 "engine:motion_emu,update_period:100,sensitivity:0.01,tilt_clamp:90.0");
-    WriteSetting("touch_device", QString::fromStdString(Settings::values.touch_device),
-                 "engine:emu_window");
-    WriteSetting("udp_input_address", QString::fromStdString(Settings::values.udp_input_address),
-                 InputCommon::CemuhookUDP::DEFAULT_ADDR);
-    WriteSetting("udp_input_port", Settings::values.udp_input_port,
-                 InputCommon::CemuhookUDP::DEFAULT_PORT);
-    WriteSetting("udp_pad_index", Settings::values.udp_pad_index, 0);
+    qt_config->endArray();
     qt_config->endGroup();
 
     qt_config->beginGroup("Core");
@@ -342,7 +451,7 @@ void Config::SaveValues() {
     WriteSetting("shaders_accurate_mul", Settings::values.shaders_accurate_mul, false);
     WriteSetting("use_shader_jit", Settings::values.use_shader_jit, true);
     WriteSetting("resolution_factor", Settings::values.resolution_factor, 1);
-    WriteSetting("use_vsync", Settings::values.use_vsync, false);
+    WriteSetting("vsync_enabled", Settings::values.vsync_enabled, false);
     WriteSetting("use_frame_limit", Settings::values.use_frame_limit, true);
     WriteSetting("frame_limit", Settings::values.frame_limit, 100);
 
@@ -354,7 +463,7 @@ void Config::SaveValues() {
 
     qt_config->beginGroup("Layout");
     WriteSetting("toggle_3d", Settings::values.toggle_3d, false);
-    WriteSetting("factor_3d", Settings::values.factor_3d, 0);
+    WriteSetting("factor_3d", Settings::values.factor_3d.load(), 0);
     WriteSetting("layout_option", static_cast<int>(Settings::values.layout_option));
     WriteSetting("swap_screen", Settings::values.swap_screen, false);
     WriteSetting("custom_layout", Settings::values.custom_layout, false);
@@ -369,10 +478,15 @@ void Config::SaveValues() {
     qt_config->endGroup();
 
     qt_config->beginGroup("Audio");
+    WriteSetting("enable_dsp_lle", Settings::values.enable_dsp_lle, false);
+    WriteSetting("enable_dsp_lle_multithread", Settings::values.enable_dsp_lle_multithread, false);
     WriteSetting("output_engine", QString::fromStdString(Settings::values.sink_id), "auto");
     WriteSetting("enable_audio_stretching", Settings::values.enable_audio_stretching, true);
     WriteSetting("output_device", QString::fromStdString(Settings::values.audio_device_id), "auto");
     WriteSetting("volume", Settings::values.volume, 1.0f);
+    WriteSetting("mic_input_device", QString::fromStdString(Settings::values.mic_input_device),
+                 "Default");
+    WriteSetting("mic_input_type", static_cast<int>(Settings::values.mic_input_type), 0);
     qt_config->endGroup();
 
     using namespace Service::CAM;
@@ -433,6 +547,8 @@ void Config::SaveValues() {
     qt_config->beginGroup("UI");
     WriteSetting("theme", UISettings::values.theme, UISettings::themes[0].second);
     WriteSetting("enable_discord_presence", UISettings::values.enable_discord_presence, true);
+    WriteSetting("screenshot_resolution_factor", UISettings::values.screenshot_resolution_factor,
+                 0);
 
     qt_config->beginGroup("Updater");
     WriteSetting("check_for_update_on_start", UISettings::values.check_for_update_on_start, true);
@@ -448,11 +564,19 @@ void Config::SaveValues() {
     WriteSetting("microProfileDialogVisible", UISettings::values.microprofile_visible, false);
     qt_config->endGroup();
 
+    qt_config->beginGroup("GameList");
+    WriteSetting("iconSize", static_cast<int>(UISettings::values.game_list_icon_size), 2);
+    WriteSetting("row1", static_cast<int>(UISettings::values.game_list_row_1), 2);
+    WriteSetting("row2", static_cast<int>(UISettings::values.game_list_row_2), 0);
+    WriteSetting("hideNoIcon", UISettings::values.game_list_hide_no_icon, false);
+    qt_config->endGroup();
+
     qt_config->beginGroup("Paths");
     WriteSetting("romsPath", UISettings::values.roms_path);
     WriteSetting("symbolsPath", UISettings::values.symbols_path);
     WriteSetting("movieRecordPath", UISettings::values.movie_record_path);
     WriteSetting("moviePlaybackPath", UISettings::values.movie_playback_path);
+    WriteSetting("screenshotPath", UISettings::values.screenshot_path);
     qt_config->beginWriteArray("gamedirs");
     for (int i = 0; i < UISettings::values.game_dirs.size(); ++i) {
         qt_config->setArrayIndex(i);
@@ -467,9 +591,16 @@ void Config::SaveValues() {
     qt_config->endGroup();
 
     qt_config->beginGroup("Shortcuts");
-    for (auto shortcut : UISettings::values.shortcuts) {
-        WriteSetting(shortcut.first + "/KeySeq", shortcut.second.first);
-        WriteSetting(shortcut.first + "/Context", shortcut.second.second);
+    // Lengths of UISettings::values.shortcuts & default_hotkeys are same.
+    // However, their ordering must also be the same.
+    for (std::size_t i = 0; i < default_hotkeys.size(); i++) {
+        auto [name, group, shortcut] = UISettings::values.shortcuts[i];
+        qt_config->beginGroup(group);
+        qt_config->beginGroup(name);
+        WriteSetting("KeySeq", shortcut.first, default_hotkeys[i].shortcut.first);
+        WriteSetting("Context", shortcut.second, default_hotkeys[i].shortcut.second);
+        qt_config->endGroup();
+        qt_config->endGroup();
     }
     qt_config->endGroup();
 
@@ -493,16 +624,30 @@ void Config::SaveValues() {
     WriteSetting("host_type", UISettings::values.host_type, 0);
     WriteSetting("max_player", UISettings::values.max_player, 8);
     WriteSetting("game_id", UISettings::values.game_id, 0);
+    WriteSetting("room_description", UISettings::values.room_description, "");
+    // Write ban list
+    qt_config->beginWriteArray("username_ban_list");
+    for (std::size_t i = 0; i < UISettings::values.ban_list.first.size(); ++i) {
+        qt_config->setArrayIndex(i);
+        WriteSetting("username", QString::fromStdString(UISettings::values.ban_list.first[i]));
+    }
+    qt_config->endArray();
+    qt_config->beginWriteArray("ip_ban_list");
+    for (std::size_t i = 0; i < UISettings::values.ban_list.second.size(); ++i) {
+        qt_config->setArrayIndex(i);
+        WriteSetting("ip", QString::fromStdString(UISettings::values.ban_list.second[i]));
+    }
+    qt_config->endArray();
     qt_config->endGroup();
 
     qt_config->endGroup();
 }
 
-QVariant Config::ReadSetting(const QString& name) {
+QVariant Config::ReadSetting(const QString& name) const {
     return qt_config->value(name);
 }
 
-QVariant Config::ReadSetting(const QString& name, const QVariant& default_value) {
+QVariant Config::ReadSetting(const QString& name, const QVariant& default_value) const {
     QVariant result;
     if (qt_config->value(name + "/default", false).toBool()) {
         result = default_value;
@@ -531,10 +676,4 @@ void Config::Reload() {
 
 void Config::Save() {
     SaveValues();
-}
-
-Config::~Config() {
-    Save();
-
-    delete qt_config;
 }

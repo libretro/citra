@@ -14,6 +14,7 @@
 #include "citra_qt/debugger/graphics/graphics_surface.h"
 #include "citra_qt/util/spinbox.h"
 #include "common/color.h"
+#include "core/core.h"
 #include "core/hw/gpu.h"
 #include "core/memory.h"
 #include "video_core/pica_state.h"
@@ -283,7 +284,7 @@ void GraphicsSurfaceWidget::Pick(int x, int y) {
         return;
     }
 
-    u8* buffer = Memory::GetPhysicalPointer(surface_address);
+    u8* buffer = Core::System::GetInstance().Memory().GetPhysicalPointer(surface_address);
     if (buffer == nullptr) {
         surface_info_label->setText(tr("(unable to access pixel data)"));
         surface_info_label->setAlignment(Qt::AlignCenter);
@@ -549,7 +550,7 @@ void GraphicsSurfaceWidget::OnUpdate() {
     // TODO: Implement a good way to visualize alpha components!
 
     QImage decoded_image(surface_width, surface_height, QImage::Format_ARGB32);
-    u8* buffer = Memory::GetPhysicalPointer(surface_address);
+    u8* buffer = Core::System::GetInstance().Memory().GetPhysicalPointer(surface_address);
 
     if (buffer == nullptr) {
         surface_picture_label->hide();
@@ -584,7 +585,7 @@ void GraphicsSurfaceWidget::OnUpdate() {
 
         for (unsigned int y = 0; y < surface_height; ++y) {
             for (unsigned int x = 0; x < surface_width; ++x) {
-                Math::Vec4<u8> color = Pica::Texture::LookupTexture(buffer, x, y, info, true);
+                Common::Vec4<u8> color = Pica::Texture::LookupTexture(buffer, x, y, info, true);
                 decoded_image.setPixel(x, y, qRgba(color.r(), color.g(), color.b(), color.a()));
             }
         }
@@ -604,7 +605,7 @@ void GraphicsSurfaceWidget::OnUpdate() {
                 const u32 coarse_y = y & ~7;
                 u32 offset = VideoCore::GetMortonOffset(x, y, bytes_per_pixel) + coarse_y * stride;
                 const u8* pixel = buffer + offset;
-                Math::Vec4<u8> color = {0, 0, 0, 0};
+                Common::Vec4<u8> color = {0, 0, 0, 0};
 
                 switch (surface_format) {
                 case Format::D16: {
@@ -621,14 +622,14 @@ void GraphicsSurfaceWidget::OnUpdate() {
                     break;
                 }
                 case Format::D24X8: {
-                    Math::Vec2<u32> data = Color::DecodeD24S8(pixel);
+                    Common::Vec2<u32> data = Color::DecodeD24S8(pixel);
                     color.r() = data.x & 0xFF;
                     color.g() = (data.x >> 8) & 0xFF;
                     color.b() = (data.x >> 16) & 0xFF;
                     break;
                 }
                 case Format::X24S8: {
-                    Math::Vec2<u32> data = Color::DecodeD24S8(pixel);
+                    Common::Vec2<u32> data = Color::DecodeD24S8(pixel);
                     color.r() = color.g() = color.b() = data.y;
                     break;
                 }
@@ -679,7 +680,7 @@ void GraphicsSurfaceWidget::SaveSurface() {
         if (pixmap)
             pixmap->save(&file, "PNG");
     } else if (selectedFilter == bin_filter) {
-        const u8* buffer = Memory::GetPhysicalPointer(surface_address);
+        const u8* buffer = Core::System::GetInstance().Memory().GetPhysicalPointer(surface_address);
         ASSERT_MSG(buffer != nullptr, "Memory not accessible");
 
         QFile file(filename);

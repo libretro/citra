@@ -10,8 +10,8 @@
 #include "common/microprofile.h"
 #include "common/scope_exit.h"
 #include "core/arm/arm_interface.h"
+#include "core/core.h"
 #include "core/core_timing.h"
-#include "core/hle/function_wrappers.h"
 #include "core/hle/kernel/address_arbiter.h"
 #include "core/hle/kernel/client_port.h"
 #include "core/hle/kernel/client_session.h"
@@ -28,6 +28,8 @@
 #include "core/hle/kernel/server_session.h"
 #include "core/hle/kernel/session.h"
 #include "core/hle/kernel/shared_memory.h"
+#include "core/hle/kernel/svc.h"
+#include "core/hle/kernel/svc_wrapper.h"
 #include "core/hle/kernel/thread.h"
 #include "core/hle/kernel/timer.h"
 #include "core/hle/kernel/vm_manager.h"
@@ -55,9 +57,137 @@ enum ControlMemoryOperation {
     MEMOP_LINEAR = 0x10000,
 };
 
+struct MemoryInfo {
+    u32 base_address;
+    u32 size;
+    u32 permission;
+    u32 state;
+};
+
+struct PageInfo {
+    u32 flags;
+};
+
+/// Values accepted by svcGetSystemInfo's type parameter.
+enum class SystemInfoType {
+    /**
+     * Reports total used memory for all regions or a specific one, according to the extra
+     * parameter. See `SystemInfoMemUsageRegion`.
+     */
+    REGION_MEMORY_USAGE = 0,
+    /**
+     * Returns the memory usage for certain allocations done internally by the kernel.
+     */
+    KERNEL_ALLOCATED_PAGES = 2,
+    /**
+     * "This returns the total number of processes which were launched directly by the kernel.
+     * For the ARM11 NATIVE_FIRM kernel, this is 5, for processes sm, fs, pm, loader, and pxi."
+     */
+    KERNEL_SPAWNED_PIDS = 26,
+};
+
+/**
+ * Accepted by svcGetSystemInfo param with REGION_MEMORY_USAGE type. Selects a region to query
+ * memory usage of.
+ */
+enum class SystemInfoMemUsageRegion {
+    ALL = 0,
+    APPLICATION = 1,
+    SYSTEM = 2,
+    BASE = 3,
+};
+
+class SVC : public SVCWrapper<SVC> {
+public:
+    SVC(Core::System& system);
+    void CallSVC(u32 immediate);
+
+private:
+    Core::System& system;
+    Kernel::KernelSystem& kernel;
+    Memory::MemorySystem& memory;
+
+    friend class SVCWrapper<SVC>;
+
+    // ARM interfaces
+
+    u32 GetReg(std::size_t n);
+    void SetReg(std::size_t n, u32 value);
+
+    // SVC interfaces
+
+    ResultCode ControlMemory(u32* out_addr, u32 addr0, u32 addr1, u32 size, u32 operation,
+                             u32 permissions);
+    void ExitProcess();
+    ResultCode MapMemoryBlock(Handle handle, u32 addr, u32 permissions, u32 other_permissions);
+    ResultCode UnmapMemoryBlock(Handle handle, u32 addr);
+    ResultCode ConnectToPort(Handle* out_handle, VAddr port_name_address);
+    ResultCode SendSyncRequest(Handle handle);
+    ResultCode CloseHandle(Handle handle);
+    ResultCode WaitSynchronization1(Handle handle, s64 nano_seconds);
+    ResultCode WaitSynchronizationN(s32* out, VAddr handles_address, s32 handle_count,
+                                    bool wait_all, s64 nano_seconds);
+    ResultCode ReplyAndReceive(s32* index, VAddr handles_address, s32 handle_count,
+                               Handle reply_target);
+    ResultCode CreateAddressArbiter(Handle* out_handle);
+    ResultCode ArbitrateAddress(Handle handle, u32 address, u32 type, u32 value, s64 nanoseconds);
+    void Break(u8 break_reason);
+    void OutputDebugString(VAddr address, s32 len);
+    ResultCode GetResourceLimit(Handle* resource_limit, Handle process_handle);
+    ResultCode GetResourceLimitCurrentValues(VAddr values, Handle resource_limit_handle,
+                                             VAddr names, u32 name_count);
+    ResultCode GetResourceLimitLimitValues(VAddr values, Handle resource_limit_handle, VAddr names,
+                                           u32 name_count);
+    ResultCode CreateThread(Handle* out_handle, u32 entry_point, u32 arg, VAddr stack_top,
+                            u32 priority, s32 processor_id);
+    void ExitThread();
+    ResultCode GetThreadPriority(u32* priority, Handle handle);
+    ResultCode SetThreadPriority(Handle handle, u32 priority);
+    ResultCode CreateMutex(Handle* out_handle, u32 initial_locked);
+    ResultCode ReleaseMutex(Handle handle);
+    ResultCode GetProcessId(u32* process_id, Handle process_handle);
+    ResultCode GetProcessIdOfThread(u32* process_id, Handle thread_handle);
+    ResultCode GetThreadId(u32* thread_id, Handle handle);
+    ResultCode CreateSemaphore(Handle* out_handle, s32 initial_count, s32 max_count);
+    ResultCode ReleaseSemaphore(s32* count, Handle handle, s32 release_count);
+    ResultCode QueryProcessMemory(MemoryInfo* memory_info, PageInfo* page_info,
+                                  Handle process_handle, u32 addr);
+    ResultCode QueryMemory(MemoryInfo* memory_info, PageInfo* page_info, u32 addr);
+    ResultCode CreateEvent(Handle* out_handle, u32 reset_type);
+    ResultCode DuplicateHandle(Handle* out, Handle handle);
+    ResultCode SignalEvent(Handle handle);
+    ResultCode ClearEvent(Handle handle);
+    ResultCode CreateTimer(Handle* out_handle, u32 reset_type);
+    ResultCode ClearTimer(Handle handle);
+    ResultCode SetTimer(Handle handle, s64 initial, s64 interval);
+    ResultCode CancelTimer(Handle handle);
+    void SleepThread(s64 nanoseconds);
+    s64 GetSystemTick();
+    ResultCode CreateMemoryBlock(Handle* out_handle, u32 addr, u32 size, u32 my_permission,
+                                 u32 other_permission);
+    ResultCode CreatePort(Handle* server_port, Handle* client_port, VAddr name_address,
+                          u32 max_sessions);
+    ResultCode CreateSessionToPort(Handle* out_client_session, Handle client_port_handle);
+    ResultCode CreateSession(Handle* server_session, Handle* client_session);
+    ResultCode AcceptSession(Handle* out_server_session, Handle server_port_handle);
+    ResultCode GetSystemInfo(s64* out, u32 type, s32 param);
+    ResultCode GetProcessInfo(s64* out, Handle process_handle, u32 type);
+
+    struct FunctionDef {
+        using Func = void (SVC::*)();
+
+        u32 id;
+        Func func;
+        const char* name;
+    };
+
+    static const FunctionDef SVC_Table[];
+    static const FunctionDef* GetSVCInfo(u32 func_num);
+};
+
 /// Map application or GSP heap memory
-static ResultCode ControlMemory(u32* out_addr, u32 operation, u32 addr0, u32 addr1, u32 size,
-                                u32 permissions) {
+ResultCode SVC::ControlMemory(u32* out_addr, u32 addr0, u32 addr1, u32 size, u32 operation,
+                              u32 permissions) {
     LOG_DEBUG(Kernel_SVC,
               "called operation=0x{:08X}, addr0=0x{:08X}, addr1=0x{:08X}, "
               "size=0x{:X}, permissions=0x{:08X}",
@@ -83,7 +213,7 @@ static ResultCode ControlMemory(u32* out_addr, u32 operation, u32 addr0, u32 add
     }
     VMAPermission vma_permissions = (VMAPermission)permissions;
 
-    auto& process = *g_current_process;
+    auto& process = *kernel.GetCurrentProcess();
 
     switch (operation & MEMOP_OPERATION_MASK) {
     case MEMOP_FREE: {
@@ -114,16 +244,12 @@ static ResultCode ControlMemory(u32* out_addr, u32 operation, u32 addr0, u32 add
     }
 
     case MEMOP_MAP: {
-        // TODO: This is just a hack to avoid regressions until memory aliasing is implemented
-        CASCADE_RESULT(*out_addr, process.HeapAllocate(addr0, size, vma_permissions));
+        CASCADE_CODE(process.Map(addr0, addr1, size, vma_permissions));
         break;
     }
 
     case MEMOP_UNMAP: {
-        // TODO: This is just a hack to avoid regressions until memory aliasing is implemented
-        ResultCode result = process.HeapFree(addr0, size);
-        if (result.IsError())
-            return result;
+        CASCADE_CODE(process.Unmap(addr0, addr1, size, vma_permissions));
         break;
     }
 
@@ -144,20 +270,21 @@ static ResultCode ControlMemory(u32* out_addr, u32 operation, u32 addr0, u32 add
     return RESULT_SUCCESS;
 }
 
-static void ExitProcess() {
-    LOG_INFO(Kernel_SVC, "Process {} exiting", g_current_process->process_id);
+void SVC::ExitProcess() {
+    SharedPtr<Process> current_process = kernel.GetCurrentProcess();
+    LOG_INFO(Kernel_SVC, "Process {} exiting", current_process->process_id);
 
-    ASSERT_MSG(g_current_process->status == ProcessStatus::Running, "Process has already exited");
+    ASSERT_MSG(current_process->status == ProcessStatus::Running, "Process has already exited");
 
-    g_current_process->status = ProcessStatus::Exited;
+    current_process->status = ProcessStatus::Exited;
 
     // Stop all the process threads that are currently waiting for objects.
-    auto& thread_list = GetThreadList();
+    auto& thread_list = kernel.GetThreadManager().GetThreadList();
     for (auto& thread : thread_list) {
-        if (thread->owner_process != g_current_process)
+        if (thread->owner_process != current_process)
             continue;
 
-        if (thread == GetCurrentThread())
+        if (thread == kernel.GetThreadManager().GetCurrentThread())
             continue;
 
         // TODO(Subv): When are the other running/ready threads terminated?
@@ -169,19 +296,20 @@ static void ExitProcess() {
     }
 
     // Kill the current thread
-    GetCurrentThread()->Stop();
+    kernel.GetThreadManager().GetCurrentThread()->Stop();
 
-    Core::System::GetInstance().PrepareReschedule();
+    system.PrepareReschedule();
 }
 
 /// Maps a memory block to specified address
-static ResultCode MapMemoryBlock(Handle handle, u32 addr, u32 permissions, u32 other_permissions) {
+ResultCode SVC::MapMemoryBlock(Handle handle, u32 addr, u32 permissions, u32 other_permissions) {
     LOG_TRACE(Kernel_SVC,
               "called memblock=0x{:08X}, addr=0x{:08X}, mypermissions=0x{:08X}, "
               "otherpermission={}",
               handle, addr, permissions, other_permissions);
 
-    SharedPtr<SharedMemory> shared_memory = g_handle_table.Get<SharedMemory>(handle);
+    SharedPtr<SharedMemory> shared_memory =
+        kernel.GetCurrentProcess()->handle_table.Get<SharedMemory>(handle);
     if (shared_memory == nullptr)
         return ERR_INVALID_HANDLE;
 
@@ -195,7 +323,7 @@ static ResultCode MapMemoryBlock(Handle handle, u32 addr, u32 permissions, u32 o
     case MemoryPermission::WriteExecute:
     case MemoryPermission::ReadWriteExecute:
     case MemoryPermission::DontCare:
-        return shared_memory->Map(g_current_process.get(), addr, permissions_type,
+        return shared_memory->Map(*kernel.GetCurrentProcess(), addr, permissions_type,
                                   static_cast<MemoryPermission>(other_permissions));
     default:
         LOG_ERROR(Kernel_SVC, "unknown permissions=0x{:08X}", permissions);
@@ -204,33 +332,34 @@ static ResultCode MapMemoryBlock(Handle handle, u32 addr, u32 permissions, u32 o
     return ERR_INVALID_COMBINATION;
 }
 
-static ResultCode UnmapMemoryBlock(Handle handle, u32 addr) {
+ResultCode SVC::UnmapMemoryBlock(Handle handle, u32 addr) {
     LOG_TRACE(Kernel_SVC, "called memblock=0x{:08X}, addr=0x{:08X}", handle, addr);
 
     // TODO(Subv): Return E0A01BF5 if the address is not in the application's heap
 
-    SharedPtr<SharedMemory> shared_memory = g_handle_table.Get<SharedMemory>(handle);
+    SharedPtr<Process> current_process = kernel.GetCurrentProcess();
+    SharedPtr<SharedMemory> shared_memory = current_process->handle_table.Get<SharedMemory>(handle);
     if (shared_memory == nullptr)
         return ERR_INVALID_HANDLE;
 
-    return shared_memory->Unmap(g_current_process.get(), addr);
+    return shared_memory->Unmap(*current_process, addr);
 }
 
 /// Connect to an OS service given the port name, returns the handle to the port to out
-static ResultCode ConnectToPort(Handle* out_handle, VAddr port_name_address) {
-    if (!Memory::IsValidVirtualAddress(port_name_address))
+ResultCode SVC::ConnectToPort(Handle* out_handle, VAddr port_name_address) {
+    if (!Memory::IsValidVirtualAddress(*kernel.GetCurrentProcess(), port_name_address))
         return ERR_NOT_FOUND;
 
     static constexpr std::size_t PortNameMaxLength = 11;
     // Read 1 char beyond the max allowed port name to detect names that are too long.
-    std::string port_name = Memory::ReadCString(port_name_address, PortNameMaxLength + 1);
+    std::string port_name = memory.ReadCString(port_name_address, PortNameMaxLength + 1);
     if (port_name.size() > PortNameMaxLength)
         return ERR_PORT_NAME_TOO_LONG;
 
     LOG_TRACE(Kernel_SVC, "called port_name={}", port_name);
 
-    auto it = Service::g_kernel_named_ports.find(port_name);
-    if (it == Service::g_kernel_named_ports.end()) {
+    auto it = kernel.named_ports.find(port_name);
+    if (it == kernel.named_ports.end()) {
         LOG_WARNING(Kernel_SVC, "tried to connect to unknown port: {}", port_name);
         return ERR_NOT_FOUND;
     }
@@ -241,34 +370,35 @@ static ResultCode ConnectToPort(Handle* out_handle, VAddr port_name_address) {
     CASCADE_RESULT(client_session, client_port->Connect());
 
     // Return the client session
-    CASCADE_RESULT(*out_handle, g_handle_table.Create(client_session));
+    CASCADE_RESULT(*out_handle, kernel.GetCurrentProcess()->handle_table.Create(client_session));
     return RESULT_SUCCESS;
 }
 
 /// Makes a blocking IPC call to an OS service.
-static ResultCode SendSyncRequest(Handle handle) {
-    SharedPtr<ClientSession> session = g_handle_table.Get<ClientSession>(handle);
+ResultCode SVC::SendSyncRequest(Handle handle) {
+    SharedPtr<ClientSession> session =
+        kernel.GetCurrentProcess()->handle_table.Get<ClientSession>(handle);
     if (session == nullptr) {
         return ERR_INVALID_HANDLE;
     }
 
     LOG_TRACE(Kernel_SVC, "called handle=0x{:08X}({})", handle, session->GetName());
 
-    Core::System::GetInstance().PrepareReschedule();
+    system.PrepareReschedule();
 
-    return session->SendSyncRequest(GetCurrentThread());
+    return session->SendSyncRequest(kernel.GetThreadManager().GetCurrentThread());
 }
 
 /// Close a handle
-static ResultCode CloseHandle(Handle handle) {
+ResultCode SVC::CloseHandle(Handle handle) {
     LOG_TRACE(Kernel_SVC, "Closing handle 0x{:08X}", handle);
-    return g_handle_table.Close(handle);
+    return kernel.GetCurrentProcess()->handle_table.Close(handle);
 }
 
 /// Wait for a handle to synchronize, timeout after the specified nanoseconds
-static ResultCode WaitSynchronization1(Handle handle, s64 nano_seconds) {
-    auto object = g_handle_table.Get<WaitObject>(handle);
-    Thread* thread = GetCurrentThread();
+ResultCode SVC::WaitSynchronization1(Handle handle, s64 nano_seconds) {
+    auto object = kernel.GetCurrentProcess()->handle_table.Get<WaitObject>(handle);
+    Thread* thread = kernel.GetThreadManager().GetCurrentThread();
 
     if (object == nullptr)
         return ERR_INVALID_HANDLE;
@@ -304,7 +434,7 @@ static ResultCode WaitSynchronization1(Handle handle, s64 nano_seconds) {
             // don't have to do anything else here.
         };
 
-        Core::System::GetInstance().PrepareReschedule();
+        system.PrepareReschedule();
 
         // Note: The output of this SVC will be set to RESULT_SUCCESS if the thread
         // resumes due to a signal in its wait objects.
@@ -318,11 +448,11 @@ static ResultCode WaitSynchronization1(Handle handle, s64 nano_seconds) {
 }
 
 /// Wait for the given handles to synchronize, timeout after the specified nanoseconds
-static ResultCode WaitSynchronizationN(s32* out, VAddr handles_address, s32 handle_count,
-                                       bool wait_all, s64 nano_seconds) {
-    Thread* thread = GetCurrentThread();
+ResultCode SVC::WaitSynchronizationN(s32* out, VAddr handles_address, s32 handle_count,
+                                     bool wait_all, s64 nano_seconds) {
+    Thread* thread = kernel.GetThreadManager().GetCurrentThread();
 
-    if (!Memory::IsValidVirtualAddress(handles_address))
+    if (!Memory::IsValidVirtualAddress(*kernel.GetCurrentProcess(), handles_address))
         return ERR_INVALID_POINTER;
 
     // NOTE: on real hardware, there is no nullptr check for 'out' (tested with firmware 4.4). If
@@ -337,8 +467,8 @@ static ResultCode WaitSynchronizationN(s32* out, VAddr handles_address, s32 hand
     std::vector<ObjectPtr> objects(handle_count);
 
     for (int i = 0; i < handle_count; ++i) {
-        Handle handle = Memory::Read32(handles_address + i * sizeof(Handle));
-        auto object = g_handle_table.Get<WaitObject>(handle);
+        Handle handle = memory.Read32(handles_address + i * sizeof(Handle));
+        auto object = kernel.GetCurrentProcess()->handle_table.Get<WaitObject>(handle);
         if (object == nullptr)
             return ERR_INVALID_HANDLE;
         objects[i] = object;
@@ -392,7 +522,7 @@ static ResultCode WaitSynchronizationN(s32* out, VAddr handles_address, s32 hand
             // The wait_all case does not update the output index.
         };
 
-        Core::System::GetInstance().PrepareReschedule();
+        system.PrepareReschedule();
 
         // This value gets set to -1 by default in this case, it is not modified after this.
         *out = -1;
@@ -452,7 +582,7 @@ static ResultCode WaitSynchronizationN(s32* out, VAddr handles_address, s32 hand
             thread->SetWaitSynchronizationOutput(thread->GetWaitObjectIndex(object.get()));
         };
 
-        Core::System::GetInstance().PrepareReschedule();
+        system.PrepareReschedule();
 
         // Note: The output of this SVC will be set to RESULT_SUCCESS if the thread resumes due to a
         // signal in one of its wait objects.
@@ -462,7 +592,8 @@ static ResultCode WaitSynchronizationN(s32* out, VAddr handles_address, s32 hand
     }
 }
 
-static ResultCode ReceiveIPCRequest(SharedPtr<ServerSession> server_session,
+static ResultCode ReceiveIPCRequest(Memory::MemorySystem& memory,
+                                    SharedPtr<ServerSession> server_session,
                                     SharedPtr<Thread> thread) {
     if (server_session->parent->client == nullptr) {
         return ERR_SESSION_CLOSED_BY_REMOTE;
@@ -471,8 +602,9 @@ static ResultCode ReceiveIPCRequest(SharedPtr<ServerSession> server_session,
     VAddr target_address = thread->GetCommandBufferAddress();
     VAddr source_address = server_session->currently_handling->GetCommandBufferAddress();
 
-    ResultCode translation_result = TranslateCommandBuffer(
-        server_session->currently_handling, thread, source_address, target_address, false);
+    ResultCode translation_result =
+        TranslateCommandBuffer(memory, server_session->currently_handling, thread, source_address,
+                               target_address, server_session->mapped_buffer_context, false);
 
     // If a translation error occurred, immediately resume the client thread.
     if (translation_result.IsError()) {
@@ -490,9 +622,9 @@ static ResultCode ReceiveIPCRequest(SharedPtr<ServerSession> server_session,
 }
 
 /// In a single operation, sends a IPC reply and waits for a new request.
-static ResultCode ReplyAndReceive(s32* index, VAddr handles_address, s32 handle_count,
-                                  Handle reply_target) {
-    if (!Memory::IsValidVirtualAddress(handles_address))
+ResultCode SVC::ReplyAndReceive(s32* index, VAddr handles_address, s32 handle_count,
+                                Handle reply_target) {
+    if (!Memory::IsValidVirtualAddress(*kernel.GetCurrentProcess(), handles_address))
         return ERR_INVALID_POINTER;
 
     // Check if 'handle_count' is invalid
@@ -502,9 +634,11 @@ static ResultCode ReplyAndReceive(s32* index, VAddr handles_address, s32 handle_
     using ObjectPtr = SharedPtr<WaitObject>;
     std::vector<ObjectPtr> objects(handle_count);
 
+    SharedPtr<Process> current_process = kernel.GetCurrentProcess();
+
     for (int i = 0; i < handle_count; ++i) {
-        Handle handle = Memory::Read32(handles_address + i * sizeof(Handle));
-        auto object = g_handle_table.Get<WaitObject>(handle);
+        Handle handle = memory.Read32(handles_address + i * sizeof(Handle));
+        auto object = current_process->handle_table.Get<WaitObject>(handle);
         if (object == nullptr)
             return ERR_INVALID_HANDLE;
         objects[i] = object;
@@ -512,10 +646,11 @@ static ResultCode ReplyAndReceive(s32* index, VAddr handles_address, s32 handle_
 
     // We are also sending a command reply.
     // Do not send a reply if the command id in the command buffer is 0xFFFF.
-    u32* cmd_buff = GetCommandBuffer();
-    IPC::Header header{cmd_buff[0]};
+    Thread* thread = kernel.GetThreadManager().GetCurrentThread();
+    u32 cmd_buff_header = memory.Read32(thread->GetCommandBufferAddress());
+    IPC::Header header{cmd_buff_header};
     if (reply_target != 0 && header.command_id != 0xFFFF) {
-        auto session = g_handle_table.Get<ServerSession>(reply_target);
+        auto session = current_process->handle_table.Get<ServerSession>(reply_target);
         if (session == nullptr)
             return ERR_INVALID_HANDLE;
 
@@ -531,11 +666,12 @@ static ResultCode ReplyAndReceive(s32* index, VAddr handles_address, s32 handle_
             return ERR_SESSION_CLOSED_BY_REMOTE;
         }
 
-        VAddr source_address = GetCurrentThread()->GetCommandBufferAddress();
+        VAddr source_address = thread->GetCommandBufferAddress();
         VAddr target_address = request_thread->GetCommandBufferAddress();
 
-        ResultCode translation_result = TranslateCommandBuffer(
-            Kernel::GetCurrentThread(), request_thread, source_address, target_address, true);
+        ResultCode translation_result =
+            TranslateCommandBuffer(memory, thread, request_thread, source_address, target_address,
+                                   session->mapped_buffer_context, true);
 
         // Note: The real kernel seems to always panic if the Server->Client buffer translation
         // fails for whatever reason.
@@ -555,8 +691,6 @@ static ResultCode ReplyAndReceive(s32* index, VAddr handles_address, s32 handle_
         return RESULT_SUCCESS;
     }
 
-    auto thread = GetCurrentThread();
-
     // Find the first object that is acquirable in the provided list of objects
     auto itr = std::find_if(objects.begin(), objects.end(), [thread](const ObjectPtr& object) {
         return !object->ShouldWait(thread);
@@ -572,7 +706,7 @@ static ResultCode ReplyAndReceive(s32* index, VAddr handles_address, s32 handle_
             return RESULT_SUCCESS;
 
         auto server_session = static_cast<ServerSession*>(object);
-        return ReceiveIPCRequest(server_session, GetCurrentThread());
+        return ReceiveIPCRequest(memory, server_session, thread);
     }
 
     // No objects were ready to be acquired, prepare to suspend the thread.
@@ -588,8 +722,9 @@ static ResultCode ReplyAndReceive(s32* index, VAddr handles_address, s32 handle_
 
     thread->wait_objects = std::move(objects);
 
-    thread->wakeup_callback = [](ThreadWakeupReason reason, SharedPtr<Thread> thread,
-                                 SharedPtr<WaitObject> object) {
+    thread->wakeup_callback = [& memory = this->memory](ThreadWakeupReason reason,
+                                                        SharedPtr<Thread> thread,
+                                                        SharedPtr<WaitObject> object) {
         ASSERT(thread->status == ThreadStatus::WaitSynchAny);
         ASSERT(reason == ThreadWakeupReason::Signal);
 
@@ -597,14 +732,14 @@ static ResultCode ReplyAndReceive(s32* index, VAddr handles_address, s32 handle_
 
         if (object->GetHandleType() == HandleType::ServerSession) {
             auto server_session = DynamicObjectCast<ServerSession>(object);
-            result = ReceiveIPCRequest(server_session, thread);
+            result = ReceiveIPCRequest(memory, server_session, thread);
         }
 
         thread->SetWaitSynchronizationResult(result);
         thread->SetWaitSynchronizationOutput(thread->GetWaitObjectIndex(object.get()));
     };
 
-    Core::System::GetInstance().PrepareReschedule();
+    system.PrepareReschedule();
 
     // Note: The output of this SVC will be set to RESULT_SUCCESS if the thread resumes due to a
     // signal in one of its wait objects, or to 0xC8A01836 if there was a translation error.
@@ -614,33 +749,35 @@ static ResultCode ReplyAndReceive(s32* index, VAddr handles_address, s32 handle_
 }
 
 /// Create an address arbiter (to allocate access to shared resources)
-static ResultCode CreateAddressArbiter(Handle* out_handle) {
-    SharedPtr<AddressArbiter> arbiter = AddressArbiter::Create();
-    CASCADE_RESULT(*out_handle, g_handle_table.Create(std::move(arbiter)));
+ResultCode SVC::CreateAddressArbiter(Handle* out_handle) {
+    SharedPtr<AddressArbiter> arbiter = kernel.CreateAddressArbiter();
+    CASCADE_RESULT(*out_handle,
+                   kernel.GetCurrentProcess()->handle_table.Create(std::move(arbiter)));
     LOG_TRACE(Kernel_SVC, "returned handle=0x{:08X}", *out_handle);
     return RESULT_SUCCESS;
 }
 
 /// Arbitrate address
-static ResultCode ArbitrateAddress(Handle handle, u32 address, u32 type, u32 value,
-                                   s64 nanoseconds) {
+ResultCode SVC::ArbitrateAddress(Handle handle, u32 address, u32 type, u32 value, s64 nanoseconds) {
     LOG_TRACE(Kernel_SVC, "called handle=0x{:08X}, address=0x{:08X}, type=0x{:08X}, value=0x{:08X}",
               handle, address, type, value);
 
-    SharedPtr<AddressArbiter> arbiter = g_handle_table.Get<AddressArbiter>(handle);
+    SharedPtr<AddressArbiter> arbiter =
+        kernel.GetCurrentProcess()->handle_table.Get<AddressArbiter>(handle);
     if (arbiter == nullptr)
         return ERR_INVALID_HANDLE;
 
-    auto res = arbiter->ArbitrateAddress(GetCurrentThread(), static_cast<ArbitrationType>(type),
-                                         address, value, nanoseconds);
+    auto res =
+        arbiter->ArbitrateAddress(kernel.GetThreadManager().GetCurrentThread(),
+                                  static_cast<ArbitrationType>(type), address, value, nanoseconds);
 
     // TODO(Subv): Identify in which specific cases this call should cause a reschedule.
-    Core::System::GetInstance().PrepareReschedule();
+    system.PrepareReschedule();
 
     return res;
 }
 
-static void Break(u8 break_reason) {
+void SVC::Break(u8 break_reason) {
     LOG_CRITICAL(Debug_Emulated, "Emulated program broke execution!");
     std::string reason_str;
     switch (break_reason) {
@@ -661,86 +798,89 @@ static void Break(u8 break_reason) {
 }
 
 /// Used to output a message on a debug hardware unit - does nothing on a retail unit
-static void OutputDebugString(VAddr address, int len) {
+void SVC::OutputDebugString(VAddr address, s32 len) {
     if (len <= 0) {
         return;
     }
 
     std::string string(len, ' ');
-    Memory::ReadBlock(address, string.data(), len);
+    memory.ReadBlock(*kernel.GetCurrentProcess(), address, string.data(), len);
     LOG_DEBUG(Debug_Emulated, "{}", string);
 }
 
 /// Get resource limit
-static ResultCode GetResourceLimit(Handle* resource_limit, Handle process_handle) {
+ResultCode SVC::GetResourceLimit(Handle* resource_limit, Handle process_handle) {
     LOG_TRACE(Kernel_SVC, "called process=0x{:08X}", process_handle);
 
-    SharedPtr<Process> process = g_handle_table.Get<Process>(process_handle);
+    SharedPtr<Process> current_process = kernel.GetCurrentProcess();
+    SharedPtr<Process> process = current_process->handle_table.Get<Process>(process_handle);
     if (process == nullptr)
         return ERR_INVALID_HANDLE;
 
-    CASCADE_RESULT(*resource_limit, g_handle_table.Create(process->resource_limit));
+    CASCADE_RESULT(*resource_limit, current_process->handle_table.Create(process->resource_limit));
 
     return RESULT_SUCCESS;
 }
 
 /// Get resource limit current values
-static ResultCode GetResourceLimitCurrentValues(VAddr values, Handle resource_limit_handle,
-                                                VAddr names, u32 name_count) {
+ResultCode SVC::GetResourceLimitCurrentValues(VAddr values, Handle resource_limit_handle,
+                                              VAddr names, u32 name_count) {
     LOG_TRACE(Kernel_SVC, "called resource_limit={:08X}, names={:08X}, name_count={}",
               resource_limit_handle, names, name_count);
 
     SharedPtr<ResourceLimit> resource_limit =
-        g_handle_table.Get<ResourceLimit>(resource_limit_handle);
+        kernel.GetCurrentProcess()->handle_table.Get<ResourceLimit>(resource_limit_handle);
     if (resource_limit == nullptr)
         return ERR_INVALID_HANDLE;
 
     for (unsigned int i = 0; i < name_count; ++i) {
-        u32 name = Memory::Read32(names + i * sizeof(u32));
+        u32 name = memory.Read32(names + i * sizeof(u32));
         s64 value = resource_limit->GetCurrentResourceValue(name);
-        Memory::Write64(values + i * sizeof(u64), value);
+        memory.Write64(values + i * sizeof(u64), value);
     }
 
     return RESULT_SUCCESS;
 }
 
 /// Get resource limit max values
-static ResultCode GetResourceLimitLimitValues(VAddr values, Handle resource_limit_handle,
-                                              VAddr names, u32 name_count) {
+ResultCode SVC::GetResourceLimitLimitValues(VAddr values, Handle resource_limit_handle, VAddr names,
+                                            u32 name_count) {
     LOG_TRACE(Kernel_SVC, "called resource_limit={:08X}, names={:08X}, name_count={}",
               resource_limit_handle, names, name_count);
 
     SharedPtr<ResourceLimit> resource_limit =
-        g_handle_table.Get<ResourceLimit>(resource_limit_handle);
+        kernel.GetCurrentProcess()->handle_table.Get<ResourceLimit>(resource_limit_handle);
     if (resource_limit == nullptr)
         return ERR_INVALID_HANDLE;
 
     for (unsigned int i = 0; i < name_count; ++i) {
-        u32 name = Memory::Read32(names + i * sizeof(u32));
+        u32 name = memory.Read32(names + i * sizeof(u32));
         s64 value = resource_limit->GetMaxResourceValue(name);
-        Memory::Write64(values + i * sizeof(u64), value);
+        memory.Write64(values + i * sizeof(u64), value);
     }
 
     return RESULT_SUCCESS;
 }
 
 /// Creates a new thread
-static ResultCode CreateThread(Handle* out_handle, u32 priority, u32 entry_point, u32 arg,
-                               u32 stack_top, s32 processor_id) {
+ResultCode SVC::CreateThread(Handle* out_handle, u32 entry_point, u32 arg, VAddr stack_top,
+                             u32 priority, s32 processor_id) {
     std::string name = fmt::format("thread-{:08X}", entry_point);
 
     if (priority > ThreadPrioLowest) {
         return ERR_OUT_OF_RANGE;
     }
 
-    SharedPtr<ResourceLimit>& resource_limit = g_current_process->resource_limit;
+    SharedPtr<Process> current_process = kernel.GetCurrentProcess();
+
+    SharedPtr<ResourceLimit>& resource_limit = current_process->resource_limit;
     if (resource_limit->GetMaxResourceValue(ResourceTypes::PRIORITY) > priority) {
         return ERR_NOT_AUTHORIZED;
     }
 
     if (processor_id == ThreadProcessorIdDefault) {
         // Set the target CPU to the one specified in the process' exheader.
-        processor_id = g_current_process->ideal_processor;
+        processor_id = current_process->ideal_processor;
         ASSERT(processor_id != ThreadProcessorIdDefault);
     }
 
@@ -762,15 +902,15 @@ static ResultCode CreateThread(Handle* out_handle, u32 priority, u32 entry_point
     }
 
     CASCADE_RESULT(SharedPtr<Thread> thread,
-                   Thread::Create(name, entry_point, priority, arg, processor_id, stack_top,
-                                  g_current_process));
+                   kernel.CreateThread(name, entry_point, priority, arg, processor_id, stack_top,
+                                       *current_process));
 
     thread->context->SetFpscr(FPSCR_DEFAULT_NAN | FPSCR_FLUSH_TO_ZERO |
                               FPSCR_ROUND_TOZERO); // 0x03C00000
 
-    CASCADE_RESULT(*out_handle, g_handle_table.Create(std::move(thread)));
+    CASCADE_RESULT(*out_handle, current_process->handle_table.Create(std::move(thread)));
 
-    Core::System::GetInstance().PrepareReschedule();
+    system.PrepareReschedule();
 
     LOG_TRACE(Kernel_SVC,
               "called entrypoint=0x{:08X} ({}), arg=0x{:08X}, stacktop=0x{:08X}, "
@@ -781,16 +921,16 @@ static ResultCode CreateThread(Handle* out_handle, u32 priority, u32 entry_point
 }
 
 /// Called when a thread exits
-static void ExitThread() {
-    LOG_TRACE(Kernel_SVC, "called, pc=0x{:08X}", Core::CPU().GetPC());
+void SVC::ExitThread() {
+    LOG_TRACE(Kernel_SVC, "called, pc=0x{:08X}", system.CPU().GetPC());
 
-    ExitCurrentThread();
-    Core::System::GetInstance().PrepareReschedule();
+    kernel.GetThreadManager().ExitCurrentThread();
+    system.PrepareReschedule();
 }
 
 /// Gets the priority for the specified thread
-static ResultCode GetThreadPriority(u32* priority, Handle handle) {
-    const SharedPtr<Thread> thread = g_handle_table.Get<Thread>(handle);
+ResultCode SVC::GetThreadPriority(u32* priority, Handle handle) {
+    const SharedPtr<Thread> thread = kernel.GetCurrentProcess()->handle_table.Get<Thread>(handle);
     if (thread == nullptr)
         return ERR_INVALID_HANDLE;
 
@@ -799,18 +939,18 @@ static ResultCode GetThreadPriority(u32* priority, Handle handle) {
 }
 
 /// Sets the priority for the specified thread
-static ResultCode SetThreadPriority(Handle handle, u32 priority) {
+ResultCode SVC::SetThreadPriority(Handle handle, u32 priority) {
     if (priority > ThreadPrioLowest) {
         return ERR_OUT_OF_RANGE;
     }
 
-    SharedPtr<Thread> thread = g_handle_table.Get<Thread>(handle);
+    SharedPtr<Thread> thread = kernel.GetCurrentProcess()->handle_table.Get<Thread>(handle);
     if (thread == nullptr)
         return ERR_INVALID_HANDLE;
 
     // Note: The kernel uses the current process's resource limit instead of
     // the one from the thread owner's resource limit.
-    SharedPtr<ResourceLimit>& resource_limit = g_current_process->resource_limit;
+    SharedPtr<ResourceLimit>& resource_limit = kernel.GetCurrentProcess()->resource_limit;
     if (resource_limit->GetMaxResourceValue(ResourceTypes::PRIORITY) > priority) {
         return ERR_NOT_AUTHORIZED;
     }
@@ -822,15 +962,15 @@ static ResultCode SetThreadPriority(Handle handle, u32 priority) {
     for (auto& mutex : thread->pending_mutexes)
         mutex->UpdatePriority();
 
-    Core::System::GetInstance().PrepareReschedule();
+    system.PrepareReschedule();
     return RESULT_SUCCESS;
 }
 
 /// Create a mutex
-static ResultCode CreateMutex(Handle* out_handle, u32 initial_locked) {
-    SharedPtr<Mutex> mutex = Mutex::Create(initial_locked != 0);
-    mutex->name = fmt::format("mutex-{:08x}", Core::CPU().GetReg(14));
-    CASCADE_RESULT(*out_handle, g_handle_table.Create(std::move(mutex)));
+ResultCode SVC::CreateMutex(Handle* out_handle, u32 initial_locked) {
+    SharedPtr<Mutex> mutex = kernel.CreateMutex(initial_locked != 0);
+    mutex->name = fmt::format("mutex-{:08x}", system.CPU().GetReg(14));
+    CASCADE_RESULT(*out_handle, kernel.GetCurrentProcess()->handle_table.Create(std::move(mutex)));
 
     LOG_TRACE(Kernel_SVC, "called initial_locked={} : created handle=0x{:08X}",
               initial_locked ? "true" : "false", *out_handle);
@@ -839,21 +979,22 @@ static ResultCode CreateMutex(Handle* out_handle, u32 initial_locked) {
 }
 
 /// Release a mutex
-static ResultCode ReleaseMutex(Handle handle) {
+ResultCode SVC::ReleaseMutex(Handle handle) {
     LOG_TRACE(Kernel_SVC, "called handle=0x{:08X}", handle);
 
-    SharedPtr<Mutex> mutex = g_handle_table.Get<Mutex>(handle);
+    SharedPtr<Mutex> mutex = kernel.GetCurrentProcess()->handle_table.Get<Mutex>(handle);
     if (mutex == nullptr)
         return ERR_INVALID_HANDLE;
 
-    return mutex->Release(GetCurrentThread());
+    return mutex->Release(kernel.GetThreadManager().GetCurrentThread());
 }
 
 /// Get the ID of the specified process
-static ResultCode GetProcessId(u32* process_id, Handle process_handle) {
+ResultCode SVC::GetProcessId(u32* process_id, Handle process_handle) {
     LOG_TRACE(Kernel_SVC, "called process=0x{:08X}", process_handle);
 
-    const SharedPtr<Process> process = g_handle_table.Get<Process>(process_handle);
+    const SharedPtr<Process> process =
+        kernel.GetCurrentProcess()->handle_table.Get<Process>(process_handle);
     if (process == nullptr)
         return ERR_INVALID_HANDLE;
 
@@ -862,10 +1003,11 @@ static ResultCode GetProcessId(u32* process_id, Handle process_handle) {
 }
 
 /// Get the ID of the process that owns the specified thread
-static ResultCode GetProcessIdOfThread(u32* process_id, Handle thread_handle) {
+ResultCode SVC::GetProcessIdOfThread(u32* process_id, Handle thread_handle) {
     LOG_TRACE(Kernel_SVC, "called thread=0x{:08X}", thread_handle);
 
-    const SharedPtr<Thread> thread = g_handle_table.Get<Thread>(thread_handle);
+    const SharedPtr<Thread> thread =
+        kernel.GetCurrentProcess()->handle_table.Get<Thread>(thread_handle);
     if (thread == nullptr)
         return ERR_INVALID_HANDLE;
 
@@ -878,10 +1020,10 @@ static ResultCode GetProcessIdOfThread(u32* process_id, Handle thread_handle) {
 }
 
 /// Get the ID for the specified thread.
-static ResultCode GetThreadId(u32* thread_id, Handle handle) {
+ResultCode SVC::GetThreadId(u32* thread_id, Handle handle) {
     LOG_TRACE(Kernel_SVC, "called thread=0x{:08X}", handle);
 
-    const SharedPtr<Thread> thread = g_handle_table.Get<Thread>(handle);
+    const SharedPtr<Thread> thread = kernel.GetCurrentProcess()->handle_table.Get<Thread>(handle);
     if (thread == nullptr)
         return ERR_INVALID_HANDLE;
 
@@ -890,10 +1032,12 @@ static ResultCode GetThreadId(u32* thread_id, Handle handle) {
 }
 
 /// Creates a semaphore
-static ResultCode CreateSemaphore(Handle* out_handle, s32 initial_count, s32 max_count) {
-    CASCADE_RESULT(SharedPtr<Semaphore> semaphore, Semaphore::Create(initial_count, max_count));
-    semaphore->name = fmt::format("semaphore-{:08x}", Core::CPU().GetReg(14));
-    CASCADE_RESULT(*out_handle, g_handle_table.Create(std::move(semaphore)));
+ResultCode SVC::CreateSemaphore(Handle* out_handle, s32 initial_count, s32 max_count) {
+    CASCADE_RESULT(SharedPtr<Semaphore> semaphore,
+                   kernel.CreateSemaphore(initial_count, max_count));
+    semaphore->name = fmt::format("semaphore-{:08x}", system.CPU().GetReg(14));
+    CASCADE_RESULT(*out_handle,
+                   kernel.GetCurrentProcess()->handle_table.Create(std::move(semaphore)));
 
     LOG_TRACE(Kernel_SVC, "called initial_count={}, max_count={}, created handle=0x{:08X}",
               initial_count, max_count, *out_handle);
@@ -901,10 +1045,11 @@ static ResultCode CreateSemaphore(Handle* out_handle, s32 initial_count, s32 max
 }
 
 /// Releases a certain number of slots in a semaphore
-static ResultCode ReleaseSemaphore(s32* count, Handle handle, s32 release_count) {
+ResultCode SVC::ReleaseSemaphore(s32* count, Handle handle, s32 release_count) {
     LOG_TRACE(Kernel_SVC, "called release_count={}, handle=0x{:08X}", release_count, handle);
 
-    SharedPtr<Semaphore> semaphore = g_handle_table.Get<Semaphore>(handle);
+    SharedPtr<Semaphore> semaphore =
+        kernel.GetCurrentProcess()->handle_table.Get<Semaphore>(handle);
     if (semaphore == nullptr)
         return ERR_INVALID_HANDLE;
 
@@ -914,21 +1059,39 @@ static ResultCode ReleaseSemaphore(s32* count, Handle handle, s32 release_count)
 }
 
 /// Query process memory
-static ResultCode QueryProcessMemory(MemoryInfo* memory_info, PageInfo* page_info,
-                                     Handle process_handle, u32 addr) {
-    SharedPtr<Process> process = g_handle_table.Get<Process>(process_handle);
+ResultCode SVC::QueryProcessMemory(MemoryInfo* memory_info, PageInfo* page_info,
+                                   Handle process_handle, u32 addr) {
+    SharedPtr<Process> process =
+        kernel.GetCurrentProcess()->handle_table.Get<Process>(process_handle);
     if (process == nullptr)
         return ERR_INVALID_HANDLE;
 
     auto vma = process->vm_manager.FindVMA(addr);
 
-    if (vma == g_current_process->vm_manager.vma_map.end())
+    if (vma == process->vm_manager.vma_map.end())
         return ERR_INVALID_ADDRESS;
 
-    memory_info->base_address = vma->second.base;
-    memory_info->permission = static_cast<u32>(vma->second.permissions);
-    memory_info->size = vma->second.size;
-    memory_info->state = static_cast<u32>(vma->second.meminfo_state);
+    auto permissions = vma->second.permissions;
+    auto state = vma->second.meminfo_state;
+
+    // Query(Process)Memory merges vma with neighbours when they share the same state and
+    // permissions, regardless of their physical mapping.
+
+    auto mismatch = [permissions, state](const std::pair<VAddr, Kernel::VirtualMemoryArea>& v) {
+        return v.second.permissions != permissions || v.second.meminfo_state != state;
+    };
+
+    std::reverse_iterator rvma(vma);
+
+    auto lower = std::find_if(rvma, process->vm_manager.vma_map.crend(), mismatch);
+    --lower;
+    auto upper = std::find_if(vma, process->vm_manager.vma_map.cend(), mismatch);
+    --upper;
+
+    memory_info->base_address = lower->second.base;
+    memory_info->permission = static_cast<u32>(permissions);
+    memory_info->size = upper->second.base + upper->second.size - lower->second.base;
+    memory_info->state = static_cast<u32>(state);
 
     page_info->flags = 0;
     LOG_TRACE(Kernel_SVC, "called process=0x{:08X} addr=0x{:08X}", process_handle, addr);
@@ -936,15 +1099,15 @@ static ResultCode QueryProcessMemory(MemoryInfo* memory_info, PageInfo* page_inf
 }
 
 /// Query memory
-static ResultCode QueryMemory(MemoryInfo* memory_info, PageInfo* page_info, u32 addr) {
+ResultCode SVC::QueryMemory(MemoryInfo* memory_info, PageInfo* page_info, u32 addr) {
     return QueryProcessMemory(memory_info, page_info, CurrentProcess, addr);
 }
 
 /// Create an event
-static ResultCode CreateEvent(Handle* out_handle, u32 reset_type) {
-    SharedPtr<Event> evt = Event::Create(static_cast<ResetType>(reset_type),
-                                         fmt::format("event-{:08x}", Core::CPU().GetReg(14)));
-    CASCADE_RESULT(*out_handle, g_handle_table.Create(std::move(evt)));
+ResultCode SVC::CreateEvent(Handle* out_handle, u32 reset_type) {
+    SharedPtr<Event> evt = kernel.CreateEvent(static_cast<ResetType>(reset_type),
+                                              fmt::format("event-{:08x}", system.CPU().GetReg(14)));
+    CASCADE_RESULT(*out_handle, kernel.GetCurrentProcess()->handle_table.Create(std::move(evt)));
 
     LOG_TRACE(Kernel_SVC, "called reset_type=0x{:08X} : created handle=0x{:08X}", reset_type,
               *out_handle);
@@ -952,17 +1115,17 @@ static ResultCode CreateEvent(Handle* out_handle, u32 reset_type) {
 }
 
 /// Duplicates a kernel handle
-static ResultCode DuplicateHandle(Handle* out, Handle handle) {
-    CASCADE_RESULT(*out, g_handle_table.Duplicate(handle));
+ResultCode SVC::DuplicateHandle(Handle* out, Handle handle) {
+    CASCADE_RESULT(*out, kernel.GetCurrentProcess()->handle_table.Duplicate(handle));
     LOG_TRACE(Kernel_SVC, "duplicated 0x{:08X} to 0x{:08X}", handle, *out);
     return RESULT_SUCCESS;
 }
 
 /// Signals an event
-static ResultCode SignalEvent(Handle handle) {
+ResultCode SVC::SignalEvent(Handle handle) {
     LOG_TRACE(Kernel_SVC, "called event=0x{:08X}", handle);
 
-    SharedPtr<Event> evt = g_handle_table.Get<Event>(handle);
+    SharedPtr<Event> evt = kernel.GetCurrentProcess()->handle_table.Get<Event>(handle);
     if (evt == nullptr)
         return ERR_INVALID_HANDLE;
 
@@ -972,10 +1135,10 @@ static ResultCode SignalEvent(Handle handle) {
 }
 
 /// Clears an event
-static ResultCode ClearEvent(Handle handle) {
+ResultCode SVC::ClearEvent(Handle handle) {
     LOG_TRACE(Kernel_SVC, "called event=0x{:08X}", handle);
 
-    SharedPtr<Event> evt = g_handle_table.Get<Event>(handle);
+    SharedPtr<Event> evt = kernel.GetCurrentProcess()->handle_table.Get<Event>(handle);
     if (evt == nullptr)
         return ERR_INVALID_HANDLE;
 
@@ -984,10 +1147,10 @@ static ResultCode ClearEvent(Handle handle) {
 }
 
 /// Creates a timer
-static ResultCode CreateTimer(Handle* out_handle, u32 reset_type) {
-    SharedPtr<Timer> timer = Timer::Create(static_cast<ResetType>(reset_type),
-                                           fmt ::format("timer-{:08x}", Core::CPU().GetReg(14)));
-    CASCADE_RESULT(*out_handle, g_handle_table.Create(std::move(timer)));
+ResultCode SVC::CreateTimer(Handle* out_handle, u32 reset_type) {
+    SharedPtr<Timer> timer = kernel.CreateTimer(
+        static_cast<ResetType>(reset_type), fmt ::format("timer-{:08x}", system.CPU().GetReg(14)));
+    CASCADE_RESULT(*out_handle, kernel.GetCurrentProcess()->handle_table.Create(std::move(timer)));
 
     LOG_TRACE(Kernel_SVC, "called reset_type=0x{:08X} : created handle=0x{:08X}", reset_type,
               *out_handle);
@@ -995,10 +1158,10 @@ static ResultCode CreateTimer(Handle* out_handle, u32 reset_type) {
 }
 
 /// Clears a timer
-static ResultCode ClearTimer(Handle handle) {
+ResultCode SVC::ClearTimer(Handle handle) {
     LOG_TRACE(Kernel_SVC, "called timer=0x{:08X}", handle);
 
-    SharedPtr<Timer> timer = g_handle_table.Get<Timer>(handle);
+    SharedPtr<Timer> timer = kernel.GetCurrentProcess()->handle_table.Get<Timer>(handle);
     if (timer == nullptr)
         return ERR_INVALID_HANDLE;
 
@@ -1007,14 +1170,14 @@ static ResultCode ClearTimer(Handle handle) {
 }
 
 /// Starts a timer
-static ResultCode SetTimer(Handle handle, s64 initial, s64 interval) {
+ResultCode SVC::SetTimer(Handle handle, s64 initial, s64 interval) {
     LOG_TRACE(Kernel_SVC, "called timer=0x{:08X}", handle);
 
     if (initial < 0 || interval < 0) {
         return ERR_OUT_OF_RANGE_KERNEL;
     }
 
-    SharedPtr<Timer> timer = g_handle_table.Get<Timer>(handle);
+    SharedPtr<Timer> timer = kernel.GetCurrentProcess()->handle_table.Get<Timer>(handle);
     if (timer == nullptr)
         return ERR_INVALID_HANDLE;
 
@@ -1024,10 +1187,10 @@ static ResultCode SetTimer(Handle handle, s64 initial, s64 interval) {
 }
 
 /// Cancels a timer
-static ResultCode CancelTimer(Handle handle) {
+ResultCode SVC::CancelTimer(Handle handle) {
     LOG_TRACE(Kernel_SVC, "called timer=0x{:08X}", handle);
 
-    SharedPtr<Timer> timer = g_handle_table.Get<Timer>(handle);
+    SharedPtr<Timer> timer = kernel.GetCurrentProcess()->handle_table.Get<Timer>(handle);
     if (timer == nullptr)
         return ERR_INVALID_HANDLE;
 
@@ -1037,34 +1200,37 @@ static ResultCode CancelTimer(Handle handle) {
 }
 
 /// Sleep the current thread
-static void SleepThread(s64 nanoseconds) {
+void SVC::SleepThread(s64 nanoseconds) {
     LOG_TRACE(Kernel_SVC, "called nanoseconds={}", nanoseconds);
+
+    ThreadManager& thread_manager = kernel.GetThreadManager();
 
     // Don't attempt to yield execution if there are no available threads to run,
     // this way we avoid a useless reschedule to the idle thread.
-    if (nanoseconds == 0 && !HaveReadyThreads())
+    if (nanoseconds == 0 && !thread_manager.HaveReadyThreads())
         return;
 
     // Sleep current thread and check for next thread to schedule
-    WaitCurrentThread_Sleep();
+    thread_manager.WaitCurrentThread_Sleep();
 
     // Create an event to wake the thread up after the specified nanosecond delay has passed
-    GetCurrentThread()->WakeAfterDelay(nanoseconds);
+    thread_manager.GetCurrentThread()->WakeAfterDelay(nanoseconds);
 
-    Core::System::GetInstance().PrepareReschedule();
+    system.PrepareReschedule();
 }
 
 /// This returns the total CPU ticks elapsed since the CPU was powered-on
-static s64 GetSystemTick() {
-    s64 result = CoreTiming::GetTicks();
+s64 SVC::GetSystemTick() {
+    s64 result = system.CoreTiming().GetTicks();
     // Advance time to defeat dumb games (like Cubic Ninja) that busy-wait for the frame to end.
-    CoreTiming::AddTicks(150); // Measured time between two calls on a 9.2 o3DS with Ninjhax 1.1b
+    // Measured time between two calls on a 9.2 o3DS with Ninjhax 1.1b
+    system.CoreTiming().AddTicks(150);
     return result;
 }
 
 /// Creates a memory block at the specified address with the specified permissions and size
-static ResultCode CreateMemoryBlock(Handle* out_handle, u32 addr, u32 size, u32 my_permission,
-                                    u32 other_permission) {
+ResultCode SVC::CreateMemoryBlock(Handle* out_handle, u32 addr, u32 size, u32 my_permission,
+                                  u32 other_permission) {
     if (size % Memory::PAGE_SIZE != 0)
         return ERR_MISALIGNED_SIZE;
 
@@ -1096,92 +1262,103 @@ static ResultCode CreateMemoryBlock(Handle* out_handle, u32 addr, u32 size, u32 
         return ERR_INVALID_ADDRESS;
     }
 
+    SharedPtr<Process> current_process = kernel.GetCurrentProcess();
+
     // When trying to create a memory block with address = 0,
     // if the process has the Shared Device Memory flag in the exheader,
     // then we have to allocate from the same region as the caller process instead of the BASE
     // region.
     MemoryRegion region = MemoryRegion::BASE;
-    if (addr == 0 && g_current_process->flags.shared_device_mem)
-        region = g_current_process->flags.memory_region;
+    if (addr == 0 && current_process->flags.shared_device_mem)
+        region = current_process->flags.memory_region;
 
-    shared_memory =
-        SharedMemory::Create(g_current_process, size, static_cast<MemoryPermission>(my_permission),
-                             static_cast<MemoryPermission>(other_permission), addr, region);
-    CASCADE_RESULT(*out_handle, g_handle_table.Create(std::move(shared_memory)));
+    CASCADE_RESULT(shared_memory,
+                   kernel.CreateSharedMemory(
+                       current_process.get(), size, static_cast<MemoryPermission>(my_permission),
+                       static_cast<MemoryPermission>(other_permission), addr, region));
+    CASCADE_RESULT(*out_handle, current_process->handle_table.Create(std::move(shared_memory)));
 
     LOG_WARNING(Kernel_SVC, "called addr=0x{:08X}", addr);
     return RESULT_SUCCESS;
 }
 
-static ResultCode CreatePort(Handle* server_port, Handle* client_port, VAddr name_address,
-                             u32 max_sessions) {
+ResultCode SVC::CreatePort(Handle* server_port, Handle* client_port, VAddr name_address,
+                           u32 max_sessions) {
     // TODO(Subv): Implement named ports.
     ASSERT_MSG(name_address == 0, "Named ports are currently unimplemented");
 
-    auto ports = ServerPort::CreatePortPair(max_sessions);
-    CASCADE_RESULT(*client_port,
-                   g_handle_table.Create(std::move(std::get<SharedPtr<ClientPort>>(ports))));
+    SharedPtr<Process> current_process = kernel.GetCurrentProcess();
+
+    auto ports = kernel.CreatePortPair(max_sessions);
+    CASCADE_RESULT(*client_port, current_process->handle_table.Create(
+                                     std::move(std::get<SharedPtr<ClientPort>>(ports))));
     // Note: The 3DS kernel also leaks the client port handle if the server port handle fails to be
     // created.
-    CASCADE_RESULT(*server_port,
-                   g_handle_table.Create(std::move(std::get<SharedPtr<ServerPort>>(ports))));
+    CASCADE_RESULT(*server_port, current_process->handle_table.Create(
+                                     std::move(std::get<SharedPtr<ServerPort>>(ports))));
 
     LOG_TRACE(Kernel_SVC, "called max_sessions={}", max_sessions);
     return RESULT_SUCCESS;
 }
 
-static ResultCode CreateSessionToPort(Handle* out_client_session, Handle client_port_handle) {
-    SharedPtr<ClientPort> client_port = g_handle_table.Get<ClientPort>(client_port_handle);
+ResultCode SVC::CreateSessionToPort(Handle* out_client_session, Handle client_port_handle) {
+    SharedPtr<Process> current_process = kernel.GetCurrentProcess();
+    SharedPtr<ClientPort> client_port =
+        current_process->handle_table.Get<ClientPort>(client_port_handle);
     if (client_port == nullptr)
         return ERR_INVALID_HANDLE;
 
     CASCADE_RESULT(auto session, client_port->Connect());
-    CASCADE_RESULT(*out_client_session, g_handle_table.Create(std::move(session)));
+    CASCADE_RESULT(*out_client_session, current_process->handle_table.Create(std::move(session)));
     return RESULT_SUCCESS;
 }
 
-static ResultCode CreateSession(Handle* server_session, Handle* client_session) {
-    auto sessions = ServerSession::CreateSessionPair();
+ResultCode SVC::CreateSession(Handle* server_session, Handle* client_session) {
+    auto sessions = kernel.CreateSessionPair();
+
+    SharedPtr<Process> current_process = kernel.GetCurrentProcess();
 
     auto& server = std::get<SharedPtr<ServerSession>>(sessions);
-    CASCADE_RESULT(*server_session, g_handle_table.Create(std::move(server)));
+    CASCADE_RESULT(*server_session, current_process->handle_table.Create(std::move(server)));
 
     auto& client = std::get<SharedPtr<ClientSession>>(sessions);
-    CASCADE_RESULT(*client_session, g_handle_table.Create(std::move(client)));
+    CASCADE_RESULT(*client_session, current_process->handle_table.Create(std::move(client)));
 
     LOG_TRACE(Kernel_SVC, "called");
     return RESULT_SUCCESS;
 }
 
-static ResultCode AcceptSession(Handle* out_server_session, Handle server_port_handle) {
-    SharedPtr<ServerPort> server_port = g_handle_table.Get<ServerPort>(server_port_handle);
+ResultCode SVC::AcceptSession(Handle* out_server_session, Handle server_port_handle) {
+    SharedPtr<Process> current_process = kernel.GetCurrentProcess();
+    SharedPtr<ServerPort> server_port =
+        current_process->handle_table.Get<ServerPort>(server_port_handle);
     if (server_port == nullptr)
         return ERR_INVALID_HANDLE;
 
     CASCADE_RESULT(auto session, server_port->Accept());
-    CASCADE_RESULT(*out_server_session, g_handle_table.Create(std::move(session)));
+    CASCADE_RESULT(*out_server_session, current_process->handle_table.Create(std::move(session)));
     return RESULT_SUCCESS;
 }
 
-static ResultCode GetSystemInfo(s64* out, u32 type, s32 param) {
+ResultCode SVC::GetSystemInfo(s64* out, u32 type, s32 param) {
     LOG_TRACE(Kernel_SVC, "called type={} param={}", type, param);
 
     switch ((SystemInfoType)type) {
     case SystemInfoType::REGION_MEMORY_USAGE:
         switch ((SystemInfoMemUsageRegion)param) {
         case SystemInfoMemUsageRegion::ALL:
-            *out = GetMemoryRegion(MemoryRegion::APPLICATION)->used +
-                   GetMemoryRegion(MemoryRegion::SYSTEM)->used +
-                   GetMemoryRegion(MemoryRegion::BASE)->used;
+            *out = kernel.GetMemoryRegion(MemoryRegion::APPLICATION)->used +
+                   kernel.GetMemoryRegion(MemoryRegion::SYSTEM)->used +
+                   kernel.GetMemoryRegion(MemoryRegion::BASE)->used;
             break;
         case SystemInfoMemUsageRegion::APPLICATION:
-            *out = GetMemoryRegion(MemoryRegion::APPLICATION)->used;
+            *out = kernel.GetMemoryRegion(MemoryRegion::APPLICATION)->used;
             break;
         case SystemInfoMemUsageRegion::SYSTEM:
-            *out = GetMemoryRegion(MemoryRegion::SYSTEM)->used;
+            *out = kernel.GetMemoryRegion(MemoryRegion::SYSTEM)->used;
             break;
         case SystemInfoMemUsageRegion::BASE:
-            *out = GetMemoryRegion(MemoryRegion::BASE)->used;
+            *out = kernel.GetMemoryRegion(MemoryRegion::BASE)->used;
             break;
         default:
             LOG_ERROR(Kernel_SVC, "unknown GetSystemInfo type=0 region: param={}", param);
@@ -1206,10 +1383,11 @@ static ResultCode GetSystemInfo(s64* out, u32 type, s32 param) {
     return RESULT_SUCCESS;
 }
 
-static ResultCode GetProcessInfo(s64* out, Handle process_handle, u32 type) {
+ResultCode SVC::GetProcessInfo(s64* out, Handle process_handle, u32 type) {
     LOG_TRACE(Kernel_SVC, "called process=0x{:08X} type={}", process_handle, type);
 
-    SharedPtr<Process> process = g_handle_table.Get<Process>(process_handle);
+    SharedPtr<Process> process =
+        kernel.GetCurrentProcess()->handle_table.Get<Process>(process_handle);
     if (process == nullptr)
         return ERR_INVALID_HANDLE;
 
@@ -1218,7 +1396,7 @@ static ResultCode GetProcessInfo(s64* out, Handle process_handle, u32 type) {
     case 2:
         // TODO(yuriks): Type 0 returns a slightly higher number than type 2, but I'm not sure
         // what's the difference between them.
-        *out = process->heap_used + process->linear_heap_used + process->misc_memory_used;
+        *out = process->memory_used;
         if (*out % Memory::PAGE_SIZE != 0) {
             LOG_ERROR(Kernel_SVC, "called, memory size not page-aligned");
             return ERR_MISALIGNED_SIZE;
@@ -1251,79 +1429,69 @@ static ResultCode GetProcessInfo(s64* out, Handle process_handle, u32 type) {
     return RESULT_SUCCESS;
 }
 
-namespace {
-struct FunctionDef {
-    using Func = void();
-
-    u32 id;
-    Func* func;
-    const char* name;
-};
-} // namespace
-
-static const FunctionDef SVC_Table[] = {
+const SVC::FunctionDef SVC::SVC_Table[] = {
     {0x00, nullptr, "Unknown"},
-    {0x01, HLE::Wrap<ControlMemory>, "ControlMemory"},
-    {0x02, HLE::Wrap<QueryMemory>, "QueryMemory"},
-    {0x03, ExitProcess, "ExitProcess"},
+    {0x01, &SVC::Wrap<&SVC::ControlMemory>, "ControlMemory"},
+    {0x02, &SVC::Wrap<&SVC::QueryMemory>, "QueryMemory"},
+    {0x03, &SVC::ExitProcess, "ExitProcess"},
     {0x04, nullptr, "GetProcessAffinityMask"},
     {0x05, nullptr, "SetProcessAffinityMask"},
     {0x06, nullptr, "GetProcessIdealProcessor"},
     {0x07, nullptr, "SetProcessIdealProcessor"},
-    {0x08, HLE::Wrap<CreateThread>, "CreateThread"},
-    {0x09, ExitThread, "ExitThread"},
-    {0x0A, HLE::Wrap<SleepThread>, "SleepThread"},
-    {0x0B, HLE::Wrap<GetThreadPriority>, "GetThreadPriority"},
-    {0x0C, HLE::Wrap<SetThreadPriority>, "SetThreadPriority"},
+    {0x08, &SVC::Wrap<&SVC::CreateThread>, "CreateThread"},
+    {0x09, &SVC::ExitThread, "ExitThread"},
+    {0x0A, &SVC::Wrap<&SVC::SleepThread>, "SleepThread"},
+    {0x0B, &SVC::Wrap<&SVC::GetThreadPriority>, "GetThreadPriority"},
+    {0x0C, &SVC::Wrap<&SVC::SetThreadPriority>, "SetThreadPriority"},
     {0x0D, nullptr, "GetThreadAffinityMask"},
     {0x0E, nullptr, "SetThreadAffinityMask"},
     {0x0F, nullptr, "GetThreadIdealProcessor"},
     {0x10, nullptr, "SetThreadIdealProcessor"},
     {0x11, nullptr, "GetCurrentProcessorNumber"},
     {0x12, nullptr, "Run"},
-    {0x13, HLE::Wrap<CreateMutex>, "CreateMutex"},
-    {0x14, HLE::Wrap<ReleaseMutex>, "ReleaseMutex"},
-    {0x15, HLE::Wrap<CreateSemaphore>, "CreateSemaphore"},
-    {0x16, HLE::Wrap<ReleaseSemaphore>, "ReleaseSemaphore"},
-    {0x17, HLE::Wrap<CreateEvent>, "CreateEvent"},
-    {0x18, HLE::Wrap<SignalEvent>, "SignalEvent"},
-    {0x19, HLE::Wrap<ClearEvent>, "ClearEvent"},
-    {0x1A, HLE::Wrap<CreateTimer>, "CreateTimer"},
-    {0x1B, HLE::Wrap<SetTimer>, "SetTimer"},
-    {0x1C, HLE::Wrap<CancelTimer>, "CancelTimer"},
-    {0x1D, HLE::Wrap<ClearTimer>, "ClearTimer"},
-    {0x1E, HLE::Wrap<CreateMemoryBlock>, "CreateMemoryBlock"},
-    {0x1F, HLE::Wrap<MapMemoryBlock>, "MapMemoryBlock"},
-    {0x20, HLE::Wrap<UnmapMemoryBlock>, "UnmapMemoryBlock"},
-    {0x21, HLE::Wrap<CreateAddressArbiter>, "CreateAddressArbiter"},
-    {0x22, HLE::Wrap<ArbitrateAddress>, "ArbitrateAddress"},
-    {0x23, HLE::Wrap<CloseHandle>, "CloseHandle"},
-    {0x24, HLE::Wrap<WaitSynchronization1>, "WaitSynchronization1"},
-    {0x25, HLE::Wrap<WaitSynchronizationN>, "WaitSynchronizationN"},
+    {0x13, &SVC::Wrap<&SVC::CreateMutex>, "CreateMutex"},
+    {0x14, &SVC::Wrap<&SVC::ReleaseMutex>, "ReleaseMutex"},
+    {0x15, &SVC::Wrap<&SVC::CreateSemaphore>, "CreateSemaphore"},
+    {0x16, &SVC::Wrap<&SVC::ReleaseSemaphore>, "ReleaseSemaphore"},
+    {0x17, &SVC::Wrap<&SVC::CreateEvent>, "CreateEvent"},
+    {0x18, &SVC::Wrap<&SVC::SignalEvent>, "SignalEvent"},
+    {0x19, &SVC::Wrap<&SVC::ClearEvent>, "ClearEvent"},
+    {0x1A, &SVC::Wrap<&SVC::CreateTimer>, "CreateTimer"},
+    {0x1B, &SVC::Wrap<&SVC::SetTimer>, "SetTimer"},
+    {0x1C, &SVC::Wrap<&SVC::CancelTimer>, "CancelTimer"},
+    {0x1D, &SVC::Wrap<&SVC::ClearTimer>, "ClearTimer"},
+    {0x1E, &SVC::Wrap<&SVC::CreateMemoryBlock>, "CreateMemoryBlock"},
+    {0x1F, &SVC::Wrap<&SVC::MapMemoryBlock>, "MapMemoryBlock"},
+    {0x20, &SVC::Wrap<&SVC::UnmapMemoryBlock>, "UnmapMemoryBlock"},
+    {0x21, &SVC::Wrap<&SVC::CreateAddressArbiter>, "CreateAddressArbiter"},
+    {0x22, &SVC::Wrap<&SVC::ArbitrateAddress>, "ArbitrateAddress"},
+    {0x23, &SVC::Wrap<&SVC::CloseHandle>, "CloseHandle"},
+    {0x24, &SVC::Wrap<&SVC::WaitSynchronization1>, "WaitSynchronization1"},
+    {0x25, &SVC::Wrap<&SVC::WaitSynchronizationN>, "WaitSynchronizationN"},
     {0x26, nullptr, "SignalAndWait"},
-    {0x27, HLE::Wrap<DuplicateHandle>, "DuplicateHandle"},
-    {0x28, HLE::Wrap<GetSystemTick>, "GetSystemTick"},
+    {0x27, &SVC::Wrap<&SVC::DuplicateHandle>, "DuplicateHandle"},
+    {0x28, &SVC::Wrap<&SVC::GetSystemTick>, "GetSystemTick"},
     {0x29, nullptr, "GetHandleInfo"},
-    {0x2A, HLE::Wrap<GetSystemInfo>, "GetSystemInfo"},
-    {0x2B, HLE::Wrap<GetProcessInfo>, "GetProcessInfo"},
+    {0x2A, &SVC::Wrap<&SVC::GetSystemInfo>, "GetSystemInfo"},
+    {0x2B, &SVC::Wrap<&SVC::GetProcessInfo>, "GetProcessInfo"},
     {0x2C, nullptr, "GetThreadInfo"},
-    {0x2D, HLE::Wrap<ConnectToPort>, "ConnectToPort"},
+    {0x2D, &SVC::Wrap<&SVC::ConnectToPort>, "ConnectToPort"},
     {0x2E, nullptr, "SendSyncRequest1"},
     {0x2F, nullptr, "SendSyncRequest2"},
     {0x30, nullptr, "SendSyncRequest3"},
     {0x31, nullptr, "SendSyncRequest4"},
-    {0x32, HLE::Wrap<SendSyncRequest>, "SendSyncRequest"},
+    {0x32, &SVC::Wrap<&SVC::SendSyncRequest>, "SendSyncRequest"},
     {0x33, nullptr, "OpenProcess"},
     {0x34, nullptr, "OpenThread"},
-    {0x35, HLE::Wrap<GetProcessId>, "GetProcessId"},
-    {0x36, HLE::Wrap<GetProcessIdOfThread>, "GetProcessIdOfThread"},
-    {0x37, HLE::Wrap<GetThreadId>, "GetThreadId"},
-    {0x38, HLE::Wrap<GetResourceLimit>, "GetResourceLimit"},
-    {0x39, HLE::Wrap<GetResourceLimitLimitValues>, "GetResourceLimitLimitValues"},
-    {0x3A, HLE::Wrap<GetResourceLimitCurrentValues>, "GetResourceLimitCurrentValues"},
+    {0x35, &SVC::Wrap<&SVC::GetProcessId>, "GetProcessId"},
+    {0x36, &SVC::Wrap<&SVC::GetProcessIdOfThread>, "GetProcessIdOfThread"},
+    {0x37, &SVC::Wrap<&SVC::GetThreadId>, "GetThreadId"},
+    {0x38, &SVC::Wrap<&SVC::GetResourceLimit>, "GetResourceLimit"},
+    {0x39, &SVC::Wrap<&SVC::GetResourceLimitLimitValues>, "GetResourceLimitLimitValues"},
+    {0x3A, &SVC::Wrap<&SVC::GetResourceLimitCurrentValues>, "GetResourceLimitCurrentValues"},
     {0x3B, nullptr, "GetThreadContext"},
-    {0x3C, HLE::Wrap<Break>, "Break"},
-    {0x3D, HLE::Wrap<OutputDebugString>, "OutputDebugString"},
+    {0x3C, &SVC::Wrap<&SVC::Break>, "Break"},
+    {0x3D, &SVC::Wrap<&SVC::OutputDebugString>, "OutputDebugString"},
     {0x3E, nullptr, "ControlPerformanceCounter"},
     {0x3F, nullptr, "Unknown"},
     {0x40, nullptr, "Unknown"},
@@ -1333,15 +1501,15 @@ static const FunctionDef SVC_Table[] = {
     {0x44, nullptr, "Unknown"},
     {0x45, nullptr, "Unknown"},
     {0x46, nullptr, "Unknown"},
-    {0x47, HLE::Wrap<CreatePort>, "CreatePort"},
-    {0x48, HLE::Wrap<CreateSessionToPort>, "CreateSessionToPort"},
-    {0x49, HLE::Wrap<CreateSession>, "CreateSession"},
-    {0x4A, HLE::Wrap<AcceptSession>, "AcceptSession"},
+    {0x47, &SVC::Wrap<&SVC::CreatePort>, "CreatePort"},
+    {0x48, &SVC::Wrap<&SVC::CreateSessionToPort>, "CreateSessionToPort"},
+    {0x49, &SVC::Wrap<&SVC::CreateSession>, "CreateSession"},
+    {0x4A, &SVC::Wrap<&SVC::AcceptSession>, "AcceptSession"},
     {0x4B, nullptr, "ReplyAndReceive1"},
     {0x4C, nullptr, "ReplyAndReceive2"},
     {0x4D, nullptr, "ReplyAndReceive3"},
     {0x4E, nullptr, "ReplyAndReceive4"},
-    {0x4F, HLE::Wrap<ReplyAndReceive>, "ReplyAndReceive"},
+    {0x4F, &SVC::Wrap<&SVC::ReplyAndReceive>, "ReplyAndReceive"},
     {0x50, nullptr, "BindInterrupt"},
     {0x51, nullptr, "UnbindInterrupt"},
     {0x52, nullptr, "InvalidateProcessDataCache"},
@@ -1387,10 +1555,10 @@ static const FunctionDef SVC_Table[] = {
     {0x7A, nullptr, "AddCodeSegment"},
     {0x7B, nullptr, "Backdoor"},
     {0x7C, nullptr, "KernelSetState"},
-    {0x7D, HLE::Wrap<QueryProcessMemory>, "QueryProcessMemory"},
+    {0x7D, &SVC::Wrap<&SVC::QueryProcessMemory>, "QueryProcessMemory"},
 };
 
-static const FunctionDef* GetSVCInfo(u32 func_num) {
+const SVC::FunctionDef* SVC::GetSVCInfo(u32 func_num) {
     if (func_num >= ARRAY_SIZE(SVC_Table)) {
         LOG_ERROR(Kernel_SVC, "unknown svc=0x{:02X}", func_num);
         return nullptr;
@@ -1400,23 +1568,40 @@ static const FunctionDef* GetSVCInfo(u32 func_num) {
 
 MICROPROFILE_DEFINE(Kernel_SVC, "Kernel", "SVC", MP_RGB(70, 200, 70));
 
-void CallSVC(u32 immediate) {
+void SVC::CallSVC(u32 immediate) {
     MICROPROFILE_SCOPE(Kernel_SVC);
 
     // Lock the global kernel mutex when we enter the kernel HLE.
     std::lock_guard<std::recursive_mutex> lock(HLE::g_hle_lock);
 
-    ASSERT_MSG(g_current_process->status == ProcessStatus::Running,
-               "Running threads from exiting processes is unimplemented");
+    DEBUG_ASSERT_MSG(kernel.GetCurrentProcess()->status == ProcessStatus::Running,
+                     "Running threads from exiting processes is unimplemented");
 
     const FunctionDef* info = GetSVCInfo(immediate);
     if (info) {
         if (info->func) {
-            info->func();
+            (this->*(info->func))();
         } else {
             LOG_ERROR(Kernel_SVC, "unimplemented SVC function {}(..)", info->name);
         }
     }
+}
+
+SVC::SVC(Core::System& system) : system(system), kernel(system.Kernel()), memory(system.Memory()) {}
+
+u32 SVC::GetReg(std::size_t n) {
+    return system.CPU().GetReg(static_cast<int>(n));
+}
+
+void SVC::SetReg(std::size_t n, u32 value) {
+    system.CPU().SetReg(static_cast<int>(n), value);
+}
+
+SVCContext::SVCContext(Core::System& system) : impl(std::make_unique<SVC>(system)) {}
+SVCContext::~SVCContext() = default;
+
+void SVCContext::CallSVC(u32 immediate) {
+    impl->CallSVC(immediate);
 }
 
 } // namespace Kernel

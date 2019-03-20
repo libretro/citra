@@ -10,8 +10,7 @@
 #include "common/vector_math.h"
 #include "video_core/texture/etc1.h"
 
-namespace Pica {
-namespace Texture {
+namespace Pica::Texture {
 
 namespace {
 
@@ -70,14 +69,14 @@ union ETC1Tile {
         BitField<60, 4, u64> r1;
     } separate;
 
-    const Math::Vec3<u8> GetRGB(unsigned int x, unsigned int y) const {
+    const Common::Vec3<u8> GetRGB(unsigned int x, unsigned int y) const {
         int texel = 4 * x + y;
 
         if (flip)
             std::swap(x, y);
 
         // Lookup base value
-        Math::Vec3<int> ret;
+        Common::Vec3<int> ret;
         if (differential_mode) {
             ret.r() = static_cast<int>(differential.r);
             ret.g() = static_cast<int>(differential.g);
@@ -120,10 +119,9 @@ union ETC1Tile {
 
 } // anonymous namespace
 
-Math::Vec3<u8> SampleETC1Subtile(u64 value, unsigned int x, unsigned int y) {
+Common::Vec3<u8> SampleETC1Subtile(u64 value, unsigned int x, unsigned int y) {
     ETC1Tile tile{value};
     return tile.GetRGB(x, y);
 }
 
-} // namespace Texture
-} // namespace Pica
+} // namespace Pica::Texture

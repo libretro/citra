@@ -6,8 +6,14 @@
 #include <vector>
 #include "common/alignment.h"
 #include "common/assert.h"
+#include "common/microprofile.h"
 #include "video_core/renderer_opengl/gl_state.h"
 #include "video_core/renderer_opengl/gl_stream_buffer.h"
+
+MICROPROFILE_DEFINE(OpenGL_StreamBuffer, "OpenGL", "Stream Buffer Orphaning",
+                    MP_RGB(128, 128, 192));
+
+namespace OpenGL {
 
 OGLStreamBuffer::OGLStreamBuffer(GLenum target, GLsizeiptr size, bool array_buffer_for_amd,
                                  bool prefer_coherent)
@@ -74,6 +80,7 @@ std::tuple<u8*, GLintptr, bool> OGLStreamBuffer::Map(GLsizeiptr size, GLintptr a
     }
 
     if (invalidate || !persistent) {
+        MICROPROFILE_SCOPE(OpenGL_StreamBuffer);
         GLbitfield flags = GL_MAP_WRITE_BIT | (persistent ? GL_MAP_PERSISTENT_BIT : 0) |
                            (coherent ? GL_MAP_COHERENT_BIT : GL_MAP_FLUSH_EXPLICIT_BIT) |
                            (invalidate ? GL_MAP_INVALIDATE_BUFFER_BIT : GL_MAP_UNSYNCHRONIZED_BIT);
@@ -98,3 +105,5 @@ void OGLStreamBuffer::Unmap(GLsizeiptr size) {
 
     buffer_pos += size;
 }
+
+} // namespace OpenGL

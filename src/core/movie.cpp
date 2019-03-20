@@ -5,6 +5,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <boost/optional.hpp>
 #include <cryptopp/hex.h>
 #include "common/bit_field.h"
 #include "common/common_types.h"
@@ -13,6 +14,7 @@
 #include "common/scm_rev.h"
 #include "common/string_util.h"
 #include "common/swap.h"
+#include "common/timer.h"
 #include "core/core.h"
 #include "core/hle/service/hid/hid.h"
 #include "core/hle/service/ir/extra_hid.h"
@@ -43,19 +45,21 @@ struct ControllerState {
             union {
                 u16_le hex;
 
-                BitField<0, 1, u16_le> a;
-                BitField<1, 1, u16_le> b;
-                BitField<2, 1, u16_le> select;
-                BitField<3, 1, u16_le> start;
-                BitField<4, 1, u16_le> right;
-                BitField<5, 1, u16_le> left;
-                BitField<6, 1, u16_le> up;
-                BitField<7, 1, u16_le> down;
-                BitField<8, 1, u16_le> r;
-                BitField<9, 1, u16_le> l;
-                BitField<10, 1, u16_le> x;
-                BitField<11, 1, u16_le> y;
-                // Bits 12-15 are currently unused
+                BitField<0, 1, u16> a;
+                BitField<1, 1, u16> b;
+                BitField<2, 1, u16> select;
+                BitField<3, 1, u16> start;
+                BitField<4, 1, u16> right;
+                BitField<5, 1, u16> left;
+                BitField<6, 1, u16> up;
+                BitField<7, 1, u16> down;
+                BitField<8, 1, u16> r;
+                BitField<9, 1, u16> l;
+                BitField<10, 1, u16> x;
+                BitField<11, 1, u16> y;
+                BitField<12, 1, u16> debug;
+                BitField<13, 1, u16> gpio14;
+                // Bits 14-15 are currently unused
             };
             s16_le circle_pad_x;
             s16_le circle_pad_y;
@@ -92,12 +96,12 @@ struct ControllerState {
             union {
                 u32_le hex;
 
-                BitField<0, 5, u32_le> battery_level;
-                BitField<5, 1, u32_le> zl_not_held;
-                BitField<6, 1, u32_le> zr_not_held;
-                BitField<7, 1, u32_le> r_not_held;
-                BitField<8, 12, u32_le> c_stick_x;
-                BitField<20, 12, u32_le> c_stick_y;
+                BitField<0, 5, u32> battery_level;
+                BitField<5, 1, u32> zl_not_held;
+                BitField<6, 1, u32> zr_not_held;
+                BitField<7, 1, u32> r_not_held;
+                BitField<8, 12, u32> c_stick_x;
+                BitField<20, 12, u32> c_stick_y;
             };
         } extra_hid_response;
     };
@@ -112,8 +116,9 @@ struct CTMHeader {
     std::array<u8, 4> filetype;  /// Unique Identifier to check the file type (always "CTM"0x1B)
     u64_le program_id;           /// ID of the ROM being executed. Also called title_id
     std::array<u8, 20> revision; /// Git hash of the revision this movie was created with
+    u64_le clock_init_time;      /// The init time of the system clock
 
-    std::array<u8, 224> reserved; /// Make heading 256 bytes so it has consistent size
+    std::array<u8, 216> reserved; /// Make heading 256 bytes so it has consistent size
 };
 static_assert(sizeof(CTMHeader) == 256, "CTMHeader should be 256 bytes");
 #pragma pack(pop)
@@ -129,6 +134,7 @@ void Movie::CheckInputEnd() {
     if (current_byte + sizeof(ControllerState) > recorded_input.size()) {
         LOG_INFO(Movie, "Playback finished");
         play_mode = PlayMode::None;
+        init_time = 0;
         playback_completion_callback();
     }
 }
@@ -157,6 +163,8 @@ void Movie::Play(Service::HID::PadState& pad_state, s16& circle_pad_x, s16& circ
     pad_state.l.Assign(s.pad_and_circle.l);
     pad_state.x.Assign(s.pad_and_circle.x);
     pad_state.y.Assign(s.pad_and_circle.y);
+    pad_state.debug.Assign(s.pad_and_circle.debug);
+    pad_state.gpio14.Assign(s.pad_and_circle.gpio14);
 
     circle_pad_x = s.pad_and_circle.circle_pad_x;
     circle_pad_y = s.pad_and_circle.circle_pad_y;
@@ -277,6 +285,8 @@ void Movie::Record(const Service::HID::PadState& pad_state, const s16& circle_pa
     s.pad_and_circle.l.Assign(static_cast<u16>(pad_state.l));
     s.pad_and_circle.x.Assign(static_cast<u16>(pad_state.x));
     s.pad_and_circle.y.Assign(static_cast<u16>(pad_state.y));
+    s.pad_and_circle.debug.Assign(static_cast<u16>(pad_state.debug));
+    s.pad_and_circle.gpio14.Assign(static_cast<u16>(pad_state.gpio14));
 
     s.pad_and_circle.circle_pad_x = circle_pad_x;
     s.pad_and_circle.circle_pad_y = circle_pad_y;
@@ -344,15 +354,17 @@ void Movie::Record(const Service::IR::ExtraHIDResponse& extra_hid_response) {
     Record(s);
 }
 
+u64 Movie::GetOverrideInitTime() const {
+    return init_time;
+}
+
 Movie::ValidationResult Movie::ValidateHeader(const CTMHeader& header, u64 program_id) const {
     if (header_magic_bytes != header.filetype) {
         LOG_ERROR(Movie, "Playback file does not have valid header");
         return ValidationResult::Invalid;
     }
 
-    std::string revision =
-        Common::ArrayToString(header.revision.data(), header.revision.size(), 21, false);
-    revision = Common::ToLower(revision);
+    std::string revision = fmt::format("{:02x}", fmt::join(header.revision, ""));
 
     if (!program_id)
         Core::System::GetInstance().GetAppLoader().ReadProgramId(program_id);
@@ -381,6 +393,7 @@ void Movie::SaveMovie() {
 
     CTMHeader header = {};
     header.filetype = header_magic_bytes;
+    header.clock_init_time = init_time;
 
     Core::System::GetInstance().GetAppLoader().ReadProgramId(header.program_id);
 
@@ -424,36 +437,53 @@ void Movie::StartRecording(const std::string& movie_file) {
     record_movie_file = movie_file;
 }
 
-Movie::ValidationResult Movie::ValidateMovie(const std::string& movie_file, u64 program_id) const {
-    LOG_INFO(Movie, "Validating Movie file '{}'", movie_file);
+static boost::optional<CTMHeader> ReadHeader(const std::string& movie_file) {
     FileUtil::IOFile save_record(movie_file, "rb");
     const u64 size = save_record.GetSize();
 
     if (!save_record || size <= sizeof(CTMHeader)) {
-        return ValidationResult::Invalid;
-    }
-
-    CTMHeader header;
-    save_record.ReadArray(&header, 1);
-    return ValidateHeader(header, program_id);
-}
-
-u64 Movie::GetMovieProgramID(const std::string& movie_file) const {
-    FileUtil::IOFile save_record(movie_file, "rb");
-    const u64 size = save_record.GetSize();
-
-    if (!save_record || size <= sizeof(CTMHeader)) {
-        return 0;
+        return boost::none;
     }
 
     CTMHeader header;
     save_record.ReadArray(&header, 1);
 
     if (header_magic_bytes != header.filetype) {
-        return 0;
+        return boost::none;
     }
 
-    return static_cast<u64>(header.program_id);
+    return header;
+}
+
+void Movie::PrepareForPlayback(const std::string& movie_file) {
+    auto header = ReadHeader(movie_file);
+    if (header == boost::none)
+        return;
+
+    init_time = header.value().clock_init_time;
+}
+
+void Movie::PrepareForRecording() {
+    init_time = (Settings::values.init_clock == Settings::InitClock::SystemTime
+                     ? Common::Timer::GetTimeSinceJan1970().count()
+                     : Settings::values.init_time);
+}
+
+Movie::ValidationResult Movie::ValidateMovie(const std::string& movie_file, u64 program_id) const {
+    LOG_INFO(Movie, "Validating Movie file '{}'", movie_file);
+    auto header = ReadHeader(movie_file);
+    if (header == boost::none)
+        return ValidationResult::Invalid;
+
+    return ValidateHeader(header.value(), program_id);
+}
+
+u64 Movie::GetMovieProgramID(const std::string& movie_file) const {
+    auto header = ReadHeader(movie_file);
+    if (header == boost::none)
+        return 0;
+
+    return static_cast<u64>(header.value().program_id);
 }
 
 void Movie::Shutdown() {
@@ -465,6 +495,7 @@ void Movie::Shutdown() {
     recorded_input.resize(0);
     record_movie_file.clear();
     current_byte = 0;
+    init_time = 0;
 }
 
 template <typename... Targs>

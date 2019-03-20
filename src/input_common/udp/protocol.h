@@ -5,10 +5,10 @@
 #pragma once
 
 #include <array>
+#include <optional>
 #include <type_traits>
 #include <vector>
 #include <boost/crc.hpp>
-#include <boost/optional.hpp>
 #include "common/bit_field.h"
 #include "common/swap.h"
 
@@ -141,22 +141,22 @@ struct PadData {
     // The following union isn't trivially copyable but we don't use this input anyway.
     // union DigitalButton {
     //     u16_le button;
-    //     BitField<0, 1, u16_le> button_1;   // Share
-    //     BitField<1, 1, u16_le> button_2;   // L3
-    //     BitField<2, 1, u16_le> button_3;   // R3
-    //     BitField<3, 1, u16_le> button_4;   // Options
-    //     BitField<4, 1, u16_le> button_5;   // Up
-    //     BitField<5, 1, u16_le> button_6;   // Right
-    //     BitField<6, 1, u16_le> button_7;   // Down
-    //     BitField<7, 1, u16_le> button_8;   // Left
-    //     BitField<8, 1, u16_le> button_9;   // L2
-    //     BitField<9, 1, u16_le> button_10;  // R2
-    //     BitField<10, 1, u16_le> button_11; // L1
-    //     BitField<11, 1, u16_le> button_12; // R1
-    //     BitField<12, 1, u16_le> button_13; // Triangle
-    //     BitField<13, 1, u16_le> button_14; // Circle
-    //     BitField<14, 1, u16_le> button_15; // Cross
-    //     BitField<15, 1, u16_le> button_16; // Square
+    //     BitField<0, 1, u16> button_1;   // Share
+    //     BitField<1, 1, u16> button_2;   // L3
+    //     BitField<2, 1, u16> button_3;   // R3
+    //     BitField<3, 1, u16> button_4;   // Options
+    //     BitField<4, 1, u16> button_5;   // Up
+    //     BitField<5, 1, u16> button_6;   // Right
+    //     BitField<6, 1, u16> button_7;   // Down
+    //     BitField<7, 1, u16> button_8;   // Left
+    //     BitField<8, 1, u16> button_9;   // L2
+    //     BitField<9, 1, u16> button_10;  // R2
+    //     BitField<10, 1, u16> button_11; // L1
+    //     BitField<11, 1, u16> button_12; // R1
+    //     BitField<12, 1, u16> button_13; // Triangle
+    //     BitField<13, 1, u16> button_14; // Circle
+    //     BitField<14, 1, u16> button_15; // Cross
+    //     BitField<15, 1, u16> button_16; // Square
     // } digital_button;
 
     u8 home;
@@ -218,7 +218,7 @@ static_assert(sizeof(Message<PadData>) == MAX_PACKET_SIZE,
  * @return boost::none if it failed to parse or Type if it succeeded. The client can then safely
  * copy the data into the appropriate struct for that Type
  */
-boost::optional<Type> Validate(u8* data, std::size_t size);
+std::optional<Type> Validate(u8* data, std::size_t size);
 
 } // namespace Response
 

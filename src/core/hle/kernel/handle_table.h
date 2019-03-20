@@ -42,7 +42,8 @@ enum KernelHandle : Handle {
  */
 class HandleTable final : NonCopyable {
 public:
-    HandleTable();
+    explicit HandleTable(KernelSystem& kernel);
+    ~HandleTable();
 
     /**
      * Allocates a handle for the given object.
@@ -95,13 +96,6 @@ private:
      */
     static const std::size_t MAX_COUNT = 4096;
 
-    static u16 GetSlot(Handle handle) {
-        return handle >> 15;
-    }
-    static u16 GetGeneration(Handle handle) {
-        return handle & 0x7FFF;
-    }
-
     /// Stores the Object referenced by the handle or null if the slot is empty.
     std::array<SharedPtr<Object>, MAX_COUNT> objects;
 
@@ -119,8 +113,8 @@ private:
 
     /// Head of the free slots linked list.
     u16 next_free_slot;
-};
 
-extern HandleTable g_handle_table;
+    KernelSystem& kernel;
+};
 
 } // namespace Kernel

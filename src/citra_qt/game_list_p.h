@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include <atomic>
 #include <map>
 #include <unordered_map>
 #include <utility>
@@ -57,17 +56,6 @@ static QPixmap GetDefaultIcon(bool large) {
     QPixmap icon(size, size);
     icon.fill(Qt::transparent);
     return icon;
-}
-
-static auto FindMatchingCompatibilityEntry(
-    const std::unordered_map<std::string, std::pair<QString, QString>>& compatibility_list,
-    u64 program_id) {
-    return std::find_if(
-        compatibility_list.begin(), compatibility_list.end(),
-        [program_id](const std::pair<std::string, std::pair<QString, QString>>& element) {
-            std::string pid = fmt::format("{:016X}", program_id);
-            return element.first == pid;
-        });
 }
 
 /**
@@ -124,6 +112,13 @@ public:
     }
 };
 
+/// Game list icon sizes (in px)
+static const std::unordered_map<UISettings::GameListIconSize, int> IconSizes{
+    {UISettings::GameListIconSize::NoIcon, 0},
+    {UISettings::GameListIconSize::SmallIcon, 24},
+    {UISettings::GameListIconSize::LargeIcon, 48},
+};
+
 /**
  * A specialization of GameListItem for path values.
  * This class ensures that for every full path value it holds, a correct string representation
@@ -135,16 +130,28 @@ public:
     static const int TitleRole = SortRole;
     static const int FullPathRole = SortRole + 1;
     static const int ProgramIdRole = SortRole + 2;
+    static const int ExtdataIdRole = SortRole + 3;
 
     GameListItemPath() = default;
-    GameListItemPath(const QString& game_path, const std::vector<u8>& smdh_data, u64 program_id) {
+    GameListItemPath(const QString& game_path, const std::vector<u8>& smdh_data, u64 program_id,
+                     u64 extdata_id) {
         setData(type(), TypeRole);
         setData(game_path, FullPathRole);
         setData(qulonglong(program_id), ProgramIdRole);
+        setData(qulonglong(extdata_id), ExtdataIdRole);
+
+        if (UISettings::values.game_list_icon_size == UISettings::GameListIconSize::NoIcon) {
+            // Do not display icons
+            setData(QPixmap(), Qt::DecorationRole);
+        }
+
+        bool large =
+            UISettings::values.game_list_icon_size == UISettings::GameListIconSize::LargeIcon;
 
         if (!Loader::IsValidSMDH(smdh_data)) {
             // SMDH is not valid, set a default icon
-            setData(GetDefaultIcon(true), Qt::DecorationRole);
+            if (UISettings::values.game_list_icon_size != UISettings::GameListIconSize::NoIcon)
+                setData(GetDefaultIcon(large), Qt::DecorationRole);
             return;
         }
 
@@ -152,7 +159,8 @@ public:
         memcpy(&smdh, smdh_data.data(), sizeof(Loader::SMDH));
 
         // Get icon from SMDH
-        setData(GetQPixmapFromSMDH(smdh, true), Qt::DecorationRole);
+        if (UISettings::values.game_list_icon_size != UISettings::GameListIconSize::NoIcon)
+            setData(GetQPixmapFromSMDH(smdh, large), Qt::DecorationRole);
 
         // Get title from SMDH
         setData(GetQStringShortTitleFromSMDH(smdh, Loader::SMDH::TitleLanguage::English),
@@ -168,29 +176,23 @@ public:
             std::string path, filename, extension;
             Common::SplitPath(data(FullPathRole).toString().toStdString(), &path, &filename,
                               &extension);
-            QString title = data(TitleRole).toString();
-            QString second_name = QString::fromStdString(filename + extension);
-            static QRegExp installed_pattern(
-                QString::fromStdString(
-                    FileUtil::GetUserPath(FileUtil::UserPath::SDMCDir) +
-                    "Nintendo "
-                    "3DS/00000000000000000000000000000000/00000000000000000000000000000000/"
-                    "title/0004000(0|e)/[0-9a-f]{8}/content/")
-                    .replace("\\", "\\\\"));
-            static QRegExp system_pattern(
-                QString::fromStdString(FileUtil::GetUserPath(FileUtil::UserPath::NANDDir) +
-                                       "00000000000000000000000000000000/"
-                                       "title/00040010/[0-9a-f]{8}/content/")
-                    .replace("\\", "\\\\"));
-            if (installed_pattern.exactMatch(QString::fromStdString(path)) ||
-                system_pattern.exactMatch(QString::fromStdString(path))) {
-                // Use a different mechanism for system / installed titles showing program ID
-                second_name = QString("%1-%2")
-                                  .arg(data(ProgramIdRole).toULongLong(), 16, 16, QChar('0'))
-                                  .toUpper()
-                                  .arg(QString::fromStdString(filename));
+
+            const std::unordered_map<UISettings::GameListText, QString> display_texts{
+                {UISettings::GameListText::FileName, QString::fromStdString(filename + extension)},
+                {UISettings::GameListText::FullPath, data(FullPathRole).toString()},
+                {UISettings::GameListText::TitleName, data(TitleRole).toString()},
+                {UISettings::GameListText::TitleID,
+                 QString::fromStdString(fmt::format("{:016X}", data(ProgramIdRole).toULongLong()))},
+            };
+
+            const QString& row1 = display_texts.at(UISettings::values.game_list_row_1);
+
+            QString row2;
+            auto row_2_id = UISettings::values.game_list_row_2;
+            if (row_2_id != UISettings::GameListText::NoText) {
+                row2 = (row1.isEmpty() ? "" : "\n     ") + display_texts.at(row_2_id);
             }
-            return title + (title.isEmpty() ? "" : "\n     ") + second_name;
+            return row1 + row2;
         } else {
             return GameListItem::data(role);
         }
@@ -202,7 +204,7 @@ class GameListItemCompat : public GameListItem {
 public:
     static const int CompatNumberRole = SortRole;
     GameListItemCompat() = default;
-    explicit GameListItemCompat(const QString& compatiblity) {
+    explicit GameListItemCompat(const QString& compatibility) {
         setData(type(), TypeRole);
 
         struct CompatStatus {
@@ -221,13 +223,13 @@ public:
         {"99", {"#000000", QT_TR_NOOP("Not Tested"), QT_TR_NOOP("The game has not yet been tested.")}}};
         // clang-format on
 
-        auto iterator = status_data.find(compatiblity);
+        auto iterator = status_data.find(compatibility);
         if (iterator == status_data.end()) {
-            LOG_WARNING(Frontend, "Invalid compatibility number {}", compatiblity.toStdString());
+            LOG_WARNING(Frontend, "Invalid compatibility number {}", compatibility.toStdString());
             return;
         }
-        CompatStatus status = iterator->second;
-        setData(compatiblity, CompatNumberRole);
+        const CompatStatus& status = iterator->second;
+        setData(compatibility, CompatNumberRole);
         setText(QObject::tr(status.text));
         setToolTip(QObject::tr(status.tooltip));
         setData(CreateCirclePixmapFromColor(status.color), Qt::DecorationRole);
@@ -317,18 +319,20 @@ public:
 
         UISettings::GameDir* game_dir = &directory;
         setData(QVariant::fromValue(game_dir), GameDirRole);
+
+        int icon_size = IconSizes.at(UISettings::values.game_list_icon_size);
         switch (dir_type) {
         case GameListItemType::InstalledDir:
-            setData(QIcon::fromTheme("sd_card").pixmap(48), Qt::DecorationRole);
+            setData(QIcon::fromTheme("sd_card").pixmap(icon_size), Qt::DecorationRole);
             setData("Installed Titles", Qt::DisplayRole);
             break;
         case GameListItemType::SystemDir:
-            setData(QIcon::fromTheme("chip").pixmap(48), Qt::DecorationRole);
+            setData(QIcon::fromTheme("chip").pixmap(icon_size), Qt::DecorationRole);
             setData("System Titles", Qt::DisplayRole);
             break;
         case GameListItemType::CustomDir:
             QString icon_name = QFileInfo::exists(game_dir->path) ? "folder" : "bad_folder";
-            setData(QIcon::fromTheme(icon_name).pixmap(48), Qt::DecorationRole);
+            setData(QIcon::fromTheme(icon_name).pixmap(icon_size), Qt::DecorationRole);
             setData(game_dir->path, Qt::DisplayRole);
             break;
         };
@@ -346,58 +350,15 @@ class GameListAddDir : public GameListItem {
 public:
     explicit GameListAddDir() {
         setData(type(), TypeRole);
-        setData(QIcon::fromTheme("plus").pixmap(48), Qt::DecorationRole);
+
+        int icon_size = IconSizes.at(UISettings::values.game_list_icon_size);
+        setData(QIcon::fromTheme("plus").pixmap(icon_size), Qt::DecorationRole);
         setData("Add New Game Directory", Qt::DisplayRole);
     }
 
     int type() const override {
         return static_cast<int>(GameListItemType::AddDir);
     }
-};
-
-/**
- * Asynchronous worker object for populating the game list.
- * Communicates with other threads through Qt's signal/slot system.
- */
-class GameListWorker : public QObject, public QRunnable {
-    Q_OBJECT
-
-public:
-    explicit GameListWorker(
-        QList<UISettings::GameDir>& game_dirs,
-        const std::unordered_map<std::string, std::pair<QString, QString>>& compatibility_list)
-        : game_dirs(game_dirs), compatibility_list(compatibility_list) {}
-
-public slots:
-    /// Starts the processing of directory tree information.
-    void run() override;
-    /// Tells the worker that it should no longer continue processing. Thread-safe.
-    void Cancel();
-
-signals:
-    /**
-     * The `EntryReady` signal is emitted once an entry has been prepared and is ready
-     * to be added to the game list.
-     * @param entry_items a list with `QStandardItem`s that make up the columns of the new
-     * entry.
-     */
-    void DirEntryReady(GameListDir* entry_items);
-    void EntryReady(QList<QStandardItem*> entry_items, GameListDir* parent_dir);
-
-    /**
-     * After the worker has traversed the game directory looking for entries, this signal is
-     * emitted with a list of folders that should be watched for changes as well.
-     */
-    void Finished(QStringList watch_list);
-
-private:
-    QStringList watch_list;
-    const std::unordered_map<std::string, std::pair<QString, QString>>& compatibility_list;
-    QList<UISettings::GameDir>& game_dirs;
-    std::atomic_bool stop_processing;
-
-    void AddFstEntriesToGameList(const std::string& dir_path, unsigned int recursion,
-                                 GameListDir* parent_dir);
 };
 
 class GameList;

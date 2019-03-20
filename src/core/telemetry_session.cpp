@@ -7,6 +7,7 @@
 
 #include "common/assert.h"
 #include "common/file_util.h"
+#include "common/logging/log.h"
 #include "common/scm_rev.h"
 #ifdef ARCHITECTURE_x86_64
 #include "common/x64/cpu_detect.h"
@@ -82,27 +83,19 @@ u64 RegenerateTelemetryId() {
     return new_telemetry_id;
 }
 
-std::future<bool> VerifyLogin(std::string username, std::string token, std::function<void()> func) {
+bool VerifyLogin(const std::string& username, const std::string& token) {
 #ifdef ENABLE_WEB_SERVICE
-    return WebService::VerifyLogin(username, token, Settings::values.web_api_url + "/profile",
-                                   func);
+    return WebService::VerifyLogin(Settings::values.web_api_url, username, token);
 #else
-    return std::async(std::launch::async, [func{std::move(func)}]() {
-        func();
-        return false;
-    });
+    return false;
 #endif
 }
 
 TelemetrySession::TelemetrySession() {
 #ifdef ENABLE_WEB_SERVICE
-    if (Settings::values.enable_telemetry) {
-        backend = std::make_unique<WebService::TelemetryJson>(
-            Settings::values.web_api_url + "/telemetry", Settings::values.citra_username,
-            Settings::values.citra_token);
-    } else {
-        backend = std::make_unique<Telemetry::NullVisitor>();
-    }
+    backend = std::make_unique<WebService::TelemetryJson>(Settings::values.web_api_url,
+                                                          Settings::values.citra_username,
+                                                          Settings::values.citra_token);
 #else
     backend = std::make_unique<Telemetry::NullVisitor>();
 #endif
@@ -184,9 +177,10 @@ TelemetrySession::TelemetrySession() {
              Settings::values.shaders_accurate_mul);
     AddField(Telemetry::FieldType::UserConfig, "Renderer_UseShaderJit",
              Settings::values.use_shader_jit);
-    AddField(Telemetry::FieldType::UserConfig, "Renderer_UseVsync", Settings::values.use_vsync);
+    AddField(Telemetry::FieldType::UserConfig, "Renderer_UseVsync", Settings::values.vsync_enabled);
     AddField(Telemetry::FieldType::UserConfig, "Renderer_Toggle3d", Settings::values.toggle_3d);
-    AddField(Telemetry::FieldType::UserConfig, "Renderer_Factor3d", Settings::values.factor_3d);
+    AddField(Telemetry::FieldType::UserConfig, "Renderer_Factor3d",
+             Settings::values.factor_3d.load());
     AddField(Telemetry::FieldType::UserConfig, "System_IsNew3ds", Settings::values.is_new_3ds);
     AddField(Telemetry::FieldType::UserConfig, "System_RegionValue", Settings::values.region_value);
 }
@@ -202,8 +196,18 @@ TelemetrySession::~TelemetrySession() {
     // This is just a placeholder to wrap up the session once the core completes and this is
     // destroyed. This will be moved elsewhere once we are actually doing real I/O with the service.
     field_collection.Accept(*backend);
-    backend->Complete();
+    if (Settings::values.enable_telemetry)
+        backend->Complete();
     backend = nullptr;
+}
+
+bool TelemetrySession::SubmitTestcase() {
+#ifdef ENABLE_WEB_SERVICE
+    field_collection.Accept(*backend);
+    return backend->SubmitTestcase();
+#else
+    return false;
+#endif
 }
 
 } // namespace Core

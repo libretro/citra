@@ -11,14 +11,23 @@
 
 namespace Kernel {
 
-SharedMemory::SharedMemory() {}
-SharedMemory::~SharedMemory() {}
+SharedMemory::SharedMemory(KernelSystem& kernel) : Object(kernel), kernel(kernel) {}
+SharedMemory::~SharedMemory() {
+    for (const auto& interval : holding_memory) {
+        kernel.GetMemoryRegion(MemoryRegion::SYSTEM)
+            ->Free(interval.lower(), interval.upper() - interval.lower());
+    }
+    if (base_address != 0 && owner_process != nullptr) {
+        owner_process->vm_manager.ChangeMemoryState(base_address, size, MemoryState::Locked,
+                                                    VMAPermission::None, MemoryState::Private,
+                                                    VMAPermission::ReadWrite);
+    }
+}
 
-SharedPtr<SharedMemory> SharedMemory::Create(SharedPtr<Process> owner_process, u32 size,
-                                             MemoryPermission permissions,
-                                             MemoryPermission other_permissions, VAddr address,
-                                             MemoryRegion region, std::string name) {
-    SharedPtr<SharedMemory> shared_memory(new SharedMemory);
+ResultVal<SharedPtr<SharedMemory>> KernelSystem::CreateSharedMemory(
+    Process* owner_process, u32 size, MemoryPermission permissions,
+    MemoryPermission other_permissions, VAddr address, MemoryRegion region, std::string name) {
+    SharedPtr<SharedMemory> shared_memory(new SharedMemory(*this));
 
     shared_memory->owner_process = owner_process;
     shared_memory->name = std::move(name);
@@ -30,74 +39,67 @@ SharedPtr<SharedMemory> SharedMemory::Create(SharedPtr<Process> owner_process, u
         // We need to allocate a block from the Linear Heap ourselves.
         // We'll manually allocate some memory from the linear heap in the specified region.
         MemoryRegionInfo* memory_region = GetMemoryRegion(region);
-        auto& linheap_memory = memory_region->linear_heap_memory;
+        auto offset = memory_region->LinearAllocate(size);
 
-        ASSERT_MSG(linheap_memory->size() + size <= memory_region->size,
-                   "Not enough space in region to allocate shared memory!");
+        ASSERT_MSG(offset, "Not enough space in region to allocate shared memory!");
 
-        shared_memory->backing_block = linheap_memory;
-        shared_memory->backing_block_offset = linheap_memory->size();
-        // Allocate some memory from the end of the linear heap for this region.
-        linheap_memory->insert(linheap_memory->end(), size, 0);
-        memory_region->used += size;
-
-        shared_memory->linear_heap_phys_address =
-            Memory::FCRAM_PADDR + memory_region->base +
-            static_cast<PAddr>(shared_memory->backing_block_offset);
+        std::fill(memory.GetFCRAMPointer(*offset), memory.GetFCRAMPointer(*offset + size), 0);
+        shared_memory->backing_blocks = {{memory.GetFCRAMPointer(*offset), size}};
+        shared_memory->holding_memory += MemoryRegionInfo::Interval(*offset, *offset + size);
+        shared_memory->linear_heap_phys_offset = *offset;
 
         // Increase the amount of used linear heap memory for the owner process.
         if (shared_memory->owner_process != nullptr) {
-            shared_memory->owner_process->linear_heap_used += size;
-        }
-
-        // Refresh the address mappings for the current process.
-        if (Kernel::g_current_process != nullptr) {
-            Kernel::g_current_process->vm_manager.RefreshMemoryBlockMappings(linheap_memory.get());
+            shared_memory->owner_process->memory_used += size;
         }
     } else {
         auto& vm_manager = shared_memory->owner_process->vm_manager;
         // The memory is already available and mapped in the owner process.
-        auto vma = vm_manager.FindVMA(address);
-        ASSERT_MSG(vma != vm_manager.vma_map.end(), "Invalid memory address");
-        ASSERT_MSG(vma->second.backing_block, "Backing block doesn't exist for address");
 
-        // The returned VMA might be a bigger one encompassing the desired address.
-        auto vma_offset = address - vma->first;
-        ASSERT_MSG(vma_offset + size <= vma->second.size,
-                   "Shared memory exceeds bounds of mapped block");
+        CASCADE_CODE(vm_manager.ChangeMemoryState(address, size, MemoryState::Private,
+                                                  VMAPermission::ReadWrite, MemoryState::Locked,
+                                                  SharedMemory::ConvertPermissions(permissions)));
 
-        shared_memory->backing_block = vma->second.backing_block;
-        shared_memory->backing_block_offset = vma->second.offset + vma_offset;
+        auto backing_blocks = vm_manager.GetBackingBlocksForRange(address, size);
+        ASSERT(backing_blocks.Succeeded()); // should success after verifying memory state above
+        shared_memory->backing_blocks = std::move(backing_blocks).Unwrap();
     }
 
     shared_memory->base_address = address;
-    return shared_memory;
+    return MakeResult(shared_memory);
 }
 
-SharedPtr<SharedMemory> SharedMemory::CreateForApplet(std::shared_ptr<std::vector<u8>> heap_block,
-                                                      u32 offset, u32 size,
-                                                      MemoryPermission permissions,
-                                                      MemoryPermission other_permissions,
-                                                      std::string name) {
-    SharedPtr<SharedMemory> shared_memory(new SharedMemory);
+SharedPtr<SharedMemory> KernelSystem::CreateSharedMemoryForApplet(
+    u32 offset, u32 size, MemoryPermission permissions, MemoryPermission other_permissions,
+    std::string name) {
+    SharedPtr<SharedMemory> shared_memory(new SharedMemory(*this));
 
+    // Allocate memory in heap
+    MemoryRegionInfo* memory_region = GetMemoryRegion(MemoryRegion::SYSTEM);
+    auto backing_blocks = memory_region->HeapAllocate(size);
+    ASSERT_MSG(!backing_blocks.empty(), "Not enough space in region to allocate shared memory!");
+    shared_memory->holding_memory = backing_blocks;
     shared_memory->owner_process = nullptr;
     shared_memory->name = std::move(name);
     shared_memory->size = size;
     shared_memory->permissions = permissions;
     shared_memory->other_permissions = other_permissions;
-    shared_memory->backing_block = heap_block;
-    shared_memory->backing_block_offset = offset;
+    for (const auto& interval : backing_blocks) {
+        shared_memory->backing_blocks.push_back(
+            {memory.GetFCRAMPointer(interval.lower()), interval.upper() - interval.lower()});
+        std::fill(memory.GetFCRAMPointer(interval.lower()),
+                  memory.GetFCRAMPointer(interval.upper()), 0);
+    }
     shared_memory->base_address = Memory::HEAP_VADDR + offset;
 
     return shared_memory;
 }
 
-ResultCode SharedMemory::Map(Process* target_process, VAddr address, MemoryPermission permissions,
+ResultCode SharedMemory::Map(Process& target_process, VAddr address, MemoryPermission permissions,
                              MemoryPermission other_permissions) {
 
     MemoryPermission own_other_permissions =
-        target_process == owner_process ? this->permissions : this->other_permissions;
+        &target_process == owner_process ? this->permissions : this->other_permissions;
 
     // Automatically allocated memory blocks can only be mapped with other_permissions = DontCare
     if (base_address == 0 && other_permissions != MemoryPermission::DontCare) {
@@ -147,28 +149,38 @@ ResultCode SharedMemory::Map(Process* target_process, VAddr address, MemoryPermi
 
     if (base_address == 0 && target_address == 0) {
         // Calculate the address at which to map the memory block.
-        target_address = Memory::PhysicalToVirtualAddress(linear_heap_phys_address).value();
+        // Note: even on new firmware versions, the target address is still in the old linear heap
+        // region. This exception is made to keep the shared font compatibility. See
+        // APT:GetSharedFont for detail.
+        target_address = linear_heap_phys_offset + Memory::LINEAR_HEAP_VADDR;
+    }
+
+    auto vma = target_process.vm_manager.FindVMA(target_address);
+    if (vma->second.type != VMAType::Free ||
+        vma->second.base + vma->second.size < target_address + size) {
+        LOG_ERROR(Kernel,
+                  "cannot map id={}, address=0x{:08X} name={}, mapping to already allocated memory",
+                  GetObjectId(), address, name);
+        return ERR_INVALID_ADDRESS_STATE;
     }
 
     // Map the memory block into the target process
-    auto result = target_process->vm_manager.MapMemoryBlock(
-        target_address, backing_block, backing_block_offset, size, MemoryState::Shared);
-    if (result.Failed()) {
-        LOG_ERROR(
-            Kernel,
-            "cannot map id={}, target_address=0x{:08X} name={}, error mapping to virtual memory",
-            GetObjectId(), target_address, name);
-        return result.Code();
+    VAddr interval_target = target_address;
+    for (const auto& interval : backing_blocks) {
+        auto vma = target_process.vm_manager.MapBackingMemory(interval_target, interval.first,
+                                                              interval.second, MemoryState::Shared);
+        ASSERT(vma.Succeeded());
+        target_process.vm_manager.Reprotect(vma.Unwrap(), ConvertPermissions(permissions));
+        interval_target += interval.second;
     }
 
-    return target_process->vm_manager.ReprotectRange(target_address, size,
-                                                     ConvertPermissions(permissions));
+    return RESULT_SUCCESS;
 }
 
-ResultCode SharedMemory::Unmap(Process* target_process, VAddr address) {
+ResultCode SharedMemory::Unmap(Process& target_process, VAddr address) {
     // TODO(Subv): Verify what happens if the application tries to unmap an address that is not
     // mapped to a SharedMemory.
-    return target_process->vm_manager.UnmapRange(address, size);
+    return target_process.vm_manager.UnmapRange(address, size);
 }
 
 VMAPermission SharedMemory::ConvertPermissions(MemoryPermission permission) {
@@ -178,7 +190,17 @@ VMAPermission SharedMemory::ConvertPermissions(MemoryPermission permission) {
 };
 
 u8* SharedMemory::GetPointer(u32 offset) {
-    return backing_block->data() + backing_block_offset + offset;
+    if (backing_blocks.size() != 1) {
+        LOG_WARNING(Kernel, "Unsafe GetPointer on discontinuous SharedMemory");
+    }
+    return backing_blocks[0].first + offset;
+}
+
+const u8* SharedMemory::GetPointer(u32 offset) const {
+    if (backing_blocks.size() != 1) {
+        LOG_WARNING(Kernel, "Unsafe GetPointer on discontinuous SharedMemory");
+    }
+    return backing_blocks[0].first + offset;
 }
 
 } // namespace Kernel

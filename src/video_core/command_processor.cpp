@@ -28,9 +28,7 @@
 #include "video_core/vertex_loader.h"
 #include "video_core/video_core.h"
 
-namespace Pica {
-
-namespace CommandProcessor {
+namespace Pica::CommandProcessor {
 
 static int vs_float_regs_counter = 0;
 static u32 vs_uniform_write_buffer[4];
@@ -65,7 +63,7 @@ static void WriteUniformBoolReg(Shader::ShaderSetup& setup, u32 value) {
 }
 
 static void WriteUniformIntReg(Shader::ShaderSetup& setup, unsigned index,
-                               const Math::Vec4<u8>& values) {
+                               const Common::Vec4<u8>& values) {
     ASSERT(index < setup.uniforms.i.size());
     setup.uniforms.i[index] = values;
     LOG_TRACE(HW_GPU, "Set {} integer uniform {} to {:02x} {:02x} {:02x} {:02x}",
@@ -188,7 +186,7 @@ static void WritePicaReg(u32 id, u32 value, u32 mask) {
                 break;
             }
 
-            Math::Vec4<float24> attribute;
+            Common::Vec4<float24> attribute;
 
             // NOTE: The destination component order indeed is "backwards"
             attribute.w = float24::FromRaw(default_attr_write_buffer[0] >> 8);
@@ -269,7 +267,7 @@ static void WritePicaReg(u32 id, u32 value, u32 mask) {
     case PICA_REG_INDEX_WORKAROUND(pipeline.command_buffer.trigger[1], 0x23d): {
         unsigned index =
             static_cast<unsigned>(id - PICA_REG_INDEX(pipeline.command_buffer.trigger[0]));
-        u32* head_ptr = (u32*)Memory::GetPhysicalPointer(
+        u32* head_ptr = (u32*)VideoCore::g_memory->GetPhysicalPointer(
             regs.pipeline.command_buffer.GetPhysicalAddress(index));
         g_state.cmd_list.head_ptr = g_state.cmd_list.current_ptr = head_ptr;
         g_state.cmd_list.length = regs.pipeline.command_buffer.GetSize(index) / sizeof(u32);
@@ -328,7 +326,8 @@ static void WritePicaReg(u32 id, u32 value, u32 mask) {
 
         // Load vertices
         const auto& index_info = regs.pipeline.index_array;
-        const u8* index_address_8 = Memory::GetPhysicalPointer(base_address + index_info.offset);
+        const u8* index_address_8 =
+            VideoCore::g_memory->GetPhysicalPointer(base_address + index_info.offset);
         const u16* index_address_16 = reinterpret_cast<const u16*>(index_address_8);
         bool index_u16 = index_info.format != 0;
 
@@ -338,7 +337,8 @@ static void WritePicaReg(u32 id, u32 value, u32 mask) {
                 if (!texture.enabled)
                     continue;
 
-                u8* texture_data = Memory::GetPhysicalPointer(texture.config.GetPhysicalAddress());
+                u8* texture_data =
+                    VideoCore::g_memory->GetPhysicalPointer(texture.config.GetPhysicalAddress());
                 g_debug_context->recorder->MemoryAccessed(
                     texture_data,
                     Pica::TexturingRegs::NibblesPerPixel(texture.format) * texture.config.width /
@@ -424,8 +424,8 @@ static void WritePicaReg(u32 id, u32 value, u32 mask) {
         }
 
         for (auto& range : memory_accesses.ranges) {
-            g_debug_context->recorder->MemoryAccessed(Memory::GetPhysicalPointer(range.first),
-                                                      range.second, range.first);
+            g_debug_context->recorder->MemoryAccessed(
+                VideoCore::g_memory->GetPhysicalPointer(range.first), range.second, range.first);
         }
 
         VideoCore::g_renderer->Rasterizer()->DrawTriangles();
@@ -447,7 +447,7 @@ static void WritePicaReg(u32 id, u32 value, u32 mask) {
         unsigned index = (id - PICA_REG_INDEX_WORKAROUND(gs.int_uniforms[0], 0x281));
         auto values = regs.gs.int_uniforms[index];
         WriteUniformIntReg(g_state.gs, index,
-                           Math::Vec4<u8>(values.x, values.y, values.z, values.w));
+                           Common::Vec4<u8>(values.x, values.y, values.z, values.w));
         break;
     }
 
@@ -515,7 +515,7 @@ static void WritePicaReg(u32 id, u32 value, u32 mask) {
         unsigned index = (id - PICA_REG_INDEX_WORKAROUND(vs.int_uniforms[0], 0x2b1));
         auto values = regs.vs.int_uniforms[index];
         WriteUniformIntReg(g_state.vs, index,
-                           Math::Vec4<u8>(values.x, values.y, values.z, values.w));
+                           Common::Vec4<u8>(values.x, values.y, values.z, values.w));
         break;
     }
 
@@ -673,6 +673,4 @@ void ProcessCommandList(const u32* list, u32 size) {
     }
 }
 
-} // namespace CommandProcessor
-
-} // namespace Pica
+} // namespace Pica::CommandProcessor

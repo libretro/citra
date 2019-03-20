@@ -3,7 +3,13 @@
 // Refer to the license.txt file included.
 
 #include "audio_core/audio_types.h"
+#ifdef HAVE_MF
+#include "audio_core/hle/wmf_decoder.h"
+#elif HAVE_FFMPEG
+#include "audio_core/hle/ffmpeg_decoder.h"
+#endif
 #include "audio_core/hle/common.h"
+#include "audio_core/hle/decoder.h"
 #include "audio_core/hle/hle.h"
 #include "audio_core/hle/mixers.h"
 #include "audio_core/hle/shared_memory.h"
@@ -11,7 +17,9 @@
 #include "audio_core/sink.h"
 #include "common/assert.h"
 #include "common/common_types.h"
+#include "common/hash.h"
 #include "common/logging/log.h"
+#include "core/core.h"
 #include "core/core_timing.h"
 
 using InterruptType = Service::DSP::DSP_DSP::InterruptType;
@@ -23,11 +31,13 @@ static constexpr u64 audio_frame_ticks = 1310252ull; ///< Units: ARM11 cycles
 
 struct DspHle::Impl final {
 public:
-    explicit Impl(DspHle& parent);
+    explicit Impl(DspHle& parent, Memory::MemorySystem& memory);
     ~Impl();
 
     DspState GetDspState() const;
 
+    u16 RecvData(u32 register_number);
+    bool RecvDataIsReady(u32 register_number) const;
     std::vector<u8> PipeRead(DspPipe pipe_number, u32 length);
     std::size_t GetPipeReadableSize(DspPipe pipe_number) const;
     void PipeWrite(DspPipe pipe_number, const std::vector<u8>& buffer);
@@ -63,27 +73,67 @@ private:
     HLE::Mixers mixers;
 
     DspHle& parent;
-    CoreTiming::EventType* tick_event;
+    Core::TimingEventType* tick_event;
+
+    std::unique_ptr<HLE::DecoderBase> decoder;
 
     std::weak_ptr<DSP_DSP> dsp_dsp;
 };
 
-DspHle::Impl::Impl(DspHle& parent_) : parent(parent_) {
+DspHle::Impl::Impl(DspHle& parent_, Memory::MemorySystem& memory) : parent(parent_) {
     dsp_memory.raw_memory.fill(0);
 
+    for (auto& source : sources) {
+        source.SetMemory(memory);
+    }
+
+#ifdef HAVE_MF
+    decoder = std::make_unique<HLE::WMFDecoder>(memory);
+#elif HAVE_FFMPEG
+    decoder = std::make_unique<HLE::FFMPEGDecoder>(memory);
+#else
+    LOG_WARNING(Audio_DSP, "No decoder found, this could lead to missing audio");
+    decoder = std::make_unique<HLE::NullDecoder>();
+#endif // HAVE_MF
+
+    Core::Timing& timing = Core::System::GetInstance().CoreTiming();
     tick_event =
-        CoreTiming::RegisterEvent("AudioCore::DspHle::tick_event", [this](u64, s64 cycles_late) {
+        timing.RegisterEvent("AudioCore::DspHle::tick_event", [this](u64, s64 cycles_late) {
             this->AudioTickCallback(cycles_late);
         });
-    CoreTiming::ScheduleEvent(audio_frame_ticks, tick_event);
+    timing.ScheduleEvent(audio_frame_ticks, tick_event);
 }
 
 DspHle::Impl::~Impl() {
-    CoreTiming::UnscheduleEvent(tick_event, 0);
+    Core::Timing& timing = Core::System::GetInstance().CoreTiming();
+    timing.UnscheduleEvent(tick_event, 0);
 }
 
 DspState DspHle::Impl::GetDspState() const {
     return dsp_state;
+}
+
+u16 DspHle::Impl::RecvData(u32 register_number) {
+    ASSERT_MSG(register_number == 0, "Unknown register_number {}", register_number);
+
+    // Application reads this after requesting DSP shutdown, to verify the DSP has indeed shutdown
+    // or slept.
+
+    switch (GetDspState()) {
+    case AudioCore::DspState::On:
+        return 0;
+    case AudioCore::DspState::Off:
+    case AudioCore::DspState::Sleeping:
+        return 1;
+    default:
+        UNREACHABLE();
+        break;
+    }
+}
+
+bool DspHle::Impl::RecvDataIsReady(u32 register_number) const {
+    ASSERT_MSG(register_number == 0, "Unknown register_number {}", register_number);
+    return true;
 }
 
 std::vector<u8> DspHle::Impl::PipeRead(DspPipe pipe_number, u32 length) {
@@ -181,6 +231,28 @@ void DspHle::Impl::PipeWrite(DspPipe pipe_number, const std::vector<u8>& buffer)
         }
 
         return;
+    }
+    case DspPipe::Binary: {
+        // TODO(B3N30): Make this async, and signal the interrupt
+        HLE::BinaryRequest request;
+        if (sizeof(request) != buffer.size()) {
+            LOG_CRITICAL(Audio_DSP, "got binary pipe with wrong size {}", buffer.size());
+            UNIMPLEMENTED();
+            return;
+        }
+        std::memcpy(&request, buffer.data(), buffer.size());
+        if (request.codec != HLE::DecoderCodec::AAC) {
+            LOG_CRITICAL(Audio_DSP, "got unknown codec {}", static_cast<u16>(request.codec));
+            UNIMPLEMENTED();
+            return;
+        }
+        std::optional<HLE::BinaryResponse> response = decoder->ProcessRequest(request);
+        if (response) {
+            const HLE::BinaryResponse& value = *response;
+            pipe_data[static_cast<u32>(pipe_number)].resize(sizeof(value));
+            std::memcpy(pipe_data[static_cast<u32>(pipe_number)].data(), &value, sizeof(value));
+        }
+        break;
     }
     default:
         LOG_CRITICAL(Audio_DSP, "pipe_number = {} unimplemented",
@@ -328,14 +400,23 @@ void DspHle::Impl::AudioTickCallback(s64 cycles_late) {
     }
 
     // Reschedule recurrent event
-    CoreTiming::ScheduleEvent(audio_frame_ticks - cycles_late, tick_event);
+    Core::Timing& timing = Core::System::GetInstance().CoreTiming();
+    timing.ScheduleEvent(audio_frame_ticks - cycles_late, tick_event);
 }
 
-DspHle::DspHle() : impl(std::make_unique<Impl>(*this)) {}
+DspHle::DspHle(Memory::MemorySystem& memory) : impl(std::make_unique<Impl>(*this, memory)) {}
 DspHle::~DspHle() = default;
 
-DspState DspHle::GetDspState() const {
-    return impl->GetDspState();
+u16 DspHle::RecvData(u32 register_number) {
+    return impl->RecvData(register_number);
+}
+
+bool DspHle::RecvDataIsReady(u32 register_number) const {
+    return impl->RecvDataIsReady(register_number);
+}
+
+void DspHle::SetSemaphore(u16 semaphore_value) {
+    // Do nothing in HLE
 }
 
 std::vector<u8> DspHle::PipeRead(DspPipe pipe_number, u32 length) {
@@ -356,6 +437,21 @@ std::array<u8, Memory::DSP_RAM_SIZE>& DspHle::GetDspMemory() {
 
 void DspHle::SetServiceToInterrupt(std::weak_ptr<DSP_DSP> dsp) {
     impl->SetServiceToInterrupt(std::move(dsp));
+}
+
+void DspHle::LoadComponent(const std::vector<u8>& component_data) {
+    // HLE doesn't need DSP program. Only log some info here
+    LOG_INFO(Service_DSP, "Firmware hash: {:#018x}",
+             Common::ComputeHash64(component_data.data(), component_data.size()));
+    // Some versions of the firmware have the location of DSP structures listed here.
+    if (component_data.size() > 0x37C) {
+        LOG_INFO(Service_DSP, "Structures hash: {:#018x}",
+                 Common::ComputeHash64(component_data.data() + 0x340, 60));
+    }
+}
+
+void DspHle::UnloadComponent() {
+    // Do nothing
 }
 
 } // namespace AudioCore

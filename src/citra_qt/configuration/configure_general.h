@@ -18,20 +18,13 @@ class ConfigureGeneral : public QWidget {
 
 public:
     explicit ConfigureGeneral(QWidget* parent = nullptr);
-    ~ConfigureGeneral();
+    ~ConfigureGeneral() override;
 
-    void PopulateHotkeyList(const HotkeyRegistry& registry);
+    void ResetDefaults();
     void applyConfiguration();
     void retranslateUi();
-
-private slots:
-    void onLanguageChanged(int index);
-
-signals:
-    void languageChanged(const QString& locale);
-
-private:
     void setConfiguration();
 
+private:
     std::unique_ptr<Ui::ConfigureGeneral> ui;
 };

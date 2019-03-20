@@ -26,9 +26,7 @@ using Xbyak::Reg32;
 using Xbyak::Reg64;
 using Xbyak::Xmm;
 
-namespace Pica {
-
-namespace Shader {
+namespace Pica::Shader {
 
 typedef void (JitShader::*JitFunction)(Instruction instr);
 
@@ -600,6 +598,7 @@ void JitShader::Compile_BREAKC(Instruction instr) {
     Compile_Assert(looping, "BREAKC must be inside a LOOP");
     if (looping) {
         Compile_EvaluateCondition(instr);
+        ASSERT(loop_break_label);
         jnz(*loop_break_label);
     }
 }
@@ -754,7 +753,7 @@ void JitShader::Compile_LOOP(Instruction instr) {
     sub(LOOPCOUNT, 1);           // Increment loop count by 1
     jnz(l_loop_start);           // Loop if not equal
     L(*loop_break_label);
-    loop_break_label = boost::none;
+    loop_break_label.reset();
 
     looping = false;
 }
@@ -778,7 +777,7 @@ void JitShader::Compile_JMP(Instruction instr) {
     }
 }
 
-static void Emit(GSEmitter* emitter, Math::Vec4<float24> (*output)[16]) {
+static void Emit(GSEmitter* emitter, Common::Vec4<float24> (*output)[16]) {
     emitter->Emit(*output);
 }
 
@@ -1122,6 +1121,4 @@ Xbyak::Label JitShader::CompilePrelude_Exp2() {
     return subroutine;
 }
 
-} // namespace Shader
-
-} // namespace Pica
+} // namespace Pica::Shader

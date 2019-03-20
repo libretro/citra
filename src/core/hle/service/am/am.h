@@ -6,13 +6,19 @@
 
 #include <array>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 #include "common/common_types.h"
 #include "core/file_sys/cia_container.h"
 #include "core/file_sys/file_backend.h"
+#include "core/hle/kernel/mutex.h"
 #include "core/hle/result.h"
 #include "core/hle/service/service.h"
+
+namespace Core {
+class System;
+}
 
 namespace Service::FS {
 enum class MediaType : u32;
@@ -58,13 +64,12 @@ using ProgressCallback = void(std::size_t, std::size_t);
 // A file handled returned for CIAs to be written into and subsequently installed.
 class CIAFile final : public FileSys::FileBackend {
 public:
-    explicit CIAFile(Service::FS::MediaType media_type) : media_type(media_type) {}
-    ~CIAFile() {
-        Close();
-    }
+    explicit CIAFile(Service::FS::MediaType media_type);
+    ~CIAFile();
 
     ResultVal<std::size_t> Read(u64 offset, std::size_t length, u8* buffer) const override;
-    ResultVal<std::size_t> WriteTitleMetadata(u64 offset, std::size_t length, const u8* buffer);
+    ResultCode WriteTicket();
+    ResultCode WriteTitleMetadata();
     ResultVal<std::size_t> WriteContentData(u64 offset, std::size_t length, const u8* buffer);
     ResultVal<std::size_t> Write(u64 offset, std::size_t length, bool flush,
                                  const u8* buffer) override;
@@ -86,6 +91,9 @@ private:
     std::vector<u8> data;
     std::vector<u64> content_written;
     Service::FS::MediaType media_type;
+
+    class DecryptionState;
+    std::unique_ptr<DecryptionState> decryption_state;
 };
 
 /**
@@ -141,7 +149,7 @@ std::string GetMediaTitlePath(Service::FS::MediaType media_type);
 
 class Module final {
 public:
-    Module();
+    explicit Module(Core::System& system);
     ~Module();
 
     class Interface : public ServiceFramework<Interface> {
@@ -381,6 +389,17 @@ public:
         void BeginImportProgram(Kernel::HLERequestContext& ctx);
 
         /**
+         * AM::BeginImportProgramTemporarily service function
+         * Begin importing from a CTR Installable Archive into the temporary title database
+         *  Inputs:
+         *      0 : Command header (0x04030000)
+         *  Outputs:
+         *      1 : Result, 0 on success, otherwise error code
+         *      2-3 : CIAFile handle for application to write to
+         */
+        void BeginImportProgramTemporarily(Kernel::HLERequestContext& ctx);
+
+        /**
          * AM::EndImportProgram service function
          * Finish importing from a CTR Installable Archive
          *  Inputs:
@@ -390,6 +409,32 @@ public:
          *      1 : Result, 0 on success, otherwise error code
          */
         void EndImportProgram(Kernel::HLERequestContext& ctx);
+
+        /**
+         * AM::EndImportProgramWithoutCommit service function
+         * Finish importing from a CTR Installable Archive
+         *  Inputs:
+         *      0 : Command header (0x04060002)
+         *      1-2 : CIAFile handle application wrote to
+         *  Outputs:
+         *      1 : Result, 0 on success, otherwise error code
+         */
+        void EndImportProgramWithoutCommit(Kernel::HLERequestContext& ctx);
+
+        /**
+         * AM::CommitImportPrograms service function
+         * Commits changes from the temporary title database to the real title database (title.db).
+         * This is a no-op for us, we don't use title.db
+         *  Inputs:
+         *      0 : Command header (0x040700C2)
+         *      1 : Media type
+         *      2 : Title count
+         *      3 : Database type
+         *    4-5 : Title list buffer
+         *  Outputs:
+         *      1 : Result, 0 on success, otherwise error code
+         */
+        void CommitImportPrograms(Kernel::HLERequestContext& ctx);
 
         /**
          * AM::GetProgramInfoFromCia service function
@@ -478,6 +523,17 @@ public:
         void DeleteProgram(Kernel::HLERequestContext& ctx);
 
         /**
+         * AM::GetSystemUpdaterMutex service function
+         *  Inputs:
+         *      0 : Command header (0x04120000)
+         *  Outputs:
+         *      1 : Result, 0 on success, otherwise error code
+         *      2 : Copy handle descriptor
+         *      3 : System updater mutex
+         */
+        void GetSystemUpdaterMutex(Kernel::HLERequestContext& ctx);
+
+        /**
          * AM::GetMetaSizeFromCia service function
          * Returns the size of a given CIA's meta section
          *  Inputs:
@@ -517,10 +573,12 @@ private:
      */
     void ScanForAllTitles();
 
+    Core::System& system;
     bool cia_installing = false;
     std::array<std::vector<u64_le>, 3> am_title_list;
+    Kernel::SharedPtr<Kernel::Mutex> system_updater_mutex;
 };
 
-void InstallInterfaces(SM::ServiceManager& service_manager);
+void InstallInterfaces(Core::System& system);
 
 } // namespace Service::AM

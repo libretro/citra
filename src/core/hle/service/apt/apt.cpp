@@ -6,6 +6,7 @@
 #include "common/file_util.h"
 #include "common/logging/log.h"
 #include "core/core.h"
+#include "core/file_sys/archive_ncch.h"
 #include "core/file_sys/file_backend.h"
 #include "core/hle/applets/applet.h"
 #include "core/hle/kernel/mutex.h"
@@ -102,7 +103,9 @@ static u32 DecompressLZ11(const u8* in, u8* out) {
 
 bool Module::LoadSharedFont() {
     u8 font_region_code;
-    switch (CFG::GetCurrentModule()->GetRegionValue()) {
+    auto cfg = Service::CFG::GetModule(Core::System::GetInstance());
+    ASSERT_MSG(cfg, "CFG Module missing!");
+    switch (cfg->GetRegionValue()) {
     case 4: // CHN
         font_region_code = 2;
         break;
@@ -118,27 +121,20 @@ bool Module::LoadSharedFont() {
     }
 
     const u64_le shared_font_archive_id_low = 0x0004009b00014002 | ((font_region_code - 1) << 8);
-    const u64_le shared_font_archive_id_high = 0x00000001ffffff00;
-    std::vector<u8> shared_font_archive_id(16);
-    std::memcpy(&shared_font_archive_id[0], &shared_font_archive_id_low, sizeof(u64));
-    std::memcpy(&shared_font_archive_id[8], &shared_font_archive_id_high, sizeof(u64));
-    FileSys::Path archive_path(shared_font_archive_id);
-    auto archive_result = Service::FS::OpenArchive(Service::FS::ArchiveIdCode::NCCH, archive_path);
-    if (archive_result.Failed())
-        return false;
 
+    FileSys::NCCHArchive archive(shared_font_archive_id_low, Service::FS::MediaType::NAND);
     std::vector<u8> romfs_path(20, 0); // 20-byte all zero path for opening RomFS
     FileSys::Path file_path(romfs_path);
     FileSys::Mode open_mode = {};
     open_mode.read_flag.Assign(1);
-    auto file_result = Service::FS::OpenFileFromArchive(*archive_result, file_path, open_mode);
+    auto file_result = archive.OpenFile(file_path, open_mode);
     if (file_result.Failed())
         return false;
 
     auto romfs = std::move(file_result).Unwrap();
-    std::vector<u8> romfs_buffer(romfs->backend->GetSize());
-    romfs->backend->Read(0, romfs_buffer.size(), romfs_buffer.data());
-    romfs->backend->Close();
+    std::vector<u8> romfs_buffer(romfs->GetSize());
+    romfs->Read(0, romfs_buffer.size(), romfs_buffer.data());
+    romfs->Close();
 
     const char16_t* file_name[4] = {u"cbf_std.bcfnt.lz", u"cbf_zh-Hans-CN.bcfnt.lz",
                                     u"cbf_ko-Hang-KR.bcfnt.lz", u"cbf_zh-Hant-TW.bcfnt.lz"};
@@ -188,7 +184,8 @@ void Module::Interface::GetSharedFont(Kernel::HLERequestContext& ctx) {
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 2);
 
     // Log in telemetry if the game uses the shared font
-    Core::Telemetry().AddField(Telemetry::FieldType::Session, "RequiresSharedFont", true);
+    apt->system.TelemetrySession().AddField(Telemetry::FieldType::Session, "RequiresSharedFont",
+                                            true);
 
     if (!apt->shared_font_loaded) {
         // On real 3DS, font loading happens on booting. However, we load it on demand to coordinate
@@ -203,16 +200,24 @@ void Module::Interface::GetSharedFont(Kernel::HLERequestContext& ctx) {
             rb.Push<u32>(-1); // TODO: Find the right error code
             rb.Push<u32>(0);
             rb.PushCopyObjects<Kernel::Object>(nullptr);
-            Core::System::GetInstance().SetStatus(Core::System::ResultStatus::ErrorSystemFiles,
-                                                  "Shared fonts");
+            apt->system.SetStatus(Core::System::ResultStatus::ErrorSystemFiles, "Shared fonts");
             return;
         }
     }
 
     // The shared font has to be relocated to the new address before being passed to the
     // application.
+
+    // Note: the target address is still in the old linear heap region even on new firmware
+    // versions. This exception is made for shared font to resolve the following compatibility
+    // issue:
+    // The linear heap region changes depending on the kernel version marked in application's
+    // exheader (not the actual version the application is running on). If an application with old
+    // kernel version and an applet with new kernel version run at the same time, and they both use
+    // shared font, different linear heap region would have required shared font to relocate
+    // according to two different addresses at the same time, which is impossible.
     VAddr target_address =
-        Memory::PhysicalToVirtualAddress(apt->shared_font_mem->linear_heap_phys_address).value();
+        apt->shared_font_mem->GetLinearHeapPhysicalOffset() + Memory::LINEAR_HEAP_VADDR;
     if (!apt->shared_font_relocated) {
         BCFNT::RelocateSharedFont(apt->shared_font_mem, target_address);
         apt->shared_font_relocated = true;
@@ -400,6 +405,54 @@ void Module::Interface::CancelParameter(Kernel::HLERequestContext& ctx) {
               static_cast<u32>(receiver_appid));
 }
 
+void Module::Interface::PrepareToDoApplicationJump(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx, 0x31, 4, 0); // 0x00310100
+    auto flags = rp.PopEnum<ApplicationJumpFlags>();
+    u64 title_id = rp.Pop<u64>();
+    u8 media_type = rp.Pop<u8>();
+
+    LOG_WARNING(Service_APT, "(STUBBED) called title_id={:016X}, media_type={:#01X}, flags={:#08X}",
+                title_id, media_type, static_cast<u8>(flags));
+
+    ResultCode result = apt->applet_manager->PrepareToDoApplicationJump(
+        title_id, static_cast<FS::MediaType>(media_type), flags);
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(result);
+}
+
+void Module::Interface::DoApplicationJump(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx, 0x32, 2, 4); // 0x00320084
+    u32 param_size = rp.Pop<u32>();
+    u32 hmac_size = rp.Pop<u32>();
+
+    auto param = rp.PopStaticBuffer();
+    auto hmac = rp.PopStaticBuffer();
+
+    LOG_WARNING(Service_APT, "(STUBBED) called param_size={:08X}, hmac_size={:08X}", param_size,
+                hmac_size);
+
+    // TODO(Subv): Set the delivery parameters before starting the new application.
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(apt->applet_manager->DoApplicationJump());
+}
+
+void Module::Interface::GetProgramIdOnApplicationJump(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx, 0x33, 0, 0); // 0x00330000
+
+    LOG_DEBUG(Service_APT, "called");
+
+    auto parameters = apt->applet_manager->GetApplicationJumpParameters();
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(7, 0);
+    rb.Push(RESULT_SUCCESS);
+    rb.Push<u64>(parameters.current_title_id);
+    rb.Push(static_cast<u8>(parameters.current_media_type));
+    rb.Push<u64>(parameters.next_title_id);
+    rb.Push(static_cast<u8>(parameters.next_media_type));
+}
+
 void Module::Interface::PrepareToStartApplication(Kernel::HLERequestContext& ctx) {
     IPC::RequestParser rp(ctx, 0x15, 5, 0); // 0x00150140
     u32 title_info1 = rp.Pop<u32>();
@@ -550,52 +603,7 @@ void Module::Interface::CloseApplication(Kernel::HLERequestContext& ctx) {
 
     LOG_DEBUG(Service_APT, "called");
 
-    Core::System::GetInstance().RequestShutdown();
-
-    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-    rb.Push(RESULT_SUCCESS);
-}
-
-void Module::Interface::PrepareToDoApplicationJump(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x31, 4, 0);
-    u32 flags = rp.Pop<u8>();
-    u32 program_id_low = rp.Pop<u32>();
-    u32 program_id_high = rp.Pop<u32>();
-    Service::FS::MediaType media_type = static_cast<Service::FS::MediaType>(rp.Pop<u8>());
-
-    LOG_WARNING(Service_APT,
-                "(STUBBED) called, flags={:08X}, program_id_low={:08X}, program_id_high={:08X}, "
-                "media_type={:08X}",
-                flags, program_id_low, program_id_high, static_cast<u8>(media_type));
-
-    if (flags == 0x2) {
-        // It seems that flags 0x2 means jumping to the same application,
-        // and ignore the parameters. This is used in Pokemon main series
-        // to soft reset.
-        application_reset_prepared = true;
-    }
-
-    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-    rb.Push(RESULT_SUCCESS);
-}
-
-void Module::Interface::DoApplicationJump(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x32, 2, 4);
-    u32 parameter_size = rp.Pop<u32>();
-    u32 hmac_size = rp.Pop<u32>();
-    std::vector<u8> parameter = rp.PopStaticBuffer();
-    std::vector<u8> hmac = rp.PopStaticBuffer();
-
-    LOG_WARNING(Service_APT, "(STUBBED) called");
-
-    if (application_reset_prepared) {
-        // Reset system
-        Core::System::GetInstance().RequestReset();
-    } else {
-        // After the jump, the application should shutdown
-        // TODO: Actually implement the jump
-        Core::System::GetInstance().RequestShutdown();
-    }
+    apt->system.RequestShutdown();
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
     rb.Push(RESULT_SUCCESS);
@@ -849,22 +857,24 @@ Module::Interface::Interface(std::shared_ptr<Module> apt, const char* name, u32 
 
 Module::Interface::~Interface() = default;
 
-Module::Module() {
-    applet_manager = std::make_shared<AppletManager>();
+Module::Module(Core::System& system) : system(system) {
+    applet_manager = std::make_shared<AppletManager>(system);
 
     using Kernel::MemoryPermission;
-    shared_font_mem =
-        Kernel::SharedMemory::Create(nullptr, 0x332000, // 3272 KB
-                                     MemoryPermission::ReadWrite, MemoryPermission::Read, 0,
-                                     Kernel::MemoryRegion::SYSTEM, "APT:SharedFont");
+    shared_font_mem = system.Kernel()
+                          .CreateSharedMemory(nullptr, 0x332000, // 3272 KB
+                                              MemoryPermission::ReadWrite, MemoryPermission::Read,
+                                              0, Kernel::MemoryRegion::SYSTEM, "APT:SharedFont")
+                          .Unwrap();
 
-    lock = Kernel::Mutex::Create(false, "APT_U:Lock");
+    lock = system.Kernel().CreateMutex(false, "APT_U:Lock");
 }
 
 Module::~Module() {}
 
-void InstallInterfaces(SM::ServiceManager& service_manager) {
-    auto apt = std::make_shared<Module>();
+void InstallInterfaces(Core::System& system) {
+    auto& service_manager = system.ServiceManager();
+    auto apt = std::make_shared<Module>(system);
     std::make_shared<APT_U>(apt)->InstallAsService(service_manager);
     std::make_shared<APT_S>(apt)->InstallAsService(service_manager);
     std::make_shared<APT_A>(apt)->InstallAsService(service_manager);

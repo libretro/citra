@@ -13,12 +13,16 @@
 #include "core/hle/result.h"
 #include "core/hle/service/service.h"
 
+namespace Core {
+class System;
+}
+
 namespace Camera {
 class CameraInterface;
 }
 
-namespace CoreTiming {
-struct EventType;
+namespace Core {
+struct TimingEventType;
 }
 
 namespace Kernel {
@@ -237,7 +241,7 @@ static_assert(sizeof(PackageParameterWithContextDetail) == 28,
 
 class Module final {
 public:
-    Module();
+    explicit Module(Core::System& system);
     ~Module();
     void ReloadCameraDevices();
 
@@ -245,6 +249,8 @@ public:
     public:
         Interface(std::shared_ptr<Module> cam, const char* name, u32 max_session);
         ~Interface();
+
+        std::shared_ptr<Module> GetModule() const;
 
     protected:
         /**
@@ -773,15 +779,15 @@ private:
 
     void LoadCameraImplementation(CameraConfig& camera, int camera_id);
 
+    Core::System& system;
     std::array<CameraConfig, NumCameras> cameras;
     std::array<PortConfig, 2> ports;
-    CoreTiming::EventType* completion_event_callback;
+    Core::TimingEventType* completion_event_callback;
     std::atomic<bool> is_camera_reload_pending{false};
 };
 
-/// Reload camera devices. Used when input configuration changed
-void ReloadCameraDevices();
+std::shared_ptr<Module> GetModule(Core::System& system);
 
-void InstallInterfaces(SM::ServiceManager& service_manager);
+void InstallInterfaces(Core::System& system);
 
 } // namespace Service::CAM

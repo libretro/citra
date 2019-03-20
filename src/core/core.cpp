@@ -6,12 +6,14 @@
 #include <utility>
 #include "audio_core/dsp_interface.h"
 #include "audio_core/hle/hle.h"
+#include "audio_core/lle/lle.h"
 #include "common/logging/log.h"
 #include "core/arm/arm_interface.h"
 #ifdef ARCHITECTURE_x86_64
 #include "core/arm/dynarmic/arm_dynarmic.h"
 #endif
 #include "core/arm/dyncom/arm_dyncom.h"
+#include "core/cheats/cheats.h"
 #include "core/core.h"
 #include "core/core_timing.h"
 #include "core/gdbstub/gdbstub.h"
@@ -19,15 +21,13 @@
 #include "core/hle/kernel/kernel.h"
 #include "core/hle/kernel/process.h"
 #include "core/hle/kernel/thread.h"
+#include "core/hle/service/fs/archive.h"
 #include "core/hle/service/service.h"
 #include "core/hle/service/sm/sm.h"
 #include "core/hw/hw.h"
 #include "core/loader/loader.h"
-#include "core/memory_setup.h"
 #include "core/movie.h"
-#ifdef ENABLE_SCRIPTING
 #include "core/rpc/rpc_server.h"
-#endif
 #include "core/settings.h"
 #include "network/network.h"
 #include "video_core/video_core.h"
@@ -58,13 +58,13 @@ System::ResultStatus System::RunLoop(bool tight_loop) {
 
     // If we don't have a currently active thread then don't execute instructions,
     // instead advance to the next event and try to yield to the next thread
-    if (Kernel::GetCurrentThread() == nullptr) {
+    if (kernel->GetThreadManager().GetCurrentThread() == nullptr) {
         LOG_TRACE(Core_ARM11, "Idling");
-        CoreTiming::Idle();
-        CoreTiming::Advance();
+        timing->Idle();
+        timing->Advance();
         PrepareReschedule();
     } else {
-        CoreTiming::Advance();
+        timing->Advance();
         if (tight_loop) {
             cpu_core->Run();
         } else {
@@ -99,7 +99,7 @@ System::ResultStatus System::Load(EmuWindow& emu_window, const std::string& file
         LOG_CRITICAL(Core, "Failed to obtain loader for {}!", filepath);
         return ResultStatus::ErrorGetLoader;
     }
-    std::pair<boost::optional<u32>, Loader::ResultStatus> system_mode =
+    std::pair<std::optional<u32>, Loader::ResultStatus> system_mode =
         app_loader->LoadKernelSystemMode();
 
     if (system_mode.second != Loader::ResultStatus::Success) {
@@ -116,7 +116,8 @@ System::ResultStatus System::Load(EmuWindow& emu_window, const std::string& file
         }
     }
 
-    ResultStatus init_result{Init(emu_window, system_mode.first.get())};
+    ASSERT(system_mode.first);
+    ResultStatus init_result{Init(emu_window, *system_mode.first)};
     if (init_result != ResultStatus::Success) {
         LOG_CRITICAL(Core, "Failed to initialize system (Error {})!",
                      static_cast<u32>(init_result));
@@ -124,7 +125,9 @@ System::ResultStatus System::Load(EmuWindow& emu_window, const std::string& file
         return init_result;
     }
 
-    const Loader::ResultStatus load_result{app_loader->Load(Kernel::g_current_process)};
+    Kernel::SharedPtr<Kernel::Process> process;
+    const Loader::ResultStatus load_result{app_loader->Load(process)};
+    kernel->SetCurrentProcess(process);
     if (Loader::ResultStatus::Success != load_result) {
         LOG_CRITICAL(Core, "Failed to load ROM (Error {})!", static_cast<u32>(load_result));
         System::Shutdown();
@@ -138,7 +141,8 @@ System::ResultStatus System::Load(EmuWindow& emu_window, const std::string& file
             return ResultStatus::ErrorLoader;
         }
     }
-    Memory::SetCurrentPageTable(&Kernel::g_current_process->vm_manager.page_table);
+    memory->SetCurrentPageTable(&kernel->GetCurrentProcess()->vm_manager.page_table);
+    cheat_engine = std::make_unique<Cheats::CheatEngine>(*this);
     status = ResultStatus::Success;
     m_emu_window = &emu_window;
     m_filepath = filepath;
@@ -151,7 +155,7 @@ void System::PrepareReschedule() {
 }
 
 PerfStats::Results System::GetAndResetPerfStats() {
-    return perf_stats.GetAndResetStats(CoreTiming::GetGlobalTimeUs());
+    return perf_stats.GetAndResetStats(timing->GetGlobalTimeUs());
 }
 
 void System::Reschedule() {
@@ -160,44 +164,55 @@ void System::Reschedule() {
     }
 
     reschedule_pending = false;
-    Kernel::Reschedule();
+    kernel->GetThreadManager().Reschedule();
 }
 
 System::ResultStatus System::Init(EmuWindow& emu_window, u32 system_mode) {
     LOG_DEBUG(HW_Memory, "initialized OK");
 
-    CoreTiming::Init();
+    memory = std::make_unique<Memory::MemorySystem>();
+
+    timing = std::make_unique<Timing>();
+
+    kernel = std::make_unique<Kernel::KernelSystem>(*memory, *timing,
+                                                    [this] { PrepareReschedule(); }, system_mode);
 
     if (Settings::values.use_cpu_jit) {
 #ifdef ARCHITECTURE_x86_64
-        cpu_core = std::make_unique<ARM_Dynarmic>(USER32MODE);
+        cpu_core = std::make_unique<ARM_Dynarmic>(this, *memory, USER32MODE);
 #else
-        cpu_core = std::make_unique<ARM_DynCom>(USER32MODE);
+        cpu_core = std::make_unique<ARM_DynCom>(this, *memory, USER32MODE);
         LOG_WARNING(Core, "CPU JIT requested, but Dynarmic not available");
 #endif
     } else {
-        cpu_core = std::make_unique<ARM_DynCom>(USER32MODE);
+        cpu_core = std::make_unique<ARM_DynCom>(this, *memory, USER32MODE);
     }
 
-    dsp_core = std::make_unique<AudioCore::DspHle>();
+    kernel->GetThreadManager().SetCPU(*cpu_core);
+    memory->SetCPU(*cpu_core);
+
+    if (Settings::values.enable_dsp_lle) {
+        dsp_core = std::make_unique<AudioCore::DspLle>(*memory,
+                                                       Settings::values.enable_dsp_lle_multithread);
+    } else {
+        dsp_core = std::make_unique<AudioCore::DspHle>(*memory);
+    }
+
     dsp_core->SetSink(Settings::values.sink_id, Settings::values.audio_device_id);
     dsp_core->EnableStretching(Settings::values.enable_audio_stretching);
 
     telemetry_session = std::make_unique<Core::TelemetrySession>();
 
-#ifdef ENABLE_SCRIPTING
     rpc_server = std::make_unique<RPC::RPCServer>();
-#endif
 
-    service_manager = std::make_shared<Service::SM::ServiceManager>();
-    shared_page_handler = std::make_shared<SharedPage::Handler>();
+    service_manager = std::make_shared<Service::SM::ServiceManager>(*this);
+    archive_manager = std::make_unique<Service::FS::ArchiveManager>(*this);
 
-    HW::Init();
-    Kernel::Init(system_mode);
-    Service::Init(service_manager);
+    HW::Init(*memory);
+    Service::Init(*this);
     GDBStub::Init();
 
-    ResultStatus result = VideoCore::Init(emu_window);
+    ResultStatus result = VideoCore::Init(emu_window, *memory);
     if (result != ResultStatus::Success) {
         return result;
     }
@@ -219,6 +234,46 @@ const Service::SM::ServiceManager& System::ServiceManager() const {
     return *service_manager;
 }
 
+Service::FS::ArchiveManager& System::ArchiveManager() {
+    return *archive_manager;
+}
+
+const Service::FS::ArchiveManager& System::ArchiveManager() const {
+    return *archive_manager;
+}
+
+Kernel::KernelSystem& System::Kernel() {
+    return *kernel;
+}
+
+const Kernel::KernelSystem& System::Kernel() const {
+    return *kernel;
+}
+
+Timing& System::CoreTiming() {
+    return *timing;
+}
+
+const Timing& System::CoreTiming() const {
+    return *timing;
+}
+
+Memory::MemorySystem& System::Memory() {
+    return *memory;
+}
+
+const Memory::MemorySystem& System::Memory() const {
+    return *memory;
+}
+
+Cheats::CheatEngine& System::CheatEngine() {
+    return *cheat_engine;
+}
+
+const Cheats::CheatEngine& System::CheatEngine() const {
+    return *cheat_engine;
+}
+
 void System::RegisterSoftwareKeyboard(std::shared_ptr<Frontend::SoftwareKeyboard> swkbd) {
     registered_swkbd = std::move(swkbd);
 }
@@ -236,17 +291,15 @@ void System::Shutdown() {
     // Shutdown emulation session
     GDBStub::Shutdown();
     VideoCore::Shutdown();
-    Service::Shutdown();
-    Kernel::Shutdown();
+    kernel.reset();
     HW::Shutdown();
     telemetry_session.reset();
-#ifdef ENABLE_SCRIPTING
     rpc_server.reset();
-#endif
+    cheat_engine.reset();
     service_manager.reset();
     dsp_core.reset();
     cpu_core.reset();
-    CoreTiming::Shutdown();
+    timing.reset();
     app_loader.reset();
 
     if (auto room_member = Network::GetRoomMember().lock()) {

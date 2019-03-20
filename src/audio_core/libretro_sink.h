@@ -21,7 +21,7 @@ namespace AudioCore {
 
 class LibRetroSink final : public Sink {
 public:
-    explicit LibRetroSink(std::string target_device_name);
+    explicit LibRetroSink(std::string_view device_id);
     ~LibRetroSink() override;
 
     unsigned int GetNativeSampleRate() const override;

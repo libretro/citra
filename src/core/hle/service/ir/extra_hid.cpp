@@ -4,6 +4,7 @@
 
 #include "common/alignment.h"
 #include "common/string_util.h"
+#include "core/core.h"
 #include "core/core_timing.h"
 #include "core/hle/service/ir/extra_hid.h"
 #include "core/movie.h"
@@ -144,11 +145,11 @@ ExtraHID::ExtraHID(SendFunc send_func) : IRDevice(send_func) {
         0x65,
     }};
 
-    hid_polling_callback_id =
-        CoreTiming::RegisterEvent("ExtraHID::SendHIDStatus", [this](u64, s64 cycles_late) {
+    hid_polling_callback_id = Core::System::GetInstance().CoreTiming().RegisterEvent(
+        "ExtraHID::SendHIDStatus", [this](u64, s64 cycles_late) {
             SendHIDStatus();
-            CoreTiming::ScheduleEvent(msToCycles(hid_period) - cycles_late,
-                                      hid_polling_callback_id);
+            Core::System::GetInstance().CoreTiming().ScheduleEvent(
+                msToCycles(hid_period) - cycles_late, hid_polling_callback_id);
         });
 }
 
@@ -159,20 +160,21 @@ ExtraHID::~ExtraHID() {
 void ExtraHID::OnConnect() {}
 
 void ExtraHID::OnDisconnect() {
-    CoreTiming::UnscheduleEvent(hid_polling_callback_id, 0);
+    Core::System::GetInstance().CoreTiming().UnscheduleEvent(hid_polling_callback_id, 0);
 }
 
 void ExtraHID::HandleConfigureHIDPollingRequest(const std::vector<u8>& request) {
     if (request.size() != 3) {
         LOG_ERROR(Service_IR, "Wrong request size ({}): {}", request.size(),
-                  Common::ArrayToString(request.data(), request.size()));
+                  fmt::format("{:02x}", fmt::join(request, " ")));
         return;
     }
 
     // Change HID input polling interval
-    CoreTiming::UnscheduleEvent(hid_polling_callback_id, 0);
+    Core::System::GetInstance().CoreTiming().UnscheduleEvent(hid_polling_callback_id, 0);
     hid_period = request[1];
-    CoreTiming::ScheduleEvent(msToCycles(hid_period), hid_polling_callback_id);
+    Core::System::GetInstance().CoreTiming().ScheduleEvent(msToCycles(hid_period),
+                                                           hid_polling_callback_id);
 }
 
 void ExtraHID::HandleReadCalibrationDataRequest(const std::vector<u8>& request_buf) {
@@ -187,7 +189,7 @@ void ExtraHID::HandleReadCalibrationDataRequest(const std::vector<u8>& request_b
 
     if (request_buf.size() != sizeof(ReadCalibrationDataRequest)) {
         LOG_ERROR(Service_IR, "Wrong request size ({}): {}", request_buf.size(),
-                  Common::ArrayToString(request_buf.data(), request_buf.size()));
+                  fmt::format("{:02x}", fmt::join(request_buf, " ")));
         return;
     }
 
@@ -221,8 +223,7 @@ void ExtraHID::OnReceive(const std::vector<u8>& data) {
         HandleReadCalibrationDataRequest(data);
         break;
     default:
-        LOG_ERROR(Service_IR, "Unknown request: {}",
-                  Common::ArrayToString(data.data(), data.size()));
+        LOG_ERROR(Service_IR, "Unknown request: {}", fmt::format("{:02x}", fmt::join(data, " ")));
         break;
     }
 }
@@ -262,11 +263,11 @@ void ExtraHID::RequestInputDevicesReload() {
 
 void ExtraHID::LoadInputDevices() {
     zl = Input::CreateDevice<Input::ButtonDevice>(
-        Settings::values.buttons[Settings::NativeButton::ZL]);
+        Settings::values.current_input_profile.buttons[Settings::NativeButton::ZL]);
     zr = Input::CreateDevice<Input::ButtonDevice>(
-        Settings::values.buttons[Settings::NativeButton::ZR]);
+        Settings::values.current_input_profile.buttons[Settings::NativeButton::ZR]);
     c_stick = Input::CreateDevice<Input::AnalogDevice>(
-        Settings::values.analogs[Settings::NativeAnalog::CStick]);
+        Settings::values.current_input_profile.analogs[Settings::NativeAnalog::CStick]);
 }
 
 } // namespace Service::IR

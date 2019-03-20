@@ -7,14 +7,14 @@
 #include <array>
 #include <cstring>
 #include <functional>
+#include <optional>
 #include <string>
 #include <type_traits>
-#include <boost/optional.hpp>
 #include "common/hash.h"
 #include "video_core/regs.h"
 #include "video_core/shader/shader.h"
 
-namespace GLShader {
+namespace OpenGL {
 
 enum Attributes {
     ATTRIBUTE_POSITION,
@@ -118,7 +118,6 @@ struct PicaFSConfigState {
 
     bool shadow_rendering;
     bool shadow_texture_orthographic;
-    u32 shadow_texture_bias;
 };
 
 /**
@@ -228,9 +227,8 @@ std::string GenerateTrivialVertexShader(bool separable_shader);
  * Generates the GLSL vertex shader program source code for the given VS program
  * @returns String of the shader source code; boost::none on failure
  */
-boost::optional<std::string> GenerateVertexShader(const Pica::Shader::ShaderSetup& setup,
-                                                  const PicaVSConfig& config,
-                                                  bool separable_shader);
+std::optional<std::string> GenerateVertexShader(const Pica::Shader::ShaderSetup& setup,
+                                                const PicaVSConfig& config, bool separable_shader);
 
 /*
  * Generates the GLSL fixed geometry shader program source code for non-GS PICA pipeline
@@ -243,9 +241,9 @@ std::string GenerateFixedGeometryShader(const PicaFixedGSConfig& config, bool se
  * configuration
  * @returns String of the shader source code; boost::none on failure
  */
-boost::optional<std::string> GenerateGeometryShader(const Pica::Shader::ShaderSetup& setup,
-                                                    const PicaGSConfig& config,
-                                                    bool separable_shader);
+std::optional<std::string> GenerateGeometryShader(const Pica::Shader::ShaderSetup& setup,
+                                                  const PicaGSConfig& config,
+                                                  bool separable_shader);
 
 /**
  * Generates the GLSL fragment shader program source code for the current Pica state
@@ -256,33 +254,33 @@ boost::optional<std::string> GenerateGeometryShader(const Pica::Shader::ShaderSe
  */
 std::string GenerateFragmentShader(const PicaFSConfig& config, bool separable_shader);
 
-} // namespace GLShader
+} // namespace OpenGL
 
 namespace std {
 template <>
-struct hash<GLShader::PicaFSConfig> {
-    std::size_t operator()(const GLShader::PicaFSConfig& k) const {
+struct hash<OpenGL::PicaFSConfig> {
+    std::size_t operator()(const OpenGL::PicaFSConfig& k) const {
         return k.Hash();
     }
 };
 
 template <>
-struct hash<GLShader::PicaVSConfig> {
-    std::size_t operator()(const GLShader::PicaVSConfig& k) const {
+struct hash<OpenGL::PicaVSConfig> {
+    std::size_t operator()(const OpenGL::PicaVSConfig& k) const {
         return k.Hash();
     }
 };
 
 template <>
-struct hash<GLShader::PicaFixedGSConfig> {
-    std::size_t operator()(const GLShader::PicaFixedGSConfig& k) const {
+struct hash<OpenGL::PicaFixedGSConfig> {
+    std::size_t operator()(const OpenGL::PicaFixedGSConfig& k) const {
         return k.Hash();
     }
 };
 
 template <>
-struct hash<GLShader::PicaGSConfig> {
-    std::size_t operator()(const GLShader::PicaGSConfig& k) const {
+struct hash<OpenGL::PicaGSConfig> {
+    std::size_t operator()(const OpenGL::PicaGSConfig& k) const {
         return k.Hash();
     }
 };

@@ -51,7 +51,7 @@ std::size_t WaitTreeItem::Row() const {
 }
 
 std::vector<std::unique_ptr<WaitTreeThread>> WaitTreeItem::MakeThreadItemList() {
-    const auto& threads = Kernel::GetThreadList();
+    const auto& threads = Core::System::GetInstance().Kernel().GetThreadManager().GetThreadList();
     std::vector<std::unique_ptr<WaitTreeThread>> item_list;
     item_list.reserve(threads.size());
     for (std::size_t i = 0; i < threads.size(); ++i) {
@@ -61,7 +61,8 @@ std::vector<std::unique_ptr<WaitTreeThread>> WaitTreeItem::MakeThreadItemList() 
     return item_list;
 }
 
-WaitTreeText::WaitTreeText(const QString& t) : text(t) {}
+WaitTreeText::WaitTreeText(QString t) : text(std::move(t)) {}
+WaitTreeText::~WaitTreeText() = default;
 
 QString WaitTreeText::GetText() const {
     return text;

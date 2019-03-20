@@ -11,17 +11,17 @@
 #include "core/frontend/input.h"
 #include "core/hle/service/ir/ir_user.h"
 
-namespace CoreTiming {
-struct EventType;
-} // namespace CoreTiming
+namespace Core {
+struct TimingEventType;
+} // namespace Core
 
 namespace Service::IR {
 
 struct ExtraHIDResponse {
     union {
-        BitField<0, 8, u32_le> header;
-        BitField<8, 12, u32_le> c_stick_x;
-        BitField<20, 12, u32_le> c_stick_y;
+        BitField<0, 8, u32> header;
+        BitField<8, 12, u32> c_stick_x;
+        BitField<20, 12, u32> c_stick_y;
     } c_stick;
     union {
         BitField<0, 5, u8> battery_level;
@@ -57,7 +57,7 @@ private:
     void LoadInputDevices();
 
     u8 hid_period;
-    CoreTiming::EventType* hid_polling_callback_id;
+    Core::TimingEventType* hid_polling_callback_id;
     std::array<u8, 0x40> calibration_data;
     std::unique_ptr<Input::ButtonDevice> zl;
     std::unique_ptr<Input::ButtonDevice> zr;

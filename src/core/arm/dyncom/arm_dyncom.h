@@ -10,9 +10,18 @@
 #include "core/arm/skyeye_common/arm_regformat.h"
 #include "core/arm/skyeye_common/armstate.h"
 
+namespace Core {
+struct System;
+}
+
+namespace Memory {
+class MemorySystem;
+}
+
 class ARM_DynCom final : public ARM_Interface {
 public:
-    explicit ARM_DynCom(PrivilegeMode initial_mode);
+    explicit ARM_DynCom(Core::System* system, Memory::MemorySystem& memory,
+                        PrivilegeMode initial_mode);
     ~ARM_DynCom();
 
     void Run() override;
@@ -44,5 +53,6 @@ public:
 private:
     void ExecuteInstructions(u64 num_instructions);
 
+    Core::System* system;
     std::unique_ptr<ARMul_State> state;
 };

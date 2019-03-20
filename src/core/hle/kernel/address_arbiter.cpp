@@ -7,6 +7,7 @@
 #include "common/logging/log.h"
 #include "core/hle/kernel/address_arbiter.h"
 #include "core/hle/kernel/errors.h"
+#include "core/hle/kernel/kernel.h"
 #include "core/hle/kernel/thread.h"
 #include "core/memory.h"
 
@@ -64,11 +65,11 @@ SharedPtr<Thread> AddressArbiter::ResumeHighestPriorityThread(VAddr address) {
     return thread;
 }
 
-AddressArbiter::AddressArbiter() {}
+AddressArbiter::AddressArbiter(KernelSystem& kernel) : Object(kernel), kernel(kernel) {}
 AddressArbiter::~AddressArbiter() {}
 
-SharedPtr<AddressArbiter> AddressArbiter::Create(std::string name) {
-    SharedPtr<AddressArbiter> address_arbiter(new AddressArbiter);
+SharedPtr<AddressArbiter> KernelSystem::CreateAddressArbiter(std::string name) {
+    SharedPtr<AddressArbiter> address_arbiter(new AddressArbiter(*this));
 
     address_arbiter->name = std::move(name);
 
@@ -102,31 +103,31 @@ ResultCode AddressArbiter::ArbitrateAddress(SharedPtr<Thread> thread, Arbitratio
 
     // Wait current thread (acquire the arbiter)...
     case ArbitrationType::WaitIfLessThan:
-        if ((s32)Memory::Read32(address) < value) {
+        if ((s32)kernel.memory.Read32(address) < value) {
             WaitThread(std::move(thread), address);
         }
         break;
     case ArbitrationType::WaitIfLessThanWithTimeout:
-        if ((s32)Memory::Read32(address) < value) {
+        if ((s32)kernel.memory.Read32(address) < value) {
             thread->wakeup_callback = timeout_callback;
             thread->WakeAfterDelay(nanoseconds);
             WaitThread(std::move(thread), address);
         }
         break;
     case ArbitrationType::DecrementAndWaitIfLessThan: {
-        s32 memory_value = Memory::Read32(address);
+        s32 memory_value = kernel.memory.Read32(address);
         if (memory_value < value) {
             // Only change the memory value if the thread should wait
-            Memory::Write32(address, (s32)memory_value - 1);
+            kernel.memory.Write32(address, (s32)memory_value - 1);
             WaitThread(std::move(thread), address);
         }
         break;
     }
     case ArbitrationType::DecrementAndWaitIfLessThanWithTimeout: {
-        s32 memory_value = Memory::Read32(address);
+        s32 memory_value = kernel.memory.Read32(address);
         if (memory_value < value) {
             // Only change the memory value if the thread should wait
-            Memory::Write32(address, (s32)memory_value - 1);
+            kernel.memory.Write32(address, (s32)memory_value - 1);
             thread->wakeup_callback = timeout_callback;
             thread->WakeAfterDelay(nanoseconds);
             WaitThread(std::move(thread), address);

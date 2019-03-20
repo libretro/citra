@@ -9,6 +9,7 @@
 #include <QMainWindow>
 #include <QTimer>
 #include <QTranslator>
+#include "citra_qt/compatibility_list.h"
 #include "citra_qt/hotkeys.h"
 #include "common/announce_multiplayer_room.h"
 #include "core/core.h"
@@ -95,7 +96,6 @@ private:
     void InitializeWidgets();
     void InitializeDebugWidgets();
     void InitializeRecentFileMenuActions();
-    void InitializeHotkeys();
 
     void SetDefaultUIGeometry();
     void SyncMenuUISettings();
@@ -153,9 +153,8 @@ private slots:
     /// Called whenever a user selects a game in the game list widget.
     void OnGameListLoadFile(QString game_path);
     void OnGameListOpenFolder(u64 program_id, GameListOpenTarget target);
-    void OnGameListNavigateToGamedbEntry(
-        u64 program_id,
-        std::unordered_map<std::string, std::pair<QString, QString>>& compatibility_list);
+    void OnGameListNavigateToGamedbEntry(u64 program_id,
+                                         const CompatibilityList& compatibility_list);
     void OnGameListOpenDirectory(QString path);
     void OnGameListAddDirectory();
     void OnGameListShowList(bool show);
@@ -166,12 +165,17 @@ private slots:
     void OnCIAInstallFinished();
     void OnMenuRecentFile();
     void OnConfigure();
+    void OnLoadAmiibo();
+    void OnRemoveAmiibo();
+    void OnOpenCitraFolder();
     void OnToggleFilterBar();
     void OnDisplayTitleBars(bool);
+    void InitializeHotkeys();
     void ToggleFullscreen();
     void ChangeScreenLayout();
     void ToggleScreenLayout();
     void OnSwapScreens();
+    void OnCheats();
     void ShowFullscreen();
     void HideFullscreen();
     void ToggleWindowMode();
@@ -179,6 +183,7 @@ private slots:
     void OnRecordMovie();
     void OnPlayMovie();
     void OnStopRecordingPlayback();
+    void OnCaptureScreenshot();
     void OnCoreError(Core::System::ResultStatus, std::string);
     /// Called whenever a user selects Help->About Citra
     void OnMenuAboutCitra();
@@ -194,6 +199,7 @@ private:
     void LoadTranslation();
     void SetupUIStrings();
     void RetranslateStatusBar();
+    void InstallCIA(QStringList filepaths);
 
     Ui::MainWindow ui;
 

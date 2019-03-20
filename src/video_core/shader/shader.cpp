@@ -17,9 +17,7 @@
 #endif // ARCHITECTURE_x86_64
 #include "video_core/video_core.h"
 
-namespace Pica {
-
-namespace Shader {
+namespace Pica::Shader {
 
 void OutputVertex::ValidateSemantics(const RasterizerRegs& regs) {
     unsigned int num_attributes = regs.vs_output_total;
@@ -87,7 +85,7 @@ void UnitState::LoadInput(const ShaderRegs& config, const AttributeBuffer& input
     }
 }
 
-static void CopyRegistersToOutput(const Math::Vec4<float24>* regs, u32 mask,
+static void CopyRegistersToOutput(const Common::Vec4<float24>* regs, u32 mask,
                                   AttributeBuffer& buffer) {
     int output_i = 0;
     for (int reg : Common::BitSet<u32>(mask)) {
@@ -109,7 +107,7 @@ GSEmitter::~GSEmitter() {
     delete handlers;
 }
 
-void GSEmitter::Emit(Math::Vec4<float24> (&output_regs)[16]) {
+void GSEmitter::Emit(Common::Vec4<float24> (&output_regs)[16]) {
     ASSERT(vertex_id < 3);
     // TODO: This should be merged with UnitState::WriteOutput somehow
     CopyRegistersToOutput(output_regs, output_mask, buffer[vertex_id]);
@@ -161,6 +159,4 @@ void Shutdown() {
 #endif // ARCHITECTURE_x86_64
 }
 
-} // namespace Shader
-
-} // namespace Pica
+} // namespace Pica::Shader

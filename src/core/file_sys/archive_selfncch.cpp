@@ -7,6 +7,7 @@
 #include "common/common_types.h"
 #include "common/logging/log.h"
 #include "common/swap.h"
+#include "core/core.h"
 #include "core/file_sys/archive_selfncch.h"
 #include "core/file_sys/errors.h"
 #include "core/file_sys/ivfc_archive.h"
@@ -25,7 +26,7 @@ enum class SelfNCCHFilePathType : u32 {
 };
 
 struct SelfNCCHFilePath {
-    u32_le type;
+    enum_le<SelfNCCHFilePathType> type;
     std::array<char, 8> exefs_filename;
 };
 static_assert(sizeof(SelfNCCHFilePath) == 12, "NCCHFilePath has wrong size!");
@@ -102,7 +103,7 @@ public:
         SelfNCCHFilePath file_path;
         std::memcpy(&file_path, binary.data(), sizeof(SelfNCCHFilePath));
 
-        switch (static_cast<SelfNCCHFilePathType>(file_path.type)) {
+        switch (file_path.type) {
         case SelfNCCHFilePathType::UpdateRomFS:
             return OpenUpdateRomFS();
 
@@ -277,18 +278,20 @@ void ArchiveFactory_SelfNCCH::Register(Loader::AppLoader& app_loader) {
         data.banner = std::make_shared<std::vector<u8>>(std::move(buffer));
 }
 
-ResultVal<std::unique_ptr<ArchiveBackend>> ArchiveFactory_SelfNCCH::Open(const Path& path) {
-    auto archive = std::make_unique<SelfNCCHArchive>(
-        ncch_data[Kernel::g_current_process->codeset->program_id]);
+ResultVal<std::unique_ptr<ArchiveBackend>> ArchiveFactory_SelfNCCH::Open(const Path& path,
+                                                                         u64 program_id) {
+    auto archive = std::make_unique<SelfNCCHArchive>(ncch_data[program_id]);
     return MakeResult<std::unique_ptr<ArchiveBackend>>(std::move(archive));
 }
 
-ResultCode ArchiveFactory_SelfNCCH::Format(const Path&, const FileSys::ArchiveFormatInfo&) {
+ResultCode ArchiveFactory_SelfNCCH::Format(const Path&, const FileSys::ArchiveFormatInfo&,
+                                           u64 program_id) {
     LOG_ERROR(Service_FS, "Attempted to format a SelfNCCH archive.");
     return ERROR_INVALID_PATH;
 }
 
-ResultVal<ArchiveFormatInfo> ArchiveFactory_SelfNCCH::GetFormatInfo(const Path&) const {
+ResultVal<ArchiveFormatInfo> ArchiveFactory_SelfNCCH::GetFormatInfo(const Path&,
+                                                                    u64 program_id) const {
     LOG_ERROR(Service_FS, "Attempted to get format info of a SelfNCCH archive");
     return ERROR_INVALID_PATH;
 }

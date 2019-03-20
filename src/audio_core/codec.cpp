@@ -11,8 +11,7 @@
 #include "common/assert.h"
 #include "common/common_types.h"
 
-namespace AudioCore {
-namespace Codec {
+namespace AudioCore::Codec {
 
 StereoBuffer16 DecodeADPCM(const u8* const data, const std::size_t sample_count,
                            const std::array<s16, 16>& adpcm_coeff, ADPCMState& state) {
@@ -73,8 +72,8 @@ StereoBuffer16 DecodeADPCM(const u8* const data, const std::size_t sample_count,
         }
     }
 
-    state.yn1 = yn1;
-    state.yn2 = yn2;
+    state.yn1 = static_cast<s16>(yn1);
+    state.yn2 = static_cast<s16>(yn2);
 
     return ret;
 }
@@ -123,5 +122,4 @@ StereoBuffer16 DecodePCM16(const unsigned num_channels, const u8* const data,
 
     return ret;
 }
-} // namespace Codec
-} // namespace AudioCore
+} // namespace AudioCore::Codec

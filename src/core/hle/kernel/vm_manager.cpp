@@ -8,7 +8,6 @@
 #include "core/hle/kernel/errors.h"
 #include "core/hle/kernel/vm_manager.h"
 #include "core/memory.h"
-#include "core/memory_setup.h"
 #include "core/mmio.h"
 
 namespace Kernel {
@@ -28,10 +27,6 @@ bool VirtualMemoryArea::CanBeMergedWith(const VirtualMemoryArea& next) const {
         type != next.type) {
         return false;
     }
-    if (type == VMAType::AllocatedMemoryBlock &&
-        (backing_block != next.backing_block || offset + size != next.offset)) {
-        return false;
-    }
     if (type == VMAType::BackingMemory && backing_memory + size != next.backing_memory) {
         return false;
     }
@@ -41,7 +36,7 @@ bool VirtualMemoryArea::CanBeMergedWith(const VirtualMemoryArea& next) const {
     return true;
 }
 
-VMManager::VMManager() {
+VMManager::VMManager(Memory::MemorySystem& memory) : memory(memory) {
     Reset();
 }
 
@@ -71,31 +66,8 @@ VMManager::VMAHandle VMManager::FindVMA(VAddr target) const {
     }
 }
 
-ResultVal<VMManager::VMAHandle> VMManager::MapMemoryBlock(VAddr target,
-                                                          std::shared_ptr<std::vector<u8>> block,
-                                                          std::size_t offset, u32 size,
-                                                          MemoryState state) {
-    ASSERT(block != nullptr);
-    ASSERT(offset + size <= block->size());
-
-    // This is the appropriately sized VMA that will turn into our allocation.
-    CASCADE_RESULT(VMAIter vma_handle, CarveVMA(target, size));
-    VirtualMemoryArea& final_vma = vma_handle->second;
-    ASSERT(final_vma.size == size);
-
-    final_vma.type = VMAType::AllocatedMemoryBlock;
-    final_vma.permissions = VMAPermission::ReadWrite;
-    final_vma.meminfo_state = state;
-    final_vma.backing_block = block;
-    final_vma.offset = offset;
-    UpdatePageTableForVMA(final_vma);
-
-    return MakeResult<VMAHandle>(MergeAdjacent(vma_handle));
-}
-
-ResultVal<VAddr> VMManager::MapMemoryBlockToBase(VAddr base, u32 region_size,
-                                                 std::shared_ptr<std::vector<u8>> block,
-                                                 std::size_t offset, u32 size, MemoryState state) {
+ResultVal<VAddr> VMManager::MapBackingMemoryToBase(VAddr base, u32 region_size, u8* memory,
+                                                   u32 size, MemoryState state) {
 
     // Find the first Free VMA.
     VMAHandle vma_handle = std::find_if(vma_map.begin(), vma_map.end(), [&](const auto& vma) {
@@ -115,7 +87,7 @@ ResultVal<VAddr> VMManager::MapMemoryBlockToBase(VAddr base, u32 region_size,
                           ErrorSummary::OutOfResource, ErrorLevel::Permanent);
     }
 
-    auto result = MapMemoryBlock(target, block, offset, size, state);
+    auto result = MapBackingMemory(target, memory, size, state);
 
     if (result.Failed())
         return result.Code();
@@ -198,8 +170,6 @@ VMManager::VMAIter VMManager::Unmap(VMAIter vma_handle) {
     vma.permissions = VMAPermission::None;
     vma.meminfo_state = MemoryState::Free;
 
-    vma.backing_block = nullptr;
-    vma.offset = 0;
     vma.backing_memory = nullptr;
     vma.paddr = 0;
 
@@ -245,17 +215,6 @@ ResultCode VMManager::ReprotectRange(VAddr target, u32 size, VMAPermission new_p
     }
 
     return RESULT_SUCCESS;
-}
-
-void VMManager::RefreshMemoryBlockMappings(const std::vector<u8>* block) {
-    // If this ever proves to have a noticeable performance impact, allow users of the function to
-    // specify a specific range of addresses to limit the scan to.
-    for (const auto& p : vma_map) {
-        const VirtualMemoryArea& vma = p.second;
-        if (block == vma.backing_block.get()) {
-            UpdatePageTableForVMA(vma);
-        }
-    }
 }
 
 void VMManager::LogLayout(Log::Level log_level) const {
@@ -356,9 +315,6 @@ VMManager::VMAIter VMManager::SplitVMA(VMAIter vma_handle, u32 offset_in_vma) {
     switch (new_vma.type) {
     case VMAType::Free:
         break;
-    case VMAType::AllocatedMemoryBlock:
-        new_vma.offset += offset_in_vma;
-        break;
     case VMAType::BackingMemory:
         new_vma.backing_memory += offset_in_vma;
         break;
@@ -394,18 +350,35 @@ VMManager::VMAIter VMManager::MergeAdjacent(VMAIter iter) {
 void VMManager::UpdatePageTableForVMA(const VirtualMemoryArea& vma) {
     switch (vma.type) {
     case VMAType::Free:
-        Memory::UnmapRegion(page_table, vma.base, vma.size);
-        break;
-    case VMAType::AllocatedMemoryBlock:
-        Memory::MapMemoryRegion(page_table, vma.base, vma.size,
-                                vma.backing_block->data() + vma.offset);
+        memory.UnmapRegion(page_table, vma.base, vma.size);
         break;
     case VMAType::BackingMemory:
-        Memory::MapMemoryRegion(page_table, vma.base, vma.size, vma.backing_memory);
+        memory.MapMemoryRegion(page_table, vma.base, vma.size, vma.backing_memory);
         break;
     case VMAType::MMIO:
-        Memory::MapIoRegion(page_table, vma.base, vma.size, vma.mmio_handler);
+        memory.MapIoRegion(page_table, vma.base, vma.size, vma.mmio_handler);
         break;
     }
+}
+
+ResultVal<std::vector<std::pair<u8*, u32>>> VMManager::GetBackingBlocksForRange(VAddr address,
+                                                                                u32 size) {
+    std::vector<std::pair<u8*, u32>> backing_blocks;
+    VAddr interval_target = address;
+    while (interval_target != address + size) {
+        auto vma = FindVMA(interval_target);
+        if (vma->second.type != VMAType::BackingMemory) {
+            LOG_ERROR(Kernel, "Trying to use already freed memory");
+            return ERR_INVALID_ADDRESS_STATE;
+        }
+
+        VAddr interval_end = std::min(address + size, vma->second.base + vma->second.size);
+        u32 interval_size = interval_end - interval_target;
+        u8* backing_memory = vma->second.backing_memory + (interval_target - vma->second.base);
+        backing_blocks.push_back({backing_memory, interval_size});
+
+        interval_target += interval_size;
+    }
+    return MakeResult(backing_blocks);
 }
 } // namespace Kernel

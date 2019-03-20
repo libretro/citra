@@ -4,9 +4,8 @@
 
 #include <tuple>
 #include "common/assert.h"
-#include "core/hle/kernel/client_port.h"
+#include "core/core.h"
 #include "core/hle/kernel/client_session.h"
-#include "core/hle/kernel/server_port.h"
 #include "core/hle/result.h"
 #include "core/hle/service/sm/sm.h"
 #include "core/hle/service/sm/srv.h"
@@ -23,12 +22,14 @@ static ResultCode ValidateServiceName(const std::string& name) {
     return RESULT_SUCCESS;
 }
 
-void ServiceManager::InstallInterfaces(std::shared_ptr<ServiceManager> self) {
-    ASSERT(self->srv_interface.expired());
+ServiceManager::ServiceManager(Core::System& system) : system(system) {}
 
-    auto srv = std::make_shared<SRV>(self);
-    srv->InstallAsNamedPort();
-    self->srv_interface = srv;
+void ServiceManager::InstallInterfaces(Core::System& system) {
+    ASSERT(system.ServiceManager().srv_interface.expired());
+
+    auto srv = std::make_shared<SRV>(system);
+    srv->InstallAsNamedPort(system.Kernel());
+    system.ServiceManager().srv_interface = srv;
 }
 
 ResultVal<Kernel::SharedPtr<Kernel::ServerPort>> ServiceManager::RegisterService(
@@ -39,12 +40,10 @@ ResultVal<Kernel::SharedPtr<Kernel::ServerPort>> ServiceManager::RegisterService
     if (registered_services.find(name) != registered_services.end())
         return ERR_ALREADY_REGISTERED;
 
-    Kernel::SharedPtr<Kernel::ServerPort> server_port;
-    Kernel::SharedPtr<Kernel::ClientPort> client_port;
-    std::tie(server_port, client_port) = Kernel::ServerPort::CreatePortPair(max_sessions, name);
+    auto [server_port, client_port] = system.Kernel().CreatePortPair(max_sessions, name);
 
     registered_services.emplace(std::move(name), std::move(client_port));
-    return MakeResult<Kernel::SharedPtr<Kernel::ServerPort>>(std::move(server_port));
+    return MakeResult(std::move(server_port));
 }
 
 ResultVal<Kernel::SharedPtr<Kernel::ClientPort>> ServiceManager::GetServicePort(
@@ -56,7 +55,7 @@ ResultVal<Kernel::SharedPtr<Kernel::ClientPort>> ServiceManager::GetServicePort(
         return ERR_SERVICE_NOT_REGISTERED;
     }
 
-    return MakeResult<Kernel::SharedPtr<Kernel::ClientPort>>(it->second);
+    return MakeResult(it->second);
 }
 
 ResultVal<Kernel::SharedPtr<Kernel::ClientSession>> ServiceManager::ConnectToService(

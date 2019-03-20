@@ -21,12 +21,13 @@
 #include "core/tracer/recorder.h"
 #include "video_core/debug_utils/debug_utils.h"
 #include "video_core/rasterizer_interface.h"
+#include "video_core/renderer_opengl/gl_vars.h"
 #include "video_core/renderer_opengl/renderer_opengl.h"
 #include "video_core/video_core.h"
 
-static const char vertex_shader[] = R"(
-#version 150 core
+namespace OpenGL {
 
+static const char vertex_shader[] = R"(
 in vec2 vert_position;
 in vec2 vert_tex_coord;
 out vec2 frag_tex_coord;
@@ -48,8 +49,6 @@ void main() {
 )";
 
 static const char fragment_shader[] = R"(
-#version 150 core
-
 in vec2 frag_tex_coord;
 out vec4 color;
 
@@ -140,7 +139,39 @@ void RendererOpenGL::SwapBuffers() {
         }
     }
 
-    DrawScreens();
+    if (VideoCore::g_renderer_screenshot_requested) {
+        // Draw this frame to the screenshot framebuffer
+        screenshot_framebuffer.Create();
+        GLuint old_read_fb = state.draw.read_framebuffer;
+        GLuint old_draw_fb = state.draw.draw_framebuffer;
+        state.draw.read_framebuffer = state.draw.draw_framebuffer = screenshot_framebuffer.handle;
+        state.Apply();
+
+        Layout::FramebufferLayout layout{VideoCore::g_screenshot_framebuffer_layout};
+
+        GLuint renderbuffer;
+        glGenRenderbuffers(1, &renderbuffer);
+        glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_RGB8, layout.width, layout.height);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER,
+                                  renderbuffer);
+
+        DrawScreens(layout);
+
+        glReadPixels(0, 0, layout.width, layout.height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
+                     VideoCore::g_screenshot_bits);
+
+        screenshot_framebuffer.Release();
+        state.draw.read_framebuffer = old_read_fb;
+        state.draw.draw_framebuffer = old_draw_fb;
+        state.Apply();
+        glDeleteRenderbuffers(1, &renderbuffer);
+
+        VideoCore::g_screenshot_complete_callback();
+        VideoCore::g_renderer_screenshot_requested = false;
+    }
+
+    DrawScreens(render_window.GetFramebufferLayout());
 
     Core::System::GetInstance().perf_stats.EndSystemFrame();
 
@@ -148,7 +179,8 @@ void RendererOpenGL::SwapBuffers() {
     render_window.PollEvents();
     render_window.SwapBuffers();
 
-    Core::System::GetInstance().frame_limiter.DoFrameLimiting(CoreTiming::GetGlobalTimeUs());
+    Core::System::GetInstance().frame_limiter.DoFrameLimiting(
+        Core::System::GetInstance().CoreTiming().GetGlobalTimeUs());
     Core::System::GetInstance().perf_stats.BeginSystemFrame();
 
     prev_state.Apply();
@@ -191,11 +223,11 @@ void RendererOpenGL::LoadFBToScreenInfo(const GPU::Regs::FramebufferConfig& fram
                                          static_cast<u32>(pixel_stride), screen_info)) {
         // Reset the screen info's display texture to its own permanent texture
         screen_info.display_texture = screen_info.texture.resource.handle;
-        screen_info.display_texcoords = MathUtil::Rectangle<float>(0.f, 0.f, 1.f, 1.f);
+        screen_info.display_texcoords = Common::Rectangle<float>(0.f, 0.f, 1.f, 1.f);
 
         Memory::RasterizerFlushRegion(framebuffer_addr, framebuffer.stride * framebuffer.height);
 
-        const u8* framebuffer_data = Memory::GetPhysicalPointer(framebuffer_addr);
+        const u8* framebuffer_data = VideoCore::g_memory->GetPhysicalPointer(framebuffer_addr);
 
         state.texture_units[0].texture_2d = screen_info.texture.resource.handle;
         state.Apply();
@@ -246,7 +278,13 @@ void RendererOpenGL::InitOpenGLObjects() {
                  0.0f);
 
     // Link shaders and get variable locations
-    shader.Create(vertex_shader, fragment_shader);
+    if (GLES) {
+        std::string frag_source(fragment_shader_precision_OES);
+        frag_source += fragment_shader;
+        shader.Create(vertex_shader, frag_source.data());
+    } else {
+        shader.Create(vertex_shader, fragment_shader);
+    }
     state.draw.shader_program = shader.handle;
     state.Apply();
     uniform_modelview_matrix = glGetUniformLocation(shader.handle, "modelview_matrix");
@@ -311,7 +349,7 @@ void RendererOpenGL::ConfigureFramebufferTexture(TextureInfo& texture,
     case GPU::Regs::PixelFormat::RGBA8:
         internal_format = GL_RGBA;
         texture.gl_format = GL_RGBA;
-        texture.gl_type = GL_UNSIGNED_INT_8_8_8_8;
+        texture.gl_type = GLES ? GL_UNSIGNED_BYTE : GL_UNSIGNED_INT_8_8_8_8;
         break;
 
     case GPU::Regs::PixelFormat::RGB8:
@@ -320,7 +358,9 @@ void RendererOpenGL::ConfigureFramebufferTexture(TextureInfo& texture,
         // mostly everywhere) for words or half-words.
         // TODO: check how those behave on big-endian processors.
         internal_format = GL_RGB;
-        texture.gl_format = GL_BGR;
+
+        // GLES Dosen't support BGR , Use RGB instead
+        texture.gl_format = GLES ? GL_RGB : GL_BGR;
         texture.gl_type = GL_UNSIGNED_BYTE;
         break;
 
@@ -385,14 +425,13 @@ void RendererOpenGL::DrawSingleScreenRotated(const ScreenInfo& screen_info, floa
 /**
  * Draws the emulated screens to the emulator window.
  */
-void RendererOpenGL::DrawScreens() {
+void RendererOpenGL::DrawScreens(const Layout::FramebufferLayout& layout) {
     if (VideoCore::g_renderer_bg_color_update_requested.exchange(false)) {
         // Update background color before drawing
         glClearColor(Settings::values.bg_red, Settings::values.bg_green, Settings::values.bg_blue,
                      0.0f);
     }
 
-    auto layout = render_window.GetFramebufferLayout();
     const auto& top_screen = layout.top_screen;
     const auto& bottom_screen = layout.bottom_screen;
 
@@ -522,11 +561,11 @@ Core::System::ResultStatus RendererOpenGL::Init() {
     Core::Telemetry().AddField(Telemetry::FieldType::UserSystem, "GPU_Model", gpu_model);
     Core::Telemetry().AddField(Telemetry::FieldType::UserSystem, "GPU_OpenGL_Version", gl_version);
 
-    if (gpu_vendor == "GDI Generic") {
+    if (!strcmp(gpu_vendor, "GDI Generic")) {
         return Core::System::ResultStatus::ErrorVideoCore_ErrorGenericDrivers;
     }
 
-    if (!GLAD_GL_VERSION_3_3) {
+    if (!(GLAD_GL_VERSION_3_3 || GLAD_GL_ES_VERSION_3_1)) {
         return Core::System::ResultStatus::ErrorVideoCore_ErrorBelowGL33;
     }
 
@@ -539,3 +578,5 @@ Core::System::ResultStatus RendererOpenGL::Init() {
 
 /// Shutdown the renderer
 void RendererOpenGL::ShutDown() {}
+
+} // namespace OpenGL

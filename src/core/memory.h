@@ -6,11 +6,13 @@
 
 #include <array>
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
-#include <boost/optional.hpp>
 #include "common/common_types.h"
 #include "core/mmio.h"
+
+class ARM_Interface;
 
 namespace Kernel {
 class Process;
@@ -18,6 +20,9 @@ class Process;
 
 namespace Memory {
 
+// Are defined in a system header
+#undef PAGE_SIZE
+#undef PAGE_MASK
 /**
  * Page size used by the ARM architecture. This is the smallest granularity with which memory can
  * be mapped.
@@ -75,7 +80,7 @@ struct PageTable {
 enum : PAddr {
     /// IO register area
     IO_AREA_PADDR = 0x10100000,
-    IO_AREA_SIZE = 0x01000000, ///< IO area size (16MB)
+    IO_AREA_SIZE = 0x00400000, ///< IO area size (4MB)
     IO_AREA_PADDR_END = IO_AREA_PADDR + IO_AREA_SIZE,
 
     /// MPCore internal memory region
@@ -176,69 +181,6 @@ enum : VAddr {
     NEW_LINEAR_HEAP_VADDR_END = NEW_LINEAR_HEAP_VADDR + NEW_LINEAR_HEAP_SIZE,
 };
 
-/// Currently active page table
-void SetCurrentPageTable(PageTable* page_table);
-PageTable* GetCurrentPageTable();
-
-/// Determines if the given VAddr is valid for the specified process.
-bool IsValidVirtualAddress(const Kernel::Process& process, VAddr vaddr);
-bool IsValidVirtualAddress(VAddr vaddr);
-
-bool IsValidPhysicalAddress(PAddr paddr);
-
-u8 Read8(VAddr addr);
-u16 Read16(VAddr addr);
-u32 Read32(VAddr addr);
-u64 Read64(VAddr addr);
-
-void Write8(VAddr addr, u8 data);
-void Write16(VAddr addr, u16 data);
-void Write32(VAddr addr, u32 data);
-void Write64(VAddr addr, u64 data);
-
-void ReadBlock(const Kernel::Process& process, VAddr src_addr, void* dest_buffer, std::size_t size);
-void ReadBlock(VAddr src_addr, void* dest_buffer, std::size_t size);
-void WriteBlock(const Kernel::Process& process, VAddr dest_addr, const void* src_buffer,
-                std::size_t size);
-void WriteBlock(VAddr dest_addr, const void* src_buffer, std::size_t size);
-void ZeroBlock(const Kernel::Process& process, VAddr dest_addr, const std::size_t size);
-void ZeroBlock(VAddr dest_addr, const std::size_t size);
-void CopyBlock(const Kernel::Process& process, VAddr dest_addr, VAddr src_addr, std::size_t size);
-void CopyBlock(VAddr dest_addr, VAddr src_addr, std::size_t size);
-
-u8* GetPointer(VAddr vaddr);
-
-std::string ReadCString(VAddr vaddr, std::size_t max_length);
-
-/**
- * Converts a virtual address inside a region with 1:1 mapping to physical memory to a physical
- * address. This should be used by services to translate addresses for use by the hardware.
- */
-boost::optional<PAddr> TryVirtualToPhysicalAddress(VAddr addr);
-
-/**
- * Converts a virtual address inside a region with 1:1 mapping to physical memory to a physical
- * address. This should be used by services to translate addresses for use by the hardware.
- *
- * @deprecated Use TryVirtualToPhysicalAddress(), which reports failure.
- */
-PAddr VirtualToPhysicalAddress(VAddr addr);
-
-/**
- * Undoes a mapping performed by VirtualToPhysicalAddress().
- */
-boost::optional<VAddr> PhysicalToVirtualAddress(PAddr paddr);
-
-/**
- * Gets a pointer to the memory region beginning at the specified physical address.
- */
-u8* GetPhysicalPointer(PAddr address);
-
-/**
- * Mark each page touching the region as cached.
- */
-void RasterizerMarkRegionCached(PAddr start, u32 size, bool cached);
-
 /**
  * Flushes any externally cached rasterizer resources touching the given region.
  */
@@ -268,5 +210,111 @@ enum class FlushMode {
  * address region.
  */
 void RasterizerFlushVirtualRegion(VAddr start, u32 size, FlushMode mode);
+
+class MemorySystem {
+public:
+    MemorySystem();
+    ~MemorySystem();
+
+    /// Sets CPU to notify page table change
+    void SetCPU(ARM_Interface& cpu);
+
+    /**
+     * Maps an allocated buffer onto a region of the emulated process address space.
+     *
+     * @param page_table The page table of the emulated process.
+     * @param base The address to start mapping at. Must be page-aligned.
+     * @param size The amount of bytes to map. Must be page-aligned.
+     * @param target Buffer with the memory backing the mapping. Must be of length at least `size`.
+     */
+    void MapMemoryRegion(PageTable& page_table, VAddr base, u32 size, u8* target);
+
+    /**
+     * Maps a region of the emulated process address space as a IO region.
+     * @param page_table The page table of the emulated process.
+     * @param base The address to start mapping at. Must be page-aligned.
+     * @param size The amount of bytes to map. Must be page-aligned.
+     * @param mmio_handler The handler that backs the mapping.
+     */
+    void MapIoRegion(PageTable& page_table, VAddr base, u32 size, MMIORegionPointer mmio_handler);
+
+    void UnmapRegion(PageTable& page_table, VAddr base, u32 size);
+
+    /// Currently active page table
+    void SetCurrentPageTable(PageTable* page_table);
+    PageTable* GetCurrentPageTable() const;
+
+    u8 Read8(VAddr addr);
+    u16 Read16(VAddr addr);
+    u32 Read32(VAddr addr);
+    u64 Read64(VAddr addr);
+
+    void Write8(VAddr addr, u8 data);
+    void Write16(VAddr addr, u16 data);
+    void Write32(VAddr addr, u32 data);
+    void Write64(VAddr addr, u64 data);
+
+    void ReadBlock(const Kernel::Process& process, VAddr src_addr, void* dest_buffer,
+                   std::size_t size);
+    void WriteBlock(const Kernel::Process& process, VAddr dest_addr, const void* src_buffer,
+                    std::size_t size);
+    void ZeroBlock(const Kernel::Process& process, VAddr dest_addr, const std::size_t size);
+    void CopyBlock(const Kernel::Process& process, VAddr dest_addr, VAddr src_addr,
+                   std::size_t size);
+    void CopyBlock(const Kernel::Process& src_process, const Kernel::Process& dest_process,
+                   VAddr src_addr, VAddr dest_addr, std::size_t size);
+
+    std::string ReadCString(VAddr vaddr, std::size_t max_length);
+
+    /**
+     * Gets a pointer to the memory region beginning at the specified physical address.
+     */
+    u8* GetPhysicalPointer(PAddr address);
+
+    u8* GetPointer(VAddr vaddr);
+
+    bool IsValidPhysicalAddress(PAddr paddr);
+
+    /// Gets offset in FCRAM from a pointer inside FCRAM range
+    u32 GetFCRAMOffset(u8* pointer);
+
+    /// Gets pointer in FCRAM with given offset
+    u8* GetFCRAMPointer(u32 offset);
+
+    /**
+     * Mark each page touching the region as cached.
+     */
+    void RasterizerMarkRegionCached(PAddr start, u32 size, bool cached);
+
+    /// Registers page table for rasterizer cache marking
+    void RegisterPageTable(PageTable* page_table);
+
+    /// Unregisters page table for rasterizer cache marking
+    void UnregisterPageTable(PageTable* page_table);
+
+private:
+    template <typename T>
+    T Read(const VAddr vaddr);
+
+    template <typename T>
+    void Write(const VAddr vaddr, const T data);
+
+    /**
+     * Gets the pointer for virtual memory where the page is marked as RasterizerCachedMemory.
+     * This is used to access the memory where the page pointer is nullptr due to rasterizer cache.
+     * Since the cache only happens on linear heap or VRAM, we know the exact physical address and
+     * pointer of such virtual address
+     */
+    u8* GetPointerForRasterizerCache(VAddr addr);
+
+    void MapPages(PageTable& page_table, u32 base, u32 size, u8* memory, PageType type);
+
+    class Impl;
+
+    std::unique_ptr<Impl> impl;
+};
+
+/// Determines if the given VAddr is valid for the specified process.
+bool IsValidVirtualAddress(const Kernel::Process& process, VAddr vaddr);
 
 } // namespace Memory

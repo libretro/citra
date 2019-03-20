@@ -12,6 +12,7 @@
 #include "core/arm/dyncom/arm_dyncom_interpreter.h"
 #include "core/core.h"
 #include "core/core_timing.h"
+#include "core/gdbstub/gdbstub.h"
 #include "core/hle/kernel/svc.h"
 #include "core/memory.h"
 
@@ -70,33 +71,35 @@ private:
 
 class DynarmicUserCallbacks final : public Dynarmic::A32::UserCallbacks {
 public:
-    explicit DynarmicUserCallbacks(ARM_Dynarmic& parent) : parent(parent) {}
+    explicit DynarmicUserCallbacks(ARM_Dynarmic& parent)
+        : parent(parent), timing(parent.system.CoreTiming()), svc_context(parent.system),
+          memory(parent.memory) {}
     ~DynarmicUserCallbacks() = default;
 
     std::uint8_t MemoryRead8(VAddr vaddr) override {
-        return Memory::Read8(vaddr);
+        return memory.Read8(vaddr);
     }
     std::uint16_t MemoryRead16(VAddr vaddr) override {
-        return Memory::Read16(vaddr);
+        return memory.Read16(vaddr);
     }
     std::uint32_t MemoryRead32(VAddr vaddr) override {
-        return Memory::Read32(vaddr);
+        return memory.Read32(vaddr);
     }
     std::uint64_t MemoryRead64(VAddr vaddr) override {
-        return Memory::Read64(vaddr);
+        return memory.Read64(vaddr);
     }
 
     void MemoryWrite8(VAddr vaddr, std::uint8_t value) override {
-        Memory::Write8(vaddr, value);
+        memory.Write8(vaddr, value);
     }
     void MemoryWrite16(VAddr vaddr, std::uint16_t value) override {
-        Memory::Write16(vaddr, value);
+        memory.Write16(vaddr, value);
     }
     void MemoryWrite32(VAddr vaddr, std::uint32_t value) override {
-        Memory::Write32(vaddr, value);
+        memory.Write32(vaddr, value);
     }
     void MemoryWrite64(VAddr vaddr, std::uint64_t value) override {
-        Memory::Write64(vaddr, value);
+        memory.Write64(vaddr, value);
     }
 
     void InterpreterFallback(VAddr pc, std::size_t num_instructions) override {
@@ -121,28 +124,49 @@ public:
     }
 
     void CallSVC(std::uint32_t swi) override {
-        Kernel::CallSVC(swi);
+        svc_context.CallSVC(swi);
     }
 
     void ExceptionRaised(VAddr pc, Dynarmic::A32::Exception exception) override {
+        switch (exception) {
+        case Dynarmic::A32::Exception::UndefinedInstruction:
+        case Dynarmic::A32::Exception::UnpredictableInstruction:
+            break;
+        case Dynarmic::A32::Exception::Breakpoint:
+            if (GDBStub::IsConnected()) {
+                parent.jit->HaltExecution();
+                parent.SetPC(pc);
+                Kernel::Thread* thread =
+                    parent.system.Kernel().GetThreadManager().GetCurrentThread();
+                parent.SaveContext(thread->context);
+                GDBStub::Break();
+                GDBStub::SendTrap(thread, 5);
+                return;
+            }
+            break;
+        }
         ASSERT_MSG(false, "ExceptionRaised(exception = {}, pc = {:08X}, code = {:08X})",
                    static_cast<std::size_t>(exception), pc, MemoryReadCode(pc));
     }
 
     void AddTicks(std::uint64_t ticks) override {
-        CoreTiming::AddTicks(ticks);
+        timing.AddTicks(ticks);
     }
     std::uint64_t GetTicksRemaining() override {
-        s64 ticks = CoreTiming::GetDowncount();
+        s64 ticks = timing.GetDowncount();
         return static_cast<u64>(ticks <= 0 ? 0 : ticks);
     }
 
     ARM_Dynarmic& parent;
+    Core::Timing& timing;
+    Kernel::SVCContext svc_context;
+    Memory::MemorySystem& memory;
 };
 
-ARM_Dynarmic::ARM_Dynarmic(PrivilegeMode initial_mode)
-    : cb(std::make_unique<DynarmicUserCallbacks>(*this)) {
-    interpreter_state = std::make_shared<ARMul_State>(initial_mode);
+ARM_Dynarmic::ARM_Dynarmic(Core::System* system, Memory::MemorySystem& memory,
+                           PrivilegeMode initial_mode)
+    : system(*system), memory(memory), cb(std::make_unique<DynarmicUserCallbacks>(*this)) {
+    interpreter_state = std::make_shared<ARMul_State>(system, memory, initial_mode);
     PageTableChanged();
 }
 
@@ -151,7 +175,7 @@ ARM_Dynarmic::~ARM_Dynarmic() = default;
 MICROPROFILE_DEFINE(ARM_Jit, "ARM JIT", "ARM JIT", MP_RGB(255, 64, 64));
 
 void ARM_Dynarmic::Run() {
-    ASSERT(Memory::GetCurrentPageTable() == current_page_table);
+    ASSERT(memory.GetCurrentPageTable() == current_page_table);
     MICROPROFILE_SCOPE(ARM_Jit);
 
     jit->Run();
@@ -258,7 +282,7 @@ void ARM_Dynarmic::InvalidateCacheRange(u32 start_address, std::size_t length) {
 }
 
 void ARM_Dynarmic::PageTableChanged() {
-    current_page_table = Memory::GetCurrentPageTable();
+    current_page_table = memory.GetCurrentPageTable();
 
     auto iter = jits.find(current_page_table);
     if (iter != jits.end()) {

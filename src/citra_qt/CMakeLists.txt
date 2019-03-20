@@ -14,6 +14,8 @@ add_executable(citra-qt
     applets/swkbd.h
     bootmanager.cpp
     bootmanager.h
+    compatibility_list.cpp
+    compatibility_list.h
     camera/camera_util.cpp
     camera/camera_util.h
     camera/still_image_camera.cpp
@@ -22,6 +24,8 @@ add_executable(citra-qt
     camera/qt_camera_base.h
     camera/qt_multimedia_camera.cpp
     camera/qt_multimedia_camera.h
+    cheats.cpp
+    cheats.h
     citra-qt.rc
     configuration/config.cpp
     configuration/config.h
@@ -37,12 +41,16 @@ add_executable(citra-qt
     configuration/configure_general.h
     configuration/configure_graphics.cpp
     configuration/configure_graphics.h
+    configuration/configure_hotkeys.cpp
+    configuration/configure_hotkeys.h
     configuration/configure_input.cpp
     configuration/configure_input.h
     configuration/configure_motion_touch.cpp
     configuration/configure_motion_touch.h
     configuration/configure_system.cpp
     configuration/configure_system.h
+    configuration/configure_ui.cpp
+    configuration/configure_ui.h
     configuration/configure_web.cpp
     configuration/configure_web.h
     debugger/console.h
@@ -74,6 +82,8 @@ add_executable(citra-qt
     game_list.cpp
     game_list.h
     game_list_p.h
+    game_list_worker.cpp
+    game_list_worker.h
     hotkeys.cpp
     hotkeys.h
     main.cpp
@@ -91,6 +101,8 @@ add_executable(citra-qt
     multiplayer/lobby.cpp
     multiplayer/message.h
     multiplayer/message.cpp
+    multiplayer/moderation_dialog.cpp
+    multiplayer/moderation_dialog.h
     multiplayer/state.cpp
     multiplayer/state.h
     multiplayer/validation.h
@@ -99,8 +111,10 @@ add_executable(citra-qt
     updater/updater.cpp
     updater/updater.h
     updater/updater_p.h
-    util/clickable_label.h
     util/clickable_label.cpp
+    util/clickable_label.h
+    util/sequence_dialog/sequence_dialog.cpp
+    util/sequence_dialog/sequence_dialog.h
     util/spinbox.cpp
     util/spinbox.h
     util/util.cpp
@@ -116,9 +130,11 @@ set(UIS
     configuration/configure_debug.ui
     configuration/configure_general.ui
     configuration/configure_graphics.ui
+    configuration/configure_hotkeys.ui
     configuration/configure_input.ui
     configuration/configure_motion_touch.ui
     configuration/configure_system.ui
+    configuration/configure_ui.ui
     configuration/configure_web.ui
     debugger/registers.ui
     multiplayer/direct_connect.ui
@@ -126,22 +142,23 @@ set(UIS
     multiplayer/chat_room.ui
     multiplayer/client_room.ui
     multiplayer/host_room.ui
+    multiplayer/moderation_dialog.ui
     aboutdialog.ui
-    hotkeys.ui
+    cheats.ui
     main.ui
     compatdb.ui
 )
 
 file(GLOB COMPAT_LIST
-     ${CMAKE_BINARY_DIR}/dist/compatibility_list/compatibility_list.qrc
-     ${CMAKE_BINARY_DIR}/dist/compatibility_list/compatibility_list.json)
-file(GLOB_RECURSE ICONS ${CMAKE_SOURCE_DIR}/dist/icons/*)
-file(GLOB_RECURSE THEMES ${CMAKE_SOURCE_DIR}/dist/qt_themes/*)
+     ${PROJECT_BINARY_DIR}/dist/compatibility_list/compatibility_list.qrc
+     ${PROJECT_BINARY_DIR}/dist/compatibility_list/compatibility_list.json)
+file(GLOB_RECURSE ICONS ${PROJECT_SOURCE_DIR}/dist/icons/*)
+file(GLOB_RECURSE THEMES ${PROJECT_SOURCE_DIR}/dist/qt_themes/*)
 
 qt5_wrap_ui(UI_HDRS ${UIS})
 
 if (ENABLE_QT_TRANSLATION)
-    set(CITRA_QT_LANGUAGES "${CMAKE_SOURCE_DIR}/dist/languages" CACHE PATH "Path to the translation bundle for the Qt frontend")
+    set(CITRA_QT_LANGUAGES "${PROJECT_SOURCE_DIR}/dist/languages" CACHE PATH "Path to the translation bundle for the Qt frontend")
     option(GENERATE_QT_TRANSLATION "Generate en.ts as the translation source file" OFF)
 
     # Update source TS file if enabled
@@ -205,6 +222,10 @@ target_link_libraries(citra-qt PRIVATE audio_core common core input_common netwo
 target_link_libraries(citra-qt PRIVATE Boost::boost glad nihstro-headers Qt5::OpenGL Qt5::Widgets Qt5::Multimedia)
 target_link_libraries(citra-qt PRIVATE ${PLATFORM_LIBRARIES} Threads::Threads)
 
+if (CITRA_ENABLE_COMPATIBILITY_REPORTING)
+    target_compile_definitions(citra-qt PRIVATE -DCITRA_ENABLE_COMPATIBILITY_REPORTING)
+endif()
+
 if (USE_DISCORD_PRESENCE)
     target_sources(citra-qt PUBLIC
         discord_impl.cpp
@@ -212,6 +233,10 @@ if (USE_DISCORD_PRESENCE)
     )
     target_link_libraries(citra-qt PRIVATE discord-rpc)
     target_compile_definitions(citra-qt PRIVATE -DUSE_DISCORD_PRESENCE)
+endif()
+
+if (ENABLE_WEB_SERVICE)
+    target_compile_definitions(citra-qt PRIVATE -DENABLE_WEB_SERVICE)
 endif()
 
 if(UNIX AND NOT APPLE)

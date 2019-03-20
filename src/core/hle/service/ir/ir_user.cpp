@@ -6,6 +6,7 @@
 #include <boost/crc.hpp>
 #include "common/string_util.h"
 #include "common/swap.h"
+#include "core/core.h"
 #include "core/hle/ipc_helpers.h"
 #include "core/hle/kernel/event.h"
 #include "core/hle/kernel/shared_memory.h"
@@ -182,7 +183,7 @@ private:
 
 /// Wraps the payload into packet and puts it to the receive buffer
 void IR_USER::PutToReceive(const std::vector<u8>& payload) {
-    LOG_TRACE(Service_IR, "called, data={}", Common::ArrayToString(payload.data(), payload.size()));
+    LOG_TRACE(Service_IR, "called, data={}", fmt::format("{:02x}", fmt::join(payload, " ")));
     std::size_t size = payload.size();
 
     std::vector<u8> packet;
@@ -239,7 +240,7 @@ void IR_USER::InitializeIrNopShared(Kernel::HLERequestContext& ctx) {
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
 
-    shared_memory->name = "IR_USER: shared memory";
+    shared_memory->SetName("IR_USER: shared memory");
 
     receive_buffer = std::make_unique<BufferManager>(shared_memory, 0x10, 0x20,
                                                      recv_buff_packet_count, recv_buff_size);
@@ -360,7 +361,7 @@ void IR_USER::SendIrNop(Kernel::HLERequestContext& ctx) {
                            ErrorSummary::InvalidState, ErrorLevel::Status));
     }
 
-    LOG_TRACE(Service_IR, "called, data={}", Common::ArrayToString(buffer.data(), size));
+    LOG_TRACE(Service_IR, "called, data={}", fmt::format("{:02x}", fmt::join(buffer, " ")));
 }
 
 void IR_USER::ReleaseReceivedData(Kernel::HLERequestContext& ctx) {
@@ -380,7 +381,7 @@ void IR_USER::ReleaseReceivedData(Kernel::HLERequestContext& ctx) {
     LOG_TRACE(Service_IR, "called, count={}", count);
 }
 
-IR_USER::IR_USER() : ServiceFramework("ir:USER", 1) {
+IR_USER::IR_USER(Core::System& system) : ServiceFramework("ir:USER", 1) {
     const FunctionInfo functions[] = {
         {0x00010182, nullptr, "InitializeIrNop"},
         {0x00020000, &IR_USER::FinalizeIrNop, "FinalizeIrNop"},
@@ -413,9 +414,9 @@ IR_USER::IR_USER() : ServiceFramework("ir:USER", 1) {
 
     using namespace Kernel;
 
-    conn_status_event = Event::Create(ResetType::OneShot, "IR:ConnectionStatusEvent");
-    send_event = Event::Create(ResetType::OneShot, "IR:SendEvent");
-    receive_event = Event::Create(ResetType::OneShot, "IR:ReceiveEvent");
+    conn_status_event = system.Kernel().CreateEvent(ResetType::OneShot, "IR:ConnectionStatusEvent");
+    send_event = system.Kernel().CreateEvent(ResetType::OneShot, "IR:SendEvent");
+    receive_event = system.Kernel().CreateEvent(ResetType::OneShot, "IR:ReceiveEvent");
 
     extra_hid =
         std::make_unique<ExtraHID>([this](const std::vector<u8>& data) { PutToReceive(data); });

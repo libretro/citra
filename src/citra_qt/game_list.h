@@ -4,9 +4,10 @@
 
 #pragma once
 
-#include <unordered_map>
+#include <QMenu>
 #include <QString>
 #include <QWidget>
+#include "citra_qt/compatibility_list.h"
 #include "common/common_types.h"
 #include "ui_settings.h"
 
@@ -27,7 +28,7 @@ class QTreeView;
 class QToolButton;
 class QVBoxLayout;
 
-enum class GameListOpenTarget { SAVE_DATA = 0, APPLICATION = 1, UPDATE_DATA = 2 };
+enum class GameListOpenTarget { SAVE_DATA = 0, EXT_DATA = 1, APPLICATION = 2, UPDATE_DATA = 3 };
 
 class GameList : public QWidget {
     Q_OBJECT
@@ -49,6 +50,7 @@ public:
     void clearFilter();
     void setFilterFocus();
     void setFilterVisible(bool visibility);
+    void setDirectoryWatcherEnabled(bool enabled);
     bool isEmpty();
 
     void LoadCompatibilityList();
@@ -61,15 +63,16 @@ public:
 
     QString FindGameByProgramID(u64 program_id);
 
+    void RefreshGameDirectory();
+
     static const QStringList supported_file_extensions;
 
 signals:
     void GameChosen(QString game_path);
     void ShouldCancelWorker();
     void OpenFolderRequested(u64 program_id, GameListOpenTarget target);
-    void NavigateToGamedbEntryRequested(
-        u64 program_id,
-        std::unordered_map<std::string, std::pair<QString, QString>>& compatibility_list);
+    void NavigateToGamedbEntryRequested(u64 program_id,
+                                        const CompatibilityList& compatibility_list);
     void OpenDirectory(QString directory);
     void AddDirectory();
     void ShowList(bool show);
@@ -86,10 +89,8 @@ private:
     void ValidateEntry(const QModelIndex& item);
     void DonePopulating(QStringList watch_list);
 
-    void RefreshGameDirectory();
-
     void PopupContextMenu(const QPoint& menu_location);
-    void AddGamePopup(QMenu& context_menu, u64 program_id);
+    void AddGamePopup(QMenu& context_menu, const QString& path, u64 program_id, u64 extdata_id);
     void AddCustomDirPopup(QMenu& context_menu, QModelIndex selected);
     void AddPermDirPopup(QMenu& context_menu, QModelIndex selected);
 
@@ -102,7 +103,7 @@ private:
     QStandardItemModel* item_model = nullptr;
     GameListWorker* current_worker = nullptr;
     QFileSystemWatcher* watcher = nullptr;
-    std::unordered_map<std::string, std::pair<QString, QString>> compatibility_list;
+    CompatibilityList compatibility_list;
 
     friend class GameListSearchField;
 };

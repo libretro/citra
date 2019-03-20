@@ -6,9 +6,9 @@
 
 #include <array>
 #include <cstddef>
+#include <optional>
 #include <utility>
 #include <vector>
-#include <boost/optional.hpp>
 #include <nihstro/shader_bytecode.h>
 #include <xbyak.h>
 #include "common/bit_set.h"
@@ -19,9 +19,7 @@ using nihstro::Instruction;
 using nihstro::OpCode;
 using nihstro::SwizzlePattern;
 
-namespace Pica {
-
-namespace Shader {
+namespace Pica::Shader {
 
 /// Memory allocated for each compiled shader
 constexpr std::size_t MAX_SHADER_SIZE = MAX_PROGRAM_CODE_LENGTH * 64;
@@ -123,7 +121,7 @@ private:
 
     /// Label pointing to the end of the current LOOP block. Used by the BREAKC instruction to break
     /// out of the loop.
-    boost::optional<Xbyak::Label> loop_break_label;
+    std::optional<Xbyak::Label> loop_break_label;
 
     /// Offsets in code where a return needs to be inserted
     std::vector<unsigned> return_offsets;
@@ -138,6 +136,4 @@ private:
     Xbyak::Label exp2_subroutine;
 };
 
-} // namespace Shader
-
-} // namespace Pica
+} // namespace Pica::Shader

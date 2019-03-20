@@ -72,7 +72,7 @@ void MouseTracker::Restrict(int minX, int minY, int maxX, int maxY) {
 }
 
 void MouseTracker::Update(int bufferWidth, int bufferHeight,
-                          MathUtil::Rectangle<unsigned> bottomScreen) {
+                          Common::Rectangle<unsigned> bottomScreen) {
     // Check mouse input
     bool state =
         (bool)(LibRetro::CheckInput(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT)) ||

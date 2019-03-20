@@ -13,7 +13,11 @@
 #include "video_core/renderer_opengl/gl_resource_manager.h"
 #include "video_core/renderer_opengl/gl_state.h"
 
-class EmuWindow;
+namespace Layout {
+struct FramebufferLayout;
+}
+
+namespace OpenGL {
 
 /// Structure used for storing information about the textures for each 3DS screen
 struct TextureInfo {
@@ -28,7 +32,7 @@ struct TextureInfo {
 /// Structure used for storing information about the display target for each 3DS screen
 struct ScreenInfo {
     GLuint display_texture;
-    MathUtil::Rectangle<float> display_texcoords;
+    Common::Rectangle<float> display_texcoords;
     TextureInfo texture;
 };
 
@@ -50,7 +54,7 @@ private:
     void InitOpenGLObjects();
     void ConfigureFramebufferTexture(TextureInfo& texture,
                                      const GPU::Regs::FramebufferConfig& framebuffer);
-    void DrawScreens();
+    void DrawScreens(const Layout::FramebufferLayout& layout);
     void DrawSingleScreenRotated(const ScreenInfo& screen_info, float x, float y, float w, float h);
     void UpdateFramerate();
 
@@ -66,6 +70,7 @@ private:
     OGLVertexArray vertex_array;
     OGLBuffer vertex_buffer;
     OGLProgram shader;
+    OGLFramebuffer screenshot_framebuffer;
 
     /// Display information for top and bottom screens respectively
     std::array<ScreenInfo, 3> screen_infos;
@@ -78,3 +83,5 @@ private:
     GLuint attrib_position;
     GLuint attrib_tex_coord;
 };
+
+} // namespace OpenGL

@@ -7,7 +7,7 @@
 #include "citra_qt/ui_settings.h"
 #include "core/core.h"
 #include "core/hle/service/cfg/cfg.h"
-#include "core/hle/service/fs/archive.h"
+#include "core/hle/service/ptm/ptm.h"
 #include "core/settings.h"
 #include "ui_configure_system.h"
 
@@ -220,12 +220,12 @@ ConfigureSystem::ConfigureSystem(QWidget* parent) : QWidget(parent), ui(new Ui::
     ui->setupUi(this);
     connect(ui->combo_birthmonth,
             static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this,
-            &ConfigureSystem::updateBirthdayComboBox);
+            &ConfigureSystem::UpdateBirthdayComboBox);
     connect(ui->combo_init_clock,
             static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this,
-            &ConfigureSystem::updateInitTime);
+            &ConfigureSystem::UpdateInitTime);
     connect(ui->button_regenerate_console_id, &QPushButton::clicked, this,
-            &ConfigureSystem::refreshConsoleID);
+            &ConfigureSystem::RefreshConsoleID);
     for (u8 i = 0; i < country_names.size(); i++) {
         if (country_names.at(i) != "") {
             ui->combo_country->addItem(tr(country_names.at(i)), i);
@@ -246,17 +246,15 @@ void ConfigureSystem::setConfiguration() {
     ui->edit_init_time->setDateTime(date_time);
 
     if (!enabled) {
-        cfg = Service::CFG::GetCurrentModule();
+        cfg = Service::CFG::GetModule(Core::System::GetInstance());
+        ASSERT_MSG(cfg, "CFG Module missing!");
         ReadSystemSettings();
         ui->group_system_settings->setEnabled(false);
     } else {
         // This tab is enabled only when game is not running (i.e. all service are not initialized).
-        // Temporarily register archive types and load the config savegame file to memory.
-        Service::FS::RegisterArchiveTypes();
         cfg = std::make_shared<Service::CFG::Module>();
-        Service::FS::UnregisterArchiveTypes();
-
         ReadSystemSettings();
+
         ui->label_disable_info->hide();
     }
 }
@@ -272,7 +270,7 @@ void ConfigureSystem::ReadSystemSettings() {
     // set birthday
     std::tie(birthmonth, birthday) = cfg->GetBirthday();
     ui->combo_birthmonth->setCurrentIndex(birthmonth - 1);
-    updateBirthdayComboBox(
+    UpdateBirthdayComboBox(
         birthmonth -
         1); // explicitly update it because the signal from setCurrentIndex is not reliable
     ui->combo_birthday->setCurrentIndex(birthday - 1);
@@ -293,6 +291,10 @@ void ConfigureSystem::ReadSystemSettings() {
     u64 console_id = cfg->GetConsoleUniqueId();
     ui->label_console_id->setText(
         tr("Console ID: 0x%1").arg(QString::number(console_id, 16).toUpper()));
+
+    // set play coin
+    play_coin = Service::PTM::Module::GetPlayCoins();
+    ui->spinBox_play_coins->setValue(play_coin);
 }
 
 void ConfigureSystem::applyConfiguration() {
@@ -340,6 +342,12 @@ void ConfigureSystem::applyConfiguration() {
         modified = true;
     }
 
+    // apply play coin
+    u16 new_play_coin = static_cast<u16>(ui->spinBox_play_coins->value());
+    if (play_coin != new_play_coin) {
+        Service::PTM::Module::SetPlayCoins(new_play_coin);
+    }
+
     // update the config savegame if any item is modified.
     if (modified)
         cfg->UpdateConfigNANDSavegame();
@@ -350,7 +358,7 @@ void ConfigureSystem::applyConfiguration() {
     Settings::Apply();
 }
 
-void ConfigureSystem::updateBirthdayComboBox(int birthmonth_index) {
+void ConfigureSystem::UpdateBirthdayComboBox(int birthmonth_index) {
     if (birthmonth_index < 0 || birthmonth_index >= 12)
         return;
 
@@ -383,17 +391,17 @@ void ConfigureSystem::ConfigureTime() {
 
     this->setConfiguration();
 
-    updateInitTime(ui->combo_init_clock->currentIndex());
+    UpdateInitTime(ui->combo_init_clock->currentIndex());
 }
 
-void ConfigureSystem::updateInitTime(int init_clock) {
+void ConfigureSystem::UpdateInitTime(int init_clock) {
     const bool is_fixed_time =
         static_cast<Settings::InitClock>(init_clock) == Settings::InitClock::FixedTime;
     ui->label_init_time->setVisible(is_fixed_time);
     ui->edit_init_time->setVisible(is_fixed_time);
 }
 
-void ConfigureSystem::refreshConsoleID() {
+void ConfigureSystem::RefreshConsoleID() {
     QMessageBox::StandardButton reply;
     QString warning_text = tr("This will replace your current virtual 3DS with a new one. "
                               "Your current virtual 3DS will not be recoverable. "
@@ -414,5 +422,4 @@ void ConfigureSystem::refreshConsoleID() {
 
 void ConfigureSystem::retranslateUi() {
     ui->retranslateUi(this);
-    ReadSystemSettings();
 }

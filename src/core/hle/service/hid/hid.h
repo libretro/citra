@@ -18,13 +18,17 @@
 #include "core/hle/service/service.h"
 #include "core/settings.h"
 
+namespace Core {
+class System;
+}
+
 namespace Kernel {
 class Event;
 class SharedMemory;
 } // namespace Kernel
 
-namespace CoreTiming {
-struct EventType;
+namespace Core {
+struct TimingEventType;
 };
 
 namespace Service::HID {
@@ -48,6 +52,8 @@ struct PadState {
         BitField<9, 1, u32> l;
         BitField<10, 1, u32> x;
         BitField<11, 1, u32> y;
+        BitField<12, 1, u32> debug;
+        BitField<13, 1, u32> gpio14;
 
         BitField<28, 1, u32> circle_right;
         BitField<29, 1, u32> circle_left;
@@ -198,11 +204,13 @@ DirectionState GetStickDirectionState(s16 circle_pad_x, s16 circle_pad_y);
 
 class Module final {
 public:
-    Module();
+    explicit Module(Core::System& system);
 
     class Interface : public ServiceFramework<Interface> {
     public:
         Interface(std::shared_ptr<Module> hid, const char* name, u32 max_session);
+
+        std::shared_ptr<Module> GetModule() const;
 
     protected:
         /**
@@ -293,11 +301,15 @@ public:
 
     void ReloadInputDevices();
 
+    const PadState& GetState() const;
+
 private:
     void LoadInputDevices();
     void UpdatePadCallback(u64 userdata, s64 cycles_late);
     void UpdateAccelerometerCallback(u64 userdata, s64 cycles_late);
     void UpdateGyroscopeCallback(u64 userdata, s64 cycles_late);
+
+    Core::System& system;
 
     // Handle to shared memory region designated to HID_User service
     Kernel::SharedPtr<Kernel::SharedMemory> shared_mem;
@@ -309,6 +321,10 @@ private:
     Kernel::SharedPtr<Kernel::Event> event_gyroscope;
     Kernel::SharedPtr<Kernel::Event> event_debug_pad;
 
+    // The HID module of a 3DS does not store the PadState.
+    // Storing this here was necessary for emulation specific tasks like cheats or scripting.
+    PadState state;
+
     u32 next_pad_index = 0;
     u32 next_touch_index = 0;
     u32 next_accelerometer_index = 0;
@@ -317,9 +333,9 @@ private:
     int enable_accelerometer_count = 0; // positive means enabled
     int enable_gyroscope_count = 0;     // positive means enabled
 
-    CoreTiming::EventType* pad_update_event;
-    CoreTiming::EventType* accelerometer_update_event;
-    CoreTiming::EventType* gyroscope_update_event;
+    Core::TimingEventType* pad_update_event;
+    Core::TimingEventType* accelerometer_update_event;
+    Core::TimingEventType* gyroscope_update_event;
 
     std::atomic<bool> is_device_reload_pending{true};
     std::array<std::unique_ptr<Input::ButtonDevice>, Settings::NativeButton::NUM_BUTTONS_HID>
@@ -329,8 +345,7 @@ private:
     std::unique_ptr<Input::TouchDevice> touch_device;
 };
 
-void InstallInterfaces(SM::ServiceManager& service_manager);
+std::shared_ptr<Module> GetModule(Core::System& system);
 
-/// Reload input devices. Used when input configuration changed
-void ReloadInputDevices();
+void InstallInterfaces(Core::System& system);
 } // namespace Service::HID

@@ -9,7 +9,10 @@
 #include "video_core/regs_lighting.h"
 #include "video_core/renderer_opengl/gl_resource_manager.h"
 #include "video_core/renderer_opengl/gl_shader_gen.h"
+#include "video_core/renderer_opengl/gl_state.h"
 #include "video_core/renderer_opengl/pica_to_gl.h"
+
+namespace OpenGL {
 
 enum class UniformBindings : GLuint { Common, VS, GS };
 
@@ -46,6 +49,7 @@ struct UniformData {
     GLint proctex_lut_offset;
     GLint proctex_diff_lut_offset;
     GLfloat proctex_bias;
+    GLint shadow_texture_bias;
     alignas(16) GLivec4 lighting_lut_offset[Pica::LightingRegs::NumLightingSampler / 4];
     alignas(16) GLvec3 fog_color;
     alignas(8) GLvec2 proctex_noise_f;
@@ -102,19 +106,19 @@ public:
     ShaderProgramManager(bool separable, bool is_amd);
     ~ShaderProgramManager();
 
-    bool UseProgrammableVertexShader(const GLShader::PicaVSConfig& config,
+    bool UseProgrammableVertexShader(const PicaVSConfig& config,
                                      const Pica::Shader::ShaderSetup setup);
 
     void UseTrivialVertexShader();
 
-    bool UseProgrammableGeometryShader(const GLShader::PicaGSConfig& config,
+    bool UseProgrammableGeometryShader(const PicaGSConfig& config,
                                        const Pica::Shader::ShaderSetup setup);
 
-    void UseFixedGeometryShader(const GLShader::PicaFixedGSConfig& config);
+    void UseFixedGeometryShader(const PicaFixedGSConfig& config);
 
     void UseTrivialGeometryShader();
 
-    void UseFragmentShader(const GLShader::PicaFSConfig& config);
+    void UseFragmentShader(const PicaFSConfig& config);
 
     void ApplyTo(OpenGLState& state);
 
@@ -122,3 +126,4 @@ private:
     class Impl;
     std::unique_ptr<Impl> impl;
 };
+} // namespace OpenGL

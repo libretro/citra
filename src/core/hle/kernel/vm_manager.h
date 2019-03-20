@@ -6,6 +6,7 @@
 
 #include <map>
 #include <memory>
+#include <utility>
 #include <vector>
 #include "common/common_types.h"
 #include "core/hle/result.h"
@@ -17,13 +18,10 @@ namespace Kernel {
 enum class VMAType : u8 {
     /// VMA represents an unmapped region of the address space.
     Free,
-    /// VMA is backed by a ref-counted allocate memory block.
-    AllocatedMemoryBlock,
     /// VMA is backed by a raw, unmanaged pointer.
     BackingMemory,
     /// VMA is mapped to MMIO registers at a fixed PAddr.
     MMIO,
-    // TODO(yuriks): Implement MemoryAlias to support MAP/UNMAP
 };
 
 /// Permissions for mapped memory blocks
@@ -71,12 +69,6 @@ struct VirtualMemoryArea {
     /// Tag returned by svcQueryMemory. Not otherwise used.
     MemoryState meminfo_state = MemoryState::Free;
 
-    // Settings for type = AllocatedMemoryBlock
-    /// Memory block backing this VMA.
-    std::shared_ptr<std::vector<u8>> backing_block = nullptr;
-    /// Offset into the backing_memory the mapping starts from.
-    std::size_t offset = 0;
-
     // Settings for type = BackingMemory
     /// Pointer backing this VMA. It will not be destroyed or freed when the VMA is removed.
     u8* backing_memory = nullptr;
@@ -121,7 +113,7 @@ public:
     std::map<VAddr, VirtualMemoryArea> vma_map;
     using VMAHandle = decltype(vma_map)::const_iterator;
 
-    VMManager();
+    explicit VMManager(Memory::MemorySystem& memory);
     ~VMManager();
 
     /// Clears the address space map, re-initializing with a single free area.
@@ -133,31 +125,17 @@ public:
     // TODO(yuriks): Should these functions actually return the handle?
 
     /**
-     * Maps part of a ref-counted block of memory at a given address.
-     *
-     * @param target The guest address to start the mapping at.
-     * @param block The block to be mapped.
-     * @param offset Offset into `block` to map from.
-     * @param size Size of the mapping.
-     * @param state MemoryState tag to attach to the VMA.
-     */
-    ResultVal<VMAHandle> MapMemoryBlock(VAddr target, std::shared_ptr<std::vector<u8>> block,
-                                        std::size_t offset, u32 size, MemoryState state);
-
-    /**
      * Maps part of a ref-counted block of memory at the first free address after the given base.
      *
      * @param base The base address to start the mapping at.
      * @param region_size The max size of the region from where we'll try to find an address.
-     * @param block The block to be mapped.
-     * @param offset Offset into `block` to map from.
+     * @param memory The memory to be mapped.
      * @param size Size of the mapping.
      * @param state MemoryState tag to attach to the VMA.
      * @returns The address at which the memory was mapped.
      */
-    ResultVal<VAddr> MapMemoryBlockToBase(VAddr base, u32 region_size,
-                                          std::shared_ptr<std::vector<u8>> block,
-                                          std::size_t offset, u32 size, MemoryState state);
+    ResultVal<VAddr> MapBackingMemoryToBase(VAddr base, u32 region_size, u8* memory, u32 size,
+                                            MemoryState state);
     /**
      * Maps an unmanaged host memory pointer at a given address.
      *
@@ -204,14 +182,11 @@ public:
     /// Changes the permissions of a range of addresses, splitting VMAs as necessary.
     ResultCode ReprotectRange(VAddr target, u32 size, VMAPermission new_perms);
 
-    /**
-     * Scans all VMAs and updates the page table range of any that use the given vector as backing
-     * memory. This should be called after any operation that causes reallocation of the vector.
-     */
-    void RefreshMemoryBlockMappings(const std::vector<u8>* block);
-
     /// Dumps the address space layout to the log, for debugging
     void LogLayout(Log::Level log_level) const;
+
+    /// Gets a list of backing memory blocks for the specified range
+    ResultVal<std::vector<std::pair<u8*, u32>>> GetBackingBlocksForRange(VAddr address, u32 size);
 
     /// Each VMManager has its own page table, which is set as the main one when the owning process
     /// is scheduled.
@@ -252,5 +227,7 @@ private:
 
     /// Updates the pages corresponding to this VMA so they match the VMA's attributes.
     void UpdatePageTableForVMA(const VirtualMemoryArea& vma);
+
+    Memory::MemorySystem& memory;
 };
 } // namespace Kernel

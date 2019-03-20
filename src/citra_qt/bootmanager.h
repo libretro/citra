@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <QGLWidget>
+#include <QImage>
 #include <QThread>
 #include "common/thread.h"
 #include "core/core.h"
@@ -15,6 +16,7 @@
 
 class QKeyEvent;
 class QScreen;
+class QTouchEvent;
 
 class GGLWidgetInternal;
 class GMainWindow;
@@ -119,7 +121,7 @@ public:
     void restoreGeometry(const QByteArray& geometry); // overridden
     QByteArray saveGeometry();                        // overridden
 
-    qreal windowPixelRatio();
+    qreal windowPixelRatio() const;
 
     void closeEvent(QCloseEvent* event) override;
 
@@ -129,6 +131,8 @@ public:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+
+    bool event(QEvent* event) override;
 
     void focusOutEvent(QFocusEvent* event) override;
 
@@ -140,6 +144,8 @@ public:
     void OnClientAreaResized(unsigned width, unsigned height);
 
     void InitRenderTarget();
+
+    void CaptureScreenshot(u16 res_scale, const QString& screenshot_path);
 
 public slots:
     void moveContext(); // overridden
@@ -153,6 +159,11 @@ signals:
     void Closed();
 
 private:
+    std::pair<unsigned, unsigned> ScaleTouch(const QPointF pos) const;
+    void TouchBeginEvent(const QTouchEvent* event);
+    void TouchUpdateEvent(const QTouchEvent* event);
+    void TouchEndEvent();
+
     void OnMinimalClientAreaChangeRequest(
         const std::pair<unsigned, unsigned>& minimal_size) override;
 
@@ -161,6 +172,9 @@ private:
     QByteArray geometry;
 
     EmuThread* emu_thread;
+
+    /// Temporary storage of the screenshot taken
+    QImage screenshot_image;
 
 protected:
     void showEvent(QShowEvent* event) override;

@@ -37,6 +37,8 @@
 #define NAND_DIR "nand"
 #define SYSDATA_DIR "sysdata"
 #define LOG_DIR "log"
+#define CHEATS_DIR "cheats"
+#define DLL_DIR "external_dlls"
 
 // Filenames
 // Files in the directory returned by GetUserPath(UserPath::LogDir)
@@ -50,3 +52,5 @@
 // Sys files
 #define SHARED_FONT "shared_font.bin"
 #define AES_KEYS "aes_keys.txt"
+#define BOOTROM9 "boot9.bin"
+#define SECRET_SECTOR "sector0x96.bin"

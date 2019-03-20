@@ -26,7 +26,7 @@ public:
     void Restrict(int minX, int minY, int maxX, int maxY);
 
     /// Updates the tracker.
-    void Update(int bufferWidth, int bufferHeight, MathUtil::Rectangle<unsigned> bottomScreen);
+    void Update(int bufferWidth, int bufferHeight, Common::Rectangle<unsigned> bottomScreen);
 
     /// Renders the cursor to the screen.
     void Render(int bufferWidth, int bufferHeight);
@@ -55,11 +55,11 @@ private:
 
     bool isPressed;
 
-    OGLProgram shader;
-    OGLVertexArray vao;
-    OGLBuffer vbo;
+    OpenGL::OGLProgram shader;
+    OpenGL::OGLVertexArray vao;
+    OpenGL::OGLBuffer vbo;
 
-    MathUtil::Rectangle<unsigned> bottomScreen;
+    Common::Rectangle<unsigned> bottomScreen;
 };
 
 } // namespace Input

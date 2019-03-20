@@ -17,6 +17,9 @@ public:
     explicit ClientRoomWindow(QWidget* parent);
     ~ClientRoomWindow();
 
+    void RetranslateUi();
+    void UpdateIconDisplay();
+
 public slots:
     void OnRoomUpdate(const Network::RoomInformation&);
     void OnStateChange(const Network::RoomMember::State&);
@@ -24,10 +27,12 @@ public slots:
 signals:
     void RoomInformationChanged(const Network::RoomInformation&);
     void StateChanged(const Network::RoomMember::State&);
+    void ShowNotification();
 
 private:
     void Disconnect();
     void UpdateView();
+    void SetModPerms(bool is_mod);
 
     QStandardItemModel* player_list;
     std::unique_ptr<Ui::ClientRoom> ui;

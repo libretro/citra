@@ -1,4 +1,5 @@
 add_executable(tests
+    common/bit_field.cpp
     common/param_package.cpp
     core/arm/arm_test_common.cpp
     core/arm/arm_test_common.h
@@ -8,6 +9,8 @@ add_executable(tests
     core/hle/kernel/hle_ipc.cpp
     core/memory/memory.cpp
     core/memory/vm_manager.cpp
+    audio_core/audio_fixures.h
+    audio_core/decoder_tests.cpp
     tests.cpp
 )
 
@@ -20,7 +23,7 @@ endif()
 
 create_target_directory_groups(tests)
 
-target_link_libraries(tests PRIVATE common core video_core)
+target_link_libraries(tests PRIVATE common core video_core audio_core)
 target_link_libraries(tests PRIVATE ${PLATFORM_LIBRARIES} catch-single-include nihstro-headers Threads::Threads)
 
 add_test(NAME tests COMMAND tests)

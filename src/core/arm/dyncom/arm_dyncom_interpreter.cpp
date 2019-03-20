@@ -18,6 +18,7 @@
 #include "core/arm/skyeye_common/armstate.h"
 #include "core/arm/skyeye_common/armsupp.h"
 #include "core/arm/skyeye_common/vfp/vfp.h"
+#include "core/core.h"
 #include "core/core_timing.h"
 #include "core/gdbstub/gdbstub.h"
 #include "core/hle/kernel/svc.h"
@@ -810,7 +811,7 @@ MICROPROFILE_DEFINE(DynCom_Decode, "DynCom", "Decode", MP_RGB(255, 64, 64));
 static unsigned int InterpreterTranslateInstruction(const ARMul_State* cpu, const u32 phys_addr,
                                                     ARM_INST_PTR& inst_base) {
     u32 inst_size = 4;
-    u32 inst = Memory::Read32(phys_addr & 0xFFFFFFFC);
+    u32 inst = cpu->memory.Read32(phys_addr & 0xFFFFFFFC);
 
     // If we are in Thumb mode, we'll translate one Thumb instruction to the corresponding ARM
     // instruction
@@ -922,7 +923,9 @@ MICROPROFILE_DEFINE(DynCom_Execute, "DynCom", "Execute", MP_RGB(255, 0, 0));
 unsigned InterpreterMainLoop(ARMul_State* cpu) {
     MICROPROFILE_SCOPE(DynCom_Execute);
 
+    /// Nearest upcoming GDB code execution breakpoint, relative to the last dispatch's address.
     GDBStub::BreakpointAddress breakpoint_data;
+    breakpoint_data.type = GDBStub::BreakpointType::None;
 
 #undef RM
 #undef RS
@@ -954,8 +957,10 @@ unsigned InterpreterMainLoop(ARMul_State* cpu) {
     cpu->Cpsr &= ~(1 << 5);                                                                        \
     cpu->Cpsr |= cpu->TFlag << 5;                                                                  \
     if (GDBStub::IsServerEnabled()) {                                                              \
-        if (GDBStub::IsMemoryBreak() || (breakpoint_data.type != GDBStub::BreakpointType::None &&  \
-                                         PC == breakpoint_data.address)) {                         \
+        if (GDBStub::IsMemoryBreak()) {                                                            \
+            goto END;                                                                              \
+        } else if (breakpoint_data.type != GDBStub::BreakpointType::None &&                        \
+                   PC == breakpoint_data.address) {                                                \
             cpu->RecordBreak(breakpoint_data);                                                     \
             goto END;                                                                              \
         }                                                                                          \
@@ -3858,12 +3863,13 @@ SUB_INST : {
 }
 SWI_INST : {
     if (inst_base->cond == ConditionCode::AL || CondPassed(cpu, inst_base->cond)) {
+        DEBUG_ASSERT(cpu->system != nullptr);
         swi_inst* const inst_cream = (swi_inst*)inst_base->component;
-        CoreTiming::AddTicks(num_instrs);
+        cpu->system->CoreTiming().AddTicks(num_instrs);
         cpu->NumInstrsToExecute =
             num_instrs >= cpu->NumInstrsToExecute ? 0 : cpu->NumInstrsToExecute - num_instrs;
         num_instrs = 0;
-        Kernel::CallSVC(inst_cream->num & 0xFFFF);
+        Kernel::SVCContext{*cpu->system}.CallSVC(inst_cream->num & 0xFFFF);
         // The kernel would call ERET to get here, which clears exclusive memory state.
         cpu->UnsetExclusiveMemoryAddress();
     }

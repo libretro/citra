@@ -30,8 +30,9 @@
 #include "video_core/shader/shader.h"
 
 class EmuWindow;
-struct ScreenInfo;
 class ShaderProgramManager;
+
+namespace OpenGL {
 
 class RasterizerOpenGL : public VideoCore::RasterizerInterface {
 public:
@@ -213,6 +214,9 @@ private:
     /// Syncs the shadow rendering bias to match the PICA register
     void SyncShadowBias();
 
+    /// Syncs the shadow texture bias to match the PICA register
+    void SyncShadowTextureBias();
+
     /// Syncs and uploads the lighting, fog and proctex LUTs
     void SyncAndUploadLUTs();
 
@@ -307,3 +311,5 @@ private:
 
     bool allow_shadow;
 };
+
+} // namespace OpenGL

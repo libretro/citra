@@ -20,19 +20,14 @@ class ArchiveFactory_ExtSaveData final : public ArchiveFactory {
 public:
     ArchiveFactory_ExtSaveData(const std::string& mount_point, bool shared);
 
-    /**
-     * Initialize the archive.
-     * @return true if it initialized successfully
-     */
-    bool Initialize();
-
     std::string GetName() const override {
         return "ExtSaveData";
     }
 
-    ResultVal<std::unique_ptr<ArchiveBackend>> Open(const Path& path) override;
-    ResultCode Format(const Path& path, const FileSys::ArchiveFormatInfo& format_info) override;
-    ResultVal<ArchiveFormatInfo> GetFormatInfo(const Path& path) const override;
+    ResultVal<std::unique_ptr<ArchiveBackend>> Open(const Path& path, u64 program_id) override;
+    ResultCode Format(const Path& path, const FileSys::ArchiveFormatInfo& format_info,
+                      u64 program_id) override;
+    ResultVal<ArchiveFormatInfo> GetFormatInfo(const Path& path, u64 program_id) const override;
 
     const std::string& GetMountPoint() const {
         return mount_point;
@@ -69,6 +64,15 @@ private:
  * @returns The complete path to the specified extdata archive in the host filesystem
  */
 std::string GetExtSaveDataPath(const std::string& mount_point, const Path& path);
+
+/**
+ * Constructs a path to the concrete ExtData archive in the host filesystem based on the
+ * extdata ID and base mount point.
+ * @param mount_point The base mount point of the ExtSaveData archives.
+ * @param extdata_id The id of the ExtSaveData
+ * @returns The complete path to the specified extdata archive in the host filesystem
+ */
+std::string GetExtDataPathFromId(const std::string& mount_point, u64 extdata_id);
 
 /**
  * Constructs a path to the base folder to hold concrete ExtSaveData archives in the host file
