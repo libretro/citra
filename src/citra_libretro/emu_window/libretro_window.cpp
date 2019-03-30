@@ -184,11 +184,13 @@ void EmuWindow_LibRetro::UpdateLayout() {
     
     // Custom layout
     if (Settings::values.custom_layout) {
+        // Top screen position and size
         Settings::values.custom_top_left = baseX * topLeftRatio;
         Settings::values.custom_top_top = baseY * topTopRatio;
         Settings::values.custom_top_right = Settings::values.custom_top_left + Core::kScreenTopWidth * scaling * screensRatio;
         Settings::values.custom_top_bottom = Settings::values.custom_top_top + Core::kScreenTopHeight * scaling * screensRatio;
 
+        // Bottom screen position and size
         Settings::values.custom_bottom_left = baseX * bottomLeftRatio;
         Settings::values.custom_bottom_top = baseY * bottomTopRatio;
         Settings::values.custom_bottom_right = Settings::values.custom_bottom_left + Core::kScreenBottomWidth * scaling * screensRatio;
