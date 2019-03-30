@@ -182,6 +182,19 @@ void EmuWindow_LibRetro::UpdateLayout() {
         baseY *= scaling;
         break;
     }
+    
+    // Custom layout
+    if (Settings::values.custom_layout) {
+        Settings::values.custom_top_left = baseX * topLeftRatio;
+        Settings::values.custom_top_top = baseY * topTopRatio;
+        Settings::values.custom_top_right = Settings::values.custom_top_left + Core::kScreenTopWidth * scaling * screensRatio;
+        Settings::values.custom_top_bottom = Settings::values.custom_top_top + Core::kScreenTopHeight * scaling * screensRatio;
+
+        Settings::values.custom_bottom_left = baseX * bottomLeftRatio;
+        Settings::values.custom_bottom_top = baseY * bottomTopRatio;
+        Settings::values.custom_bottom_right = Settings::values.custom_bottom_left + Core::kScreenBottomWidth * scaling * screensRatio;
+        Settings::values.custom_bottom_bottom = Settings::values.custom_bottom_top + Core::kScreenBottomHeight * scaling * screensRatio;
+    }
 
     // Update Libretro with our status
     struct retro_system_av_info info {};
@@ -229,4 +242,12 @@ void EmuWindow_LibRetro::CreateContext() {
 
 void EmuWindow_LibRetro::DestroyContext() {
     tracker = nullptr;
+}
+
+void EmuWindow_LibRetro::SetCustomLayoutRatios(float screen_ratio, float top_left_ratio, float top_top_ratio, float bottom_left_ratio, float bottom_top_ratio) {
+    screensRatio = screen_ratio; 
+    topLeftRatio = top_left_ratio;
+    topTopRatio = top_top_ratio;
+    bottomLeftRatio = bottom_left_ratio;
+    bottomTopRatio = bottom_top_ratio;
 }
