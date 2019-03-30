@@ -94,7 +94,7 @@ void LibRetro::OnConfigureEnvironment() {
         {"citra_use_acc_geo_shaders", "Enable accurate geometry shaders (only for H/W shaders); enabled|disabled"},
         {"citra_use_acc_mul", "Enable accurate shaders multiplication (only for H/W shaders); enabled|disabled"},
         {"citra_resolution_factor",
-         "Resolution scale factor; 1x (Native)|2x|3x|4x|5x|6x|7x|8x|9x|10x|1x custom 1920/1080 (New 3DS XL)|2x custom 1920/1080 (New 3DS XL)|4x custom 1920/1080 (New 3DS XL)"},
+         "Resolution scale factor; 1x (Native)|2x|3x|4x|5x|6x|7x|8x|9x|10x"},
         {"citra_layout_option", "Screen layout positioning; Default Top-Bottom Screen|Single "
                                 "Screen Only|Large Screen, Small Screen|Side by Side"},
         {"citra_swap_screen", "Prominent 3DS screen; Top|Bottom"},
