@@ -50,6 +50,9 @@ public:
 
     /// Destroys a currently running OpenGL context.
     void DestroyContext();
+    
+    /// Set custom layout ratios (used if citra custom_layout setting is set to true).
+    void SetCustomLayoutRatios(float screen_ratio, float top_left_ratio, float top_top_ratio, float bottom_left_ratio, float bottom_top_ratio);
 
 private:
     /// Called when a configuration change affects the minimal size of the window
@@ -74,4 +77,15 @@ private:
     std::unique_ptr<LibRetro::Input::MouseTracker> tracker = nullptr;
 
     bool enableEmulatedPointer = true;
+    
+    // For custom layout support. 3DS screen ratio to display width (per thousand)
+    float screensRatio = 0.0;
+    // For custom layout support. Top screen left position ratio to display width (per thousand)
+    float topLeftRatio = 0.0;
+    // For custom layout support. Top screen top position ratio to display height (per thousand)
+    float topTopRatio = 0.0;
+    // For custom layout support. Bottom screen left position ratio to display width (per thousand)
+    float bottomLeftRatio = 0.0;
+    // For custom layout support. Bottom screen top position ratio to display height (per thousand)
+    float bottomTopRatio = 0.0;
 };
