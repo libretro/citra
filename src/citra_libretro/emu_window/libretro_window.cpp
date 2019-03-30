@@ -121,7 +121,6 @@ void EmuWindow_LibRetro::OnMinimalClientAreaChangeRequest(
 }
 
 void EmuWindow_LibRetro::UpdateLayout() {
-    // TODO: Handle custom layouts
     // TODO: Extract this ugly thing somewhere else
     unsigned baseX;
     unsigned baseY;
