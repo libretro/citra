@@ -237,7 +237,7 @@ void UpdateSettings() {
 
         ratio = LibRetro::FetchVariable("custom_top_top", "16/9 preset");
         if(ratio == "16/9 preset") {
-            topTopRatio = 0.085; // preset for 16/9 screens that should be fine with some Retroarch overlays
+            topTopRatio = 0.084; // preset for 16/9 screens that should be fine with some Retroarch overlays
         } else if(ratio == "0 per thousand") {
             topTopRatio = 0.0;
         } else {
