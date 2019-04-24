@@ -15,6 +15,8 @@ struct CoreSettings {
     ::std::string file_path;
 
     float deadzone = 1.f;
+    
+    bool mouse_touchscreen;
 
     LibRetro::CStickFunction analog_function;
 
