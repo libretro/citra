@@ -78,7 +78,7 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
     if (LibRetro::settings.mouse_touchscreen) {
         // Check mouse input
         state |= LibRetro::CheckInput(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT);
-        
+
         // Read in and convert pointer values to absolute values on the canvas
         auto pointerX = LibRetro::CheckInput(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X);
         auto pointerY = LibRetro::CheckInput(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y);
@@ -100,7 +100,7 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
     } else if (LibRetro::settings.analog_function != LibRetro::CStickFunction::CStick) {
         // Check right analog input
         state |= LibRetro::CheckInput(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3);
-        
+
         // TODO: Provide config option for ratios here
         auto widthSpeed = (bottomScreen.GetWidth() / 20.0);
         auto heightSpeed = (bottomScreen.GetHeight() / 20.0);
