@@ -97,6 +97,7 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
                          std::min(newY, static_cast<int>(bottomScreen.bottom))) -
                 bottomScreen.top;
         }
+    }
     if (LibRetro::settings.analog_function != LibRetro::CStickFunction::CStick) {
         // Check right analog input
         state |= LibRetro::CheckInput(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3);
