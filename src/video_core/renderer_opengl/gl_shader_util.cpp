@@ -102,7 +102,9 @@ GLuint LoadProgram(bool separable_program, const std::vector<GLuint>& shaders) {
         }
     }
 
+#ifndef __LIBRETRO__
     ASSERT_MSG(result == GL_TRUE, "Shader not linked");
+#endif
 
     for (GLuint shader : shaders) {
         if (shader != 0) {
