@@ -20,8 +20,6 @@ MouseTracker::MouseTracker() {
     // Could potentially also use Citra's built-in shaders, if they can be
     //  wrangled to cooperate.
     const GLchar* vertex = R"(
-        #version 330 core
-
         in vec2 position;
 
         void main()
@@ -31,8 +29,6 @@ MouseTracker::MouseTracker() {
     )";
 
     const GLchar* fragment = R"(
-        #version 330 core
-
         out vec4 color;
 
         void main()
