@@ -20,8 +20,6 @@ MouseTracker::MouseTracker() {
     // Could potentially also use Citra's built-in shaders, if they can be
     //  wrangled to cooperate.
     const GLchar* vertex = R"(
-        #version 330 core
-
         in vec2 position;
 
         void main()
@@ -31,8 +29,6 @@ MouseTracker::MouseTracker() {
     )";
 
     const GLchar* fragment = R"(
-        #version 330 core
-
         out vec4 color;
 
         void main()
@@ -72,7 +68,7 @@ void MouseTracker::Restrict(int minX, int minY, int maxX, int maxY) {
 }
 
 void MouseTracker::Update(int bufferWidth, int bufferHeight,
-                          MathUtil::Rectangle<unsigned> bottomScreen) {
+                          Common::Rectangle<unsigned> bottomScreen) {
     // Check mouse input
     bool state =
         (bool)(LibRetro::CheckInput(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT)) ||
