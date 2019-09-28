@@ -31,37 +31,9 @@ namespace Log {
  */
 class Impl {
 public:
-    Impl() {
-        backend_thread = std::thread([&] {
-            Entry entry;
-            auto write_logs = [&](Entry& e) {
-                std::lock_guard<std::mutex> lock(writing_mutex);
-                for (const auto& backend : backends) {
-                    backend->Write(e);
-                }
-            };
-            while (true) {
-                std::unique_lock<std::mutex> lock(message_mutex);
-                message_cv.wait(lock, [&] { return !running || message_queue.Pop(entry); });
-                if (!running) {
-                    break;
-                }
-                write_logs(entry);
-            }
-            // Drain the logging queue. Only writes out up to MAX_LOGS_TO_WRITE to prevent a case
-            // where a system is repeatedly spamming logs even on close.
-            constexpr int MAX_LOGS_TO_WRITE = 100;
-            int logs_written = 0;
-            while (logs_written++ < MAX_LOGS_TO_WRITE && message_queue.Pop(entry)) {
-                write_logs(entry);
-            }
-        });
-    }
-
-    ~Impl() {
-        running = false;
-        message_cv.notify_one();
-        backend_thread.join();
+    static Impl& Instance() {
+        static Impl backend;
+        return backend;
     }
 
     Impl(Impl const&) = delete;
@@ -163,16 +135,6 @@ private:
     Filter filter;
     std::chrono::steady_clock::time_point time_origin{std::chrono::steady_clock::now()};
 };
-
-std::unique_ptr<Impl> g_logger;
-
-void Init() {
-    g_logger = std::make_unique<Impl>();
-}
-
-void Destroy() {
-    g_logger = nullptr;
-}
 
 void ConsoleBackend::Write(const Entry& entry) {
     PrintMessage(entry);
@@ -322,25 +284,26 @@ const char* GetLevelName(Level log_level) {
 }
 
 void SetGlobalFilter(const Filter& filter) {
-    g_logger->SetGlobalFilter(filter);
+    Impl::Instance().SetGlobalFilter(filter);
 }
 
 void AddBackend(std::unique_ptr<Backend> backend) {
-    g_logger->AddBackend(std::move(backend));
+    Impl::Instance().AddBackend(std::move(backend));
 }
 
 void RemoveBackend(std::string_view backend_name) {
-    g_logger->RemoveBackend(backend_name);
+    Impl::Instance().RemoveBackend(backend_name);
 }
 
 Backend* GetBackend(std::string_view backend_name) {
-    return g_logger->GetBackend(backend_name);
+    return Impl::Instance().GetBackend(backend_name);
 }
 
 void FmtLogMessageImpl(Class log_class, Level log_level, const char* filename,
                        unsigned int line_num, const char* function, const char* format,
                        const fmt::format_args& args) {
-    auto filter = g_logger->GetGlobalFilter();
+    auto& instance = Impl::Instance();
+    const auto& filter = instance.GetGlobalFilter();
     if (!filter.CheckMessage(log_class, log_level))
         return;
 
