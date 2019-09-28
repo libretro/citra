@@ -44,7 +44,6 @@ CitraLibRetro* emu_instance;
 
 void retro_init() {
     emu_instance = new CitraLibRetro();
-    Log::Init();
     Log::SetGlobalFilter(emu_instance->log_filter);
 
     // Check to see if the frontend is providing us with logging functionality
@@ -77,8 +76,6 @@ void retro_deinit() {
     LibRetro::Input::Shutdown();
 
     delete emu_instance;
-
-    Log::Destroy();
 }
 
 unsigned retro_api_version() {
@@ -173,8 +170,6 @@ void UpdateSettings() {
             LibRetro::FetchVariable("citra_use_hw_shaders", "enabled") == "enabled";
     Settings::values.use_shader_jit =
         LibRetro::FetchVariable("citra_use_shader_jit", "enabled") == "enabled";
-    Settings::values.shaders_accurate_gs =
-            LibRetro::FetchVariable("citra_use_acc_geo_shaders", "enabled") == "enabled";
     Settings::values.shaders_accurate_mul =
             LibRetro::FetchVariable("citra_use_acc_mul", "enabled") == "enabled";
     Settings::values.use_virtual_sd =
@@ -247,48 +242,48 @@ void UpdateSettings() {
         Settings::values.region_value = result->second;
     }
 
-    Settings::values.touch_device = "engine:emu_window";
+    Settings::values.current_input_profile.touch_device = "engine:emu_window";
 
     // Hardcode buttons to bind to libretro - it is entirely redundant to have
     //  two methods of rebinding controls.
     // Citra: A = RETRO_DEVICE_ID_JOYPAD_A (8)
-    Settings::values.buttons[0] = "button:8,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.buttons[0] = "button:8,joystick:0,engine:libretro";
     // Citra: B = RETRO_DEVICE_ID_JOYPAD_B (0)
-    Settings::values.buttons[1] = "button:0,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.buttons[1] = "button:0,joystick:0,engine:libretro";
     // Citra: X = RETRO_DEVICE_ID_JOYPAD_X (9)
-    Settings::values.buttons[2] = "button:9,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.buttons[2] = "button:9,joystick:0,engine:libretro";
     // Citra: Y = RETRO_DEVICE_ID_JOYPAD_Y (1)
-    Settings::values.buttons[3] = "button:1,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.buttons[3] = "button:1,joystick:0,engine:libretro";
     // Citra: UP = RETRO_DEVICE_ID_JOYPAD_UP (4)
-    Settings::values.buttons[4] = "button:4,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.buttons[4] = "button:4,joystick:0,engine:libretro";
     // Citra: DOWN = RETRO_DEVICE_ID_JOYPAD_DOWN (5)
-    Settings::values.buttons[5] = "button:5,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.buttons[5] = "button:5,joystick:0,engine:libretro";
     // Citra: LEFT = RETRO_DEVICE_ID_JOYPAD_LEFT (6)
-    Settings::values.buttons[6] = "button:6,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.buttons[6] = "button:6,joystick:0,engine:libretro";
     // Citra: RIGHT = RETRO_DEVICE_ID_JOYPAD_RIGHT (7)
-    Settings::values.buttons[7] = "button:7,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.buttons[7] = "button:7,joystick:0,engine:libretro";
     // Citra: L = RETRO_DEVICE_ID_JOYPAD_L (10)
-    Settings::values.buttons[8] = "button:10,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.buttons[8] = "button:10,joystick:0,engine:libretro";
     // Citra: R = RETRO_DEVICE_ID_JOYPAD_R (11)
-    Settings::values.buttons[9] = "button:11,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.buttons[9] = "button:11,joystick:0,engine:libretro";
     // Citra: START = RETRO_DEVICE_ID_JOYPAD_START (3)
-    Settings::values.buttons[10] = "button:3,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.buttons[10] = "button:3,joystick:0,engine:libretro";
     // Citra: SELECT = RETRO_DEVICE_ID_JOYPAD_SELECT (2)
-    Settings::values.buttons[11] = "button:2,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.buttons[11] = "button:2,joystick:0,engine:libretro";
     // Citra: ZL = RETRO_DEVICE_ID_JOYPAD_L2 (12)
-    Settings::values.buttons[12] = "button:12,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.buttons[12] = "button:12,joystick:0,engine:libretro";
     // Citra: ZR = RETRO_DEVICE_ID_JOYPAD_R2 (13)
-    Settings::values.buttons[13] = "button:13,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.buttons[13] = "button:13,joystick:0,engine:libretro";
     // Citra: HOME = RETRO_DEVICE_ID_JOYPAD_L3 (as per above bindings) (14)
-    Settings::values.buttons[14] = "button:14,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.buttons[14] = "button:14,joystick:0,engine:libretro";
 
     // Circle Pad
-    Settings::values.analogs[0] = "axis:0,joystick:0,engine:libretro";
+    Settings::values.current_input_profile.analogs[0] = "axis:0,joystick:0,engine:libretro";
     // C-Stick
     if (LibRetro::settings.analog_function != LibRetro::CStickFunction::Touchscreen) {
-        Settings::values.analogs[1] = "axis:1,joystick:0,engine:libretro";
+        Settings::values.current_input_profile.analogs[1] = "axis:1,joystick:0,engine:libretro";
     } else {
-        Settings::values.analogs[1] = "";
+        Settings::values.current_input_profile.analogs[1] = "";
     }
 
     // Configure the file storage location
@@ -303,14 +298,15 @@ void UpdateSettings() {
         }
 
         if (!target_dir.empty()) {
-            target_dir += "/Citra";
+            target_dir += "Citra/";
 
             // Ensure that this new dir exists
             if (!FileUtil::CreateDir(target_dir)) {
                 LOG_ERROR(Frontend, "Failed to create \"{}\". Using Citra's default paths.", target_dir);
             } else {
-                FileUtil::GetUserPath(FileUtil::UserPath::RootDir, target_dir);
-                const auto& target_dir_result = FileUtil::GetUserPath(FileUtil::UserPath::UserDir, target_dir);
+                FileUtil::SetUserPath(target_dir);
+                FileUtil::GetUserPath(FileUtil::UserPath::RootDir);
+                const auto& target_dir_result = FileUtil::GetUserPath(FileUtil::UserPath::UserDir);
                 LOG_INFO(Frontend, "User dir set to \"{}\".", target_dir_result);
             }
         }
@@ -332,7 +328,7 @@ void retro_run() {
     }
 
     // We can't assume that the frontend has been nice and preserved all OpenGL settings. Reset.
-    auto last_state = OpenGLState::GetCurState();
+    auto last_state = OpenGL::OpenGLState::GetCurState();
     ResetGLState();
     last_state.Apply();
 
@@ -387,7 +383,7 @@ void context_reset() {
                   "Likely memory leak: context_destroy() was not called before context_reset()!");
     }
 
-    VideoCore::g_renderer = std::make_unique<RendererOpenGL>(*emu_instance->emu_window);
+    VideoCore::g_renderer = std::make_unique<OpenGL::RendererOpenGL>(*emu_instance->emu_window);
     if (VideoCore::g_renderer->Init() != Core::System::ResultStatus::Success) {
         LOG_DEBUG(Render, "initialized OK");
     } else {
@@ -523,14 +519,16 @@ bool retro_unserialize(const void* data_, size_t size) {
 
 void* retro_get_memory_data(unsigned id) {
     if ( id == RETRO_MEMORY_SYSTEM_RAM )
-        return Kernel::memory_regions[0].linear_heap_memory->data();
+        return Core::System::GetInstance().Memory().GetFCRAMPointer(
+            Core::System::GetInstance().Kernel().memory_regions[0].base
+        );
 
     return NULL;
 }
 
 size_t retro_get_memory_size(unsigned id) {
     if ( id == RETRO_MEMORY_SYSTEM_RAM )
-        return Kernel::memory_regions[0].size;
+        return Core::System::GetInstance().Kernel().memory_regions[0].size;
 
     return 0;
 }

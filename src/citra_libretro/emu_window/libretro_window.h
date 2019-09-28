@@ -14,7 +14,7 @@
 
 void ResetGLState();
 
-class EmuWindow_LibRetro : public EmuWindow {
+class EmuWindow_LibRetro : public Frontend::EmuWindow {
 public:
     EmuWindow_LibRetro();
     ~EmuWindow_LibRetro();
@@ -53,8 +53,7 @@ public:
 
 private:
     /// Called when a configuration change affects the minimal size of the window
-    void OnMinimalClientAreaChangeRequest(
-        const std::pair<unsigned, unsigned>& minimal_size) override;
+    void OnMinimalClientAreaChangeRequest(std::pair<u32, u32> minimal_size) override;
 
     float scale = 2;
     int width;
