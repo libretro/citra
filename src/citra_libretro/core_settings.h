@@ -18,6 +18,8 @@ struct CoreSettings {
 
     LibRetro::CStickFunction analog_function;
 
+    bool mouse_touchscreen;
+
 } extern settings;
 
 } // namespace LibRetro
