@@ -69,33 +69,39 @@ void MouseTracker::Restrict(int minX, int minY, int maxX, int maxY) {
 
 void MouseTracker::Update(int bufferWidth, int bufferHeight,
                           Common::Rectangle<unsigned> bottomScreen) {
-    // Check mouse input
-    bool state =
-        (bool)(LibRetro::CheckInput(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT)) ||
-        (bool)(LibRetro::CheckInput(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3));
+    bool state = false;
 
-    // TODO: Provide config option for ratios here
-    auto widthSpeed = (bottomScreen.GetWidth() / 20.0);
-    auto heightSpeed = (bottomScreen.GetHeight() / 20.0);
+    if (LibRetro::settings.mouse_touchscreen) {
+        // Check mouse input
+        state |= LibRetro::CheckInput(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT);
 
-    // Read in and convert pointer values to absolute values on the canvas
-    auto pointerX = LibRetro::CheckInput(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X);
-    auto pointerY = LibRetro::CheckInput(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y);
-    auto newX = static_cast<int>((pointerX + 0x7fff) / (float)(0x7fff * 2) * bufferWidth);
-    auto newY = static_cast<int>((pointerY + 0x7fff) / (float)(0x7fff * 2) * bufferHeight);
+        // Read in and convert pointer values to absolute values on the canvas
+        auto pointerX = LibRetro::CheckInput(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X);
+        auto pointerY = LibRetro::CheckInput(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y);
+        auto newX = static_cast<int>((pointerX + 0x7fff) / (float)(0x7fff * 2) * bufferWidth);
+        auto newY = static_cast<int>((pointerY + 0x7fff) / (float)(0x7fff * 2) * bufferHeight);
 
-    if ((pointerX != 0 || pointerY != 0) && (newX != lastMouseX || newY != lastMouseY)) {
         // Use mouse pointer movement
-        lastMouseX = newX;
-        lastMouseY = newY;
+        if ((pointerX != 0 || pointerY != 0) && (newX != lastMouseX || newY != lastMouseY)) {
+            lastMouseX = newX;
+            lastMouseY = newY;
 
-        x = std::max(static_cast<int>(bottomScreen.left),
-                     std::min(newX, static_cast<int>(bottomScreen.right))) -
-            bottomScreen.left;
-        y = std::max(static_cast<int>(bottomScreen.top),
-                     std::min(newY, static_cast<int>(bottomScreen.bottom))) -
-            bottomScreen.top;
-    } else if (LibRetro::settings.analog_function != LibRetro::CStickFunction::CStick) {
+            x = std::max(static_cast<int>(bottomScreen.left),
+                         std::min(newX, static_cast<int>(bottomScreen.right))) -
+                bottomScreen.left;
+            y = std::max(static_cast<int>(bottomScreen.top),
+                         std::min(newY, static_cast<int>(bottomScreen.bottom))) -
+                bottomScreen.top;
+        }
+    }
+    if (LibRetro::settings.analog_function != LibRetro::CStickFunction::CStick) {
+        // Check right analog input
+        state |= LibRetro::CheckInput(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3);
+
+        // TODO: Provide config option for ratios here
+        auto widthSpeed = (bottomScreen.GetWidth() / 20.0);
+        auto heightSpeed = (bottomScreen.GetHeight() / 20.0);
+
         // Use controller movement
         float controllerX =
             ((float)LibRetro::CheckInput(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT,
