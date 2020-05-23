@@ -229,10 +229,6 @@ bool GRenderWindow::NeedsClearing() const {
     return true;
 }
 
-void OnFrameSwapped() {
-    VideoCore::g_renderer->PresentComplete();
-}
-
 // On Qt 5.0+, this correctly gets the size of the framebuffer (pixels).
 //
 // Older versions get the window size (density independent pixels),
@@ -428,10 +424,6 @@ void GRenderWindow::OnEmulationStopping() {
 void GRenderWindow::paintGL() {
     VideoCore::g_renderer->Present();
     update();
-}
-
-void GRenderWindow::OnFrameSwapped() {
-    VideoCore::g_renderer->PresentComplete();
 }
 
 void GRenderWindow::showEvent(QShowEvent* event) {
