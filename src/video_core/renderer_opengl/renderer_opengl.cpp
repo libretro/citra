@@ -29,152 +29,7 @@
 #include "video_core/renderer_opengl/renderer_opengl.h"
 #include "video_core/video_core.h"
 
-namespace Frontend {
-
-struct Frame {
-    GLuint index;
-    GLsync render_sync;
-    GLsync present_sync;
-};
-} // namespace Frontend
-
 namespace OpenGL {
-
-// If the size of this is too small, it ends up creating a soft cap on FPS as the renderer will have
-// to wait on available presentation frames. There doesn't seem to be much of a downside to a larger
-// number but 9 swap textures at 60FPS presentation allows for 800% speed so thats probably fine
-#ifdef ANDROID
-// Reduce the size of swap_chain, since the UI only allows upto 200% speed.
-constexpr std::size_t SWAP_CHAIN_SIZE = 6;
-#else
-constexpr std::size_t SWAP_CHAIN_SIZE = 9;
-#endif
-
-class OGLTextureMailboxException : public std::runtime_error {
-public:
-    using std::runtime_error::runtime_error;
-};
-
-class OGLTextureMailbox : public Frontend::TextureMailbox {
-public:
-    Frontend::Frame render_tex = {0, 0, 0}, present_tex = {1, 0, 0}, off_tex = {2, 0, 0};
-    bool swapped = false;
-    std::mutex swap_mutex{};
-
-    OGLTextureMailbox() = default;
-
-    ~OGLTextureMailbox() = default;
-
-    Frontend::Frame& GetRenderFrame() {
-        return render_tex;
-    }
-
-    void RenderComplete() {
-        std::scoped_lock lock(swap_mutex);
-        swapped = true;
-        std::swap(render_tex, off_tex);
-    }
-
-    Frontend::Frame& GetPresentationFrame() {
-        return present_tex;
-    }
-
-    void PresentationComplete() {
-        std::scoped_lock lock(swap_mutex);
-        if (swapped) {
-            swapped = false;
-            std::swap(present_tex, off_tex);
-        }
-    }
-
-    ~OGLTextureMailbox() override = default;
-
-    void ReloadPresentFrame(Frontend::Frame* frame, u32 height, u32 width) override {
-        frame->present.Release();
-        frame->present.Create();
-        GLint previous_draw_fbo{};
-        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previous_draw_fbo);
-        glBindFramebuffer(GL_FRAMEBUFFER, frame->present.handle);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                               frame->color.handle, 0);
-        if (!glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
-            LOG_CRITICAL(Render_OpenGL, "Failed to recreate present FBO!");
-        }
-        glBindFramebuffer(GL_FRAMEBUFFER, previous_draw_fbo);
-        frame->color_reloaded = false;
-    }
-
-    void ReloadRenderFrame(Frontend::Frame* frame, u32 width, u32 height) override {
-        OpenGLState prev_state = OpenGLState::GetCurState();
-        OpenGLState state = OpenGLState::GetCurState();
-
-        // Recreate the color texture attachment
-        frame->color.Release();
-        frame->color.Create();
-        state.texture_units[0].texture_2d = frame->color.handle;
-        state.Apply();
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, width, height);
-
-        // Recreate the FBO for the render target
-        frame->render.Release();
-        frame->render.Create();
-        state.draw.read_framebuffer = frame->render.handle;
-        state.draw.draw_framebuffer = frame->render.handle;
-        state.Apply();
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                               frame->color.handle, 0);
-        if (!glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
-            LOG_CRITICAL(Render_OpenGL, "Failed to recreate render FBO!");
-        }
-        prev_state.Apply();
-        frame->width = width;
-        frame->height = height;
-        frame->color_reloaded = true;
-    }
-
-    Frontend::Frame* GetRenderFrame() override {
-        std::unique_lock<std::mutex> lock(swap_chain_lock);
-        // wait for new entries in the free_queue
-        free_cv.wait(lock, [&] { return !free_queue.empty(); });
-
-        Frontend::Frame* frame = free_queue.front();
-        free_queue.pop_front();
-        return frame;
-    }
-
-    void ReleaseRenderFrame(Frontend::Frame* frame) override {
-        std::unique_lock<std::mutex> lock(swap_chain_lock);
-        present_queue.push_front(frame);
-        present_cv.notify_one();
-    }
-
-    Frontend::Frame* TryGetPresentFrame(int timeout_ms) override {
-        std::unique_lock<std::mutex> lock(swap_chain_lock);
-        // wait for new entries in the present_queue
-        present_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms),
-                            [&] { return !present_queue.empty(); });
-        if (present_queue.empty()) {
-            // timed out waiting for a frame to draw so return nullptr
-            return nullptr;
-        }
-        // the newest entries are pushed to the front of the queue
-        Frontend::Frame* frame = present_queue.front();
-        present_queue.pop_front();
-        // remove all old entries from the present queue and move them back to the free_queue
-        for (auto f : present_queue) {
-            free_queue.push_back(f);
-            free_cv.notify_one();
-        }
-        present_queue.clear();
-        return frame;
-    }
-
-    void ReleasePresentFrame(Frontend::Frame* frame) override {
-        std::unique_lock<std::mutex> lock(swap_chain_lock);
-        free_queue.push_back(frame);
-        free_cv.notify_one();
-    }
-};
 
 static const char vertex_shader[] = R"(
 in vec2 vert_position;
@@ -199,7 +54,7 @@ void main() {
 
 static const char fragment_shader[] = R"(
 in vec2 frag_tex_coord;
-layout(location = 0) out vec4 color;
+out vec4 color;
 
 uniform vec4 i_resolution;
 uniform vec4 o_resolution;
@@ -297,10 +152,7 @@ static std::array<GLfloat, 3 * 2> MakeOrthographicMatrix(const float width, cons
     return matrix;
 }
 
-RendererOpenGL::RendererOpenGL(Frontend::EmuWindow& window) : RendererBase{window} {
-    window.mailbox = std::make_unique<OGLTextureMailbox>();
-}
-
+RendererOpenGL::RendererOpenGL(Frontend::EmuWindow& window) : RendererBase{window} {}
 RendererOpenGL::~RendererOpenGL() = default;
 
 /// Swap buffers (render frame)
@@ -400,66 +252,20 @@ void RendererOpenGL::SwapBuffers() {
 
         glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         current_pbo = (current_pbo + 1) % 2;
         next_pbo = (current_pbo + 1) % 2;
     }
 
-    const auto& layout = render_window.GetFramebufferLayout();
-    auto& frame = render_window.mailbox->GetRenderFrame();
-    auto& presentation = presentation_textures[frame.index];
-
-    // Clean up sync objects before drawing
-
-    // INTEL driver workaround. We can't delete the previous render sync object until we are sure
-    // that the presentation is done
-    if (frame.present_sync) {
-        glClientWaitSync(frame.present_sync, 0, GL_TIMEOUT_IGNORED);
-    }
-
-    // delete the draw fence if the frame wasn't presented
-    if (frame.render_sync) {
-        glDeleteSync(frame.render_sync);
-        frame.render_sync = 0;
-    }
-
-    // wait for the presentation to be done
-    if (frame.present_sync) {
-        glWaitSync(frame.present_sync, 0, GL_TIMEOUT_IGNORED);
-        glDeleteSync(frame.present_sync);
-        frame.present_sync = 0;
-    }
-
-    // Recreate the presentation texture if the size of the window has changed
-    if (layout.width != presentation.width || layout.height != presentation.height) {
-        presentation.width = layout.width;
-        presentation.height = layout.height;
-        presentation.texture.Release();
-        presentation.texture.Create();
-        state.texture_units[0].texture_2d = presentation.texture.handle;
-        state.Apply();
-        glActiveTexture(GL_TEXTURE0);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, layout.width, layout.height, 0, GL_RGBA,
-                     GL_UNSIGNED_BYTE, 0);
-        state.texture_units[0].texture_2d = 0;
-        state.Apply();
-    }
-
-    GLuint render_texture = presentation.texture.handle;
-    state.draw.draw_framebuffer = draw_framebuffer.handle;
-    state.Apply();
-    glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, render_texture, 0);
-    GLenum DrawBuffers[1] = {GL_COLOR_ATTACHMENT0};
-    glDrawBuffers(1, DrawBuffers); // "1" is the size of DrawBuffers
-    DrawScreens(layout);
-    // Create a fence for the frontend to wait on and swap this frame to OffTex
-    frame.render_sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-    glFlush();
-    render_window.mailbox->RenderComplete();
+    DrawScreens(render_window.GetFramebufferLayout());
     m_current_frame++;
 
     Core::System::GetInstance().perf_stats->EndSystemFrame();
 
+    // Swap buffers
     render_window.PollEvents();
+    render_window.SwapBuffers();
 
     Core::System::GetInstance().frame_limiter.DoFrameLimiting(
         Core::System::GetInstance().CoreTiming().GetGlobalTimeUs());
@@ -604,11 +410,6 @@ void RendererOpenGL::InitOpenGLObjects() {
         screen_info.display_texture = screen_info.texture.resource.handle;
     }
 
-    draw_framebuffer.Create();
-    presentation_framebuffer.Create();
-    presentation_textures[0].texture.Create();
-    presentation_textures[1].texture.Create();
-    presentation_textures[2].texture.Create();
     state.texture_units[0].texture_2d = 0;
     state.Apply();
 }
@@ -1067,43 +868,6 @@ void RendererOpenGL::DrawScreens(const Layout::FramebufferLayout& layout) {
     }
 }
 
-void RendererOpenGL::Present() {
-    const auto& layout = render_window.GetFramebufferLayout();
-    auto& frame = render_window.mailbox->GetPresentationFrame();
-    const auto& presentation = presentation_textures[frame.index];
-    const GLuint texture_handle = presentation.texture.handle;
-
-    glWaitSync(frame.render_sync, 0, GL_TIMEOUT_IGNORED);
-    // INTEL workaround.
-    // Normally we could just delete the draw fence here, but due to driver bugs, we can just delete
-    // it on the emulation thread without too much penalty
-    // glDeleteSync(frame.render_sync);
-    // frame.render_sync = 0;
-
-    glClearColor(Settings::values.bg_red, Settings::values.bg_green, Settings::values.bg_blue,
-                 0.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, presentation_framebuffer.handle);
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture_handle);
-    glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture_handle,
-                           0);
-    glBlitFramebuffer(0, 0, presentation.width, presentation.height, 0, 0, layout.width,
-                      layout.height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-
-    // Delete the fence if we're re-presenting to avoid leaking fences
-    if (frame->present_fence) {
-        glDeleteSync(frame->present_fence);
-    }
-
-    /* insert fence for the main thread to block on */
-    frame.present_sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-    glFlush();
-    render_window.mailbox->PresentationComplete();
-}
-
 /// Updates the framerate
 void RendererOpenGL::UpdateFramerate() {}
 
@@ -1200,12 +964,13 @@ static void APIENTRY DebugHandler(GLenum source, GLenum type, GLuint id, GLenum 
 }
 
 /// Initialize the renderer
-VideoCore::ResultStatus RendererOpenGL::Init() {
+Core::System::ResultStatus RendererOpenGL::Init() {
+    render_window.MakeCurrent();
+
 #ifndef ANDROID
     if (!gladLoadGL()) {
         return VideoCore::ResultStatus::ErrorBelowGL33;
     }
-
     // Qualcomm has some spammy info messages that are marked as errors but not important
     // https://developer.qualcomm.com/comment/11845
     if (GLAD_GL_KHR_debug) {
