@@ -41,3 +41,7 @@ repo/
 
 # GitHub Actions generated files
 node_modules/
+
+# RA artifacts
+*.o
+src/video_core/shaders/
