@@ -160,6 +160,8 @@ void RendererOpenGL::SwapBuffers() {
     OpenGLState prev_state = OpenGLState::GetCurState();
     state.Apply();
 
+    render_window.SetupFramebuffer();
+
     for (int i : {0, 1, 2}) {
         int fb_id = i == 2 ? 1 : 0;
         const auto& framebuffer = GPU::g_regs.framebuffer_config[fb_id];
@@ -925,7 +927,7 @@ static void APIENTRY DebugHandler(GLenum source, GLenum type, GLuint id, GLenum 
 }
 
 /// Initialize the renderer
-Core::System::ResultStatus RendererOpenGL::Init() {
+VideoCore::ResultStatus RendererOpenGL::Init() {
     render_window.MakeCurrent();
 
     if (GLAD_GL_KHR_debug) {

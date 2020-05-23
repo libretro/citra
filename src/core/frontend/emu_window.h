@@ -101,6 +101,16 @@ public:
      * Read from the current settings to determine which layout to use.
      */
     void UpdateCurrentFramebufferLayout(unsigned width, unsigned height);
+    /**
+     * Requests for a frontend to setup a framebuffer.
+     */
+    virtual void SetupFramebuffer() = 0;
+
+    /// Flags that the Emulation Window is not ready to support a hardware context yet.
+    virtual bool ShouldDeferRendererInit() const = 0;
+
+    /// Flags that the framebuffer should be cleared.
+    virtual bool NeedsClearing() const = 0;
 
 protected:
     EmuWindow();

@@ -164,6 +164,7 @@ void UpdateSettings() {
     // For our other settings, import them from LibRetro.
     Settings::values.use_cpu_jit =
         LibRetro::FetchVariable("citra_use_cpu_jit", "enabled") == "enabled";
+    Settings::values.cpu_clock_percentage = 100;
     Settings::values.use_hw_renderer =
         LibRetro::FetchVariable("citra_use_hw_renderer", "enabled") == "enabled";
     Settings::values.use_hw_shader =
@@ -179,6 +180,20 @@ void UpdateSettings() {
     Settings::values.swap_screen = LibRetro::FetchVariable("citra_swap_screen", "Top") == "Bottom";
     Settings::values.use_gdbstub =
         LibRetro::FetchVariable("citra_use_gdbstub", "disabled") == "enabled";
+    // TODO: Support changing texture filters
+    Settings::values.use_gles = false;
+    Settings::values.texture_filter_name = "none";
+    Settings::values.dump_textures = false;
+    Settings::values.custom_textures = false;
+    Settings::values.filter_mode = false;
+    Settings::values.pp_shader_name = "none (builtin)";
+    Settings::values.use_disk_shader_cache = false;
+    Settings::values.use_vsync_new = 1;
+    Settings::values.render_3d = Settings::StereoRenderOption::Off;
+    Settings::values.factor_3d = 0;
+    Settings::values.bg_red = 0;
+    Settings::values.bg_green = 0;
+    Settings::values.bg_blue = 0;
 
     // These values are a bit more hard to define, unfortunately.
     auto scaling = LibRetro::FetchVariable("citra_resolution_factor", "1x (Native)");
@@ -384,7 +399,7 @@ void context_reset() {
     }
 
     VideoCore::g_renderer = std::make_unique<OpenGL::RendererOpenGL>(*emu_instance->emu_window);
-    if (VideoCore::g_renderer->Init() != Core::System::ResultStatus::Success) {
+    if (VideoCore::g_renderer->Init() == VideoCore::ResultStatus::Success) {
         LOG_DEBUG(Render, "initialized OK");
     } else {
         LOG_ERROR(Render, "initialization failed!");
@@ -520,7 +535,7 @@ bool retro_unserialize(const void* data_, size_t size) {
 void* retro_get_memory_data(unsigned id) {
     if ( id == RETRO_MEMORY_SYSTEM_RAM )
         return Core::System::GetInstance().Memory().GetFCRAMPointer(
-            Core::System::GetInstance().Kernel().memory_regions[0].base
+            Core::System::GetInstance().Kernel().memory_regions[0]->base
         );
 
     return NULL;
@@ -528,7 +543,7 @@ void* retro_get_memory_data(unsigned id) {
 
 size_t retro_get_memory_size(unsigned id) {
     if ( id == RETRO_MEMORY_SYSTEM_RAM )
-        return Core::System::GetInstance().Kernel().memory_regions[0].size;
+        return Core::System::GetInstance().Kernel().memory_regions[0]->size;
 
     return 0;
 }
