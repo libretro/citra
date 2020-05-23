@@ -37,3 +37,6 @@ Thumbs.db
 # Flatpak generated files
 .flatpak-builder/
 repo/
+# RA artifacts
+*.o
+src/video_core/shaders/

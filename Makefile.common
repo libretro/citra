@@ -1,0 +1,605 @@
+INCFLAGS := -I$(SRC_DIR) \
+            -I$(SRC_DIR)/video_core \
+            -I$(EXTERNALS_DIR) \
+            -I$(EXTERNALS_DIR)/dynarmic/include \
+            -I$(EXTERNALS_DIR)/enet/include \
+            -I$(EXTERNALS_DIR)/open_source_archives/include \
+            -I$(EXTERNALS_DIR)/fmt/include \
+            -I$(EXTERNALS_DIR)/microprofile \
+            -I$(EXTERNALS_DIR)/nihstro/include \
+            -I$(EXTERNALS_DIR)/boost \
+            -I$(EXTERNALS_DIR)/cryptopp \
+            -I$(EXTERNALS_DIR)/libretro-common/include \
+            -I$(EXTERNALS_DIR)/teakra/include \
+            -I$(EXTERNALS_DIR)/soundtouch/include
+
+# Begone boost linking
+CXXFLAGS += -DBOOST_ERROR_CODE_HEADER_ONLY -DBOOST_SYSTEM_NO_LIB -DBOOST_DATE_TIME_NO_LIB -DBOOST_REGEX_NO_LIB
+
+SOURCES_C   :=
+SOURCES_CXX :=
+
+ifeq ($(platform), libnx)
+INCFLAGS  += -isystem$(EXTERNALS_DIR)/switch-compat/include
+SOURCES_C += $(EXTERNALS_DIR)/switch-compat/src/switch-compat.c
+endif
+
+# Externals - CryptoPP
+SOURCES_CXX += $(EXTERNALS_DIR)/cryptopp/cryptopp/allocate.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/cryptlib.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/cpu.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/integer.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/algparam.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/asn.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/authenc.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/base64.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/basecode.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/ccm.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/crc_simd.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/des.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/dessp.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/dll.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/ec2n.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/ecp.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/filters.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/fips140.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/gcm_simd.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/gf2n.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/gfpcrypt.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/hex.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/hmac.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/hrtimer.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/iterhash.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/md5.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/misc.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/modes.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/mqueue.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/nbtheory.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/neon_simd.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/oaep.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/osrng.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/pubkey.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/queue.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/randpool.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/rdtables.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/rijndael_simd.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/rijndael.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/rng.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/sha_simd.cpp \
+               $(EXTERNALS_DIR)/cryptopp/cryptopp/sha.cpp
+
+ifeq ($(HAVE_SSE), 1)
+SOURCES_CXX += $(EXTERNALS_DIR)/cryptopp/cryptopp/sse_simd.cpp
+endif
+
+CXXFLAGS += -DCRYPTOPP_DISABLE_ASM -DCRYPTOPP_DISABLE_SSSE3 -DCRYPTOPP_DISABLE_SSE4
+
+# Externals - Dynarmic
+ifeq ($(HAVE_DYNARMIC), 1)
+DEFINES += -DHAVE_DYNARMIC
+
+DYNARMICINCFLAGS := -I$(EXTERNALS_DIR)/dynarmic/src \
+                    -I$(EXTERNALS_DIR)/fmt/include \
+                    -I$(EXTERNALS_DIR)/dynarmic/externals/mp/include
+
+SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/common/assert.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/crypto/aes.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/crypto/crc32.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/crypto/sm4.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/fp/fused.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/fp/op/FPCompare.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/fp/op/FPConvert.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/fp/op/FPMulAdd.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/fp/op/FPRecipEstimate.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/fp/op/FPRecipExponent.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/fp/op/FPRecipStepFused.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/fp/op/FPRoundInt.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/fp/op/FPRSqrtEstimate.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/fp/op/FPRSqrtStepFused.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/fp/op/FPToFixed.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/fp/process_exception.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/fp/process_nan.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/fp/unpacked.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/llvm_disassemble.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/math_util.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/memory_pool.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/common/u128.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/types.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A64/types.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/ir/basic_block.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/ir/ir_emitter.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/ir/location_descriptor.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/ir/microinstruction.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/ir/opcodes.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/ir/type.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/ir/value.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/ir_opt/constant_propagation_pass.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/ir_opt/dead_code_elimination_pass.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/ir_opt/verification_pass.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/asimd_load_store_structures.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/asimd_three_same.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/asimd_two_regs_misc.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/disassembler/disassembler_arm.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/disassembler/disassembler_thumb.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/ir_emitter.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/location_descriptor.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/barrier.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/branch.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/coprocessor.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/crc32.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/data_processing.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/divide.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/exception_generating.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/extension.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/hint.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/load_store.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/misc.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/multiply.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/packing.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/parallel.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/reversal.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/saturated.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/status_register_access.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/synchronization.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/thumb16.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/thumb32.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/vfp.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/translate.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/translate_arm.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/translate_thumb.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/ir_opt/a32_constant_memory_reads_pass.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/ir_opt/a32_get_set_elimination_pass.cpp
+
+    ifeq ($(ARCH), x86_64)
+        DEFINES += -DXBYAK_NO_OP_NAMES
+        DYNARMICINCFLAGS += -I$(EXTERNALS_DIR)/xbyak/xbyak
+
+        SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/backend/x64/abi.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/block_of_code.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/block_range_information.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/callback.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/constant_pool.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/emit_x64.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/emit_x64_aes.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/emit_x64_crc32.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/emit_x64_data_processing.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/emit_x64_floating_point.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/emit_x64_packed.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/emit_x64_saturation.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/emit_x64_sm4.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/emit_x64_vector.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/emit_x64_vector_floating_point.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/hostloc.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/perf_map.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/reg_alloc.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/a32_emit_x64.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/a32_interface.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/a32_jitstate.cpp
+
+        ifeq ($(platform), win)
+            SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/backend/x64/exception_handler_windows.cpp
+        else ifeq ($(platform), unix)
+            SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/backend/x64/exception_handler_posix.cpp
+        else
+            SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/backend/x64/exception_handler_generic.cpp
+        endif
+    else
+        $(error Bad architecture used with dynarmic: $(ARCH))
+    endif
+endif
+
+# Externals - Enet
+SOURCES_C += $(EXTERNALS_DIR)/enet/callbacks.c \
+             $(EXTERNALS_DIR)/enet/compress.c \
+             $(EXTERNALS_DIR)/enet/host.c \
+             $(EXTERNALS_DIR)/enet/list.c \
+             $(EXTERNALS_DIR)/enet/packet.c \
+             $(EXTERNALS_DIR)/enet/peer.c \
+             $(EXTERNALS_DIR)/enet/protocol.c \
+             $(EXTERNALS_DIR)/enet/unix.c \
+             $(EXTERNALS_DIR)/enet/win32.c \
+             $(EXTERNALS_DIR)/libretro-common/glsym/glsym_gl.c \
+		     $(EXTERNALS_DIR)/libretro-common/glsym/rglgen.c
+
+CFLAGS += -DHAS_SOCKLEN_T
+
+
+# Externals - glad
+ifeq ($(HAVE_GLAD), 1)
+DEFINES += -DHAVE_GLAD
+INCFLAGS += -I$(EXTERNALS_DIR)/glad/include -isystem$(EXTERNALS_DIR)/glad/include
+SOURCES_C += $(EXTERNALS_DIR)/glad/src/glad.c
+endif
+
+# Externals - fmt
+SOURCES_CXX += $(EXTERNALS_DIR)/fmt/src/format.cc
+
+# Externals - nihstro
+SOURCES_CXX += $(EXTERNALS_DIR)/nihstro/src/parser_assembly.cpp \
+               $(EXTERNALS_DIR)/nihstro/src/preprocessor.cpp \
+               $(EXTERNALS_DIR)/nihstro/src/parser_assembly/common.cpp \
+               $(EXTERNALS_DIR)/nihstro/src/parser_assembly/compare.cpp \
+               $(EXTERNALS_DIR)/nihstro/src/parser_assembly/declaration.cpp \
+               $(EXTERNALS_DIR)/nihstro/src/parser_assembly/flowcontrol.cpp \
+               $(EXTERNALS_DIR)/nihstro/src/parser_assembly/floatop.cpp
+
+# Externals - SoundTouch
+SOURCES_CXX += $(EXTERNALS_DIR)/soundtouch/src/AAFilter.cpp \
+               $(EXTERNALS_DIR)/soundtouch/src/BPMDetect.cpp \
+               $(EXTERNALS_DIR)/soundtouch/src/cpu_detect_x86.cpp \
+               $(EXTERNALS_DIR)/soundtouch/src/FIFOSampleBuffer.cpp \
+               $(EXTERNALS_DIR)/soundtouch/src/FIRFilter.cpp \
+               $(EXTERNALS_DIR)/soundtouch/src/InterpolateCubic.cpp \
+               $(EXTERNALS_DIR)/soundtouch/src/InterpolateLinear.cpp \
+               $(EXTERNALS_DIR)/soundtouch/src/InterpolateShannon.cpp \
+               $(EXTERNALS_DIR)/soundtouch/src/mmx_optimized.cpp \
+               $(EXTERNALS_DIR)/soundtouch/src/PeakFinder.cpp \
+               $(EXTERNALS_DIR)/soundtouch/src/RateTransposer.cpp \
+               $(EXTERNALS_DIR)/soundtouch/src/SoundTouch.cpp \
+               $(EXTERNALS_DIR)/soundtouch/src/sse_optimized.cpp \
+               $(EXTERNALS_DIR)/soundtouch/src/TDStretch.cpp
+
+# Externals - Teakra
+SOURCES_CXX += $(EXTERNALS_DIR)/teakra/src/ahbm.cpp \
+               $(EXTERNALS_DIR)/teakra/src/apbp.cpp \
+               $(EXTERNALS_DIR)/teakra/src/btdmp.cpp \
+               $(EXTERNALS_DIR)/teakra/src/disassembler.cpp \
+               $(EXTERNALS_DIR)/teakra/src/dma.cpp \
+               $(EXTERNALS_DIR)/teakra/src/timer.cpp \
+               $(EXTERNALS_DIR)/teakra/src/memory_interface.cpp \
+               $(EXTERNALS_DIR)/teakra/src/mmio.cpp \
+               $(EXTERNALS_DIR)/teakra/src/parser.cpp \
+               $(EXTERNALS_DIR)/teakra/src/processor.cpp \
+               $(EXTERNALS_DIR)/teakra/src/teakra.cpp \
+               $(EXTERNALS_DIR)/teakra/src/test_generator.cpp
+
+# Common
+SOURCES_CXX += $(SRC_DIR)/common/detached_tasks.cpp \
+               $(SRC_DIR)/common/cityhash.cpp \
+               $(SRC_DIR)/common/file_util.cpp \
+               $(SRC_DIR)/common/logging/backend.cpp \
+               $(SRC_DIR)/common/logging/filter.cpp \
+               $(SRC_DIR)/common/logging/text_formatter.cpp \
+               $(SRC_DIR)/common/microprofile.cpp \
+               $(SRC_DIR)/common/misc.cpp \
+               $(SRC_DIR)/common/param_package.cpp \
+               $(SRC_DIR)/common/scm_rev.cpp \
+               $(SRC_DIR)/common/string_util.cpp \
+               $(SRC_DIR)/common/telemetry.cpp \
+               $(SRC_DIR)/common/texture.cpp \
+               $(SRC_DIR)/common/thread.cpp \
+               $(SRC_DIR)/common/timer.cpp \
+               $(SRC_DIR)/common/zstd_compression.cpp
+
+ifeq ($(ARCH), x86_64)
+SOURCES_CXX += $(SRC_DIR)/common/x64/cpu_detect.cpp
+endif
+
+# Core
+SOURCES_CXX += $(SRC_DIR)/core/announce_multiplayer_session.cpp \
+               $(SRC_DIR)/core/arm/dyncom/arm_dyncom.cpp \
+               $(SRC_DIR)/core/arm/dyncom/arm_dyncom_dec.cpp \
+               $(SRC_DIR)/core/arm/dyncom/arm_dyncom_interpreter.cpp \
+               $(SRC_DIR)/core/arm/dyncom/arm_dyncom_thumb.cpp \
+               $(SRC_DIR)/core/arm/dyncom/arm_dyncom_trans.cpp \
+               $(SRC_DIR)/core/arm/skyeye_common/armstate.cpp \
+               $(SRC_DIR)/core/arm/skyeye_common/armsupp.cpp \
+               $(SRC_DIR)/core/arm/skyeye_common/vfp/vfp.cpp \
+               $(SRC_DIR)/core/arm/skyeye_common/vfp/vfpdouble.cpp \
+               $(SRC_DIR)/core/arm/skyeye_common/vfp/vfpinstr.cpp \
+               $(SRC_DIR)/core/arm/skyeye_common/vfp/vfpsingle.cpp \
+               $(SRC_DIR)/core/cheats/cheat_base.cpp \
+               $(SRC_DIR)/core/cheats/cheats.cpp \
+               $(SRC_DIR)/core/cheats/gateway_cheat.cpp \
+               $(SRC_DIR)/core/core.cpp \
+               $(SRC_DIR)/core/core_timing.cpp \
+               $(SRC_DIR)/core/custom_tex_cache.cpp \
+               $(SRC_DIR)/core/dumping/backend.cpp \
+               $(SRC_DIR)/core/file_sys/archive_backend.cpp \
+               $(SRC_DIR)/core/file_sys/archive_extsavedata.cpp \
+               $(SRC_DIR)/core/file_sys/archive_ncch.cpp \
+               $(SRC_DIR)/core/file_sys/archive_other_savedata.cpp \
+               $(SRC_DIR)/core/file_sys/archive_savedata.cpp \
+               $(SRC_DIR)/core/file_sys/archive_sdmc.cpp \
+               $(SRC_DIR)/core/file_sys/archive_sdmcwriteonly.cpp \
+               $(SRC_DIR)/core/file_sys/archive_selfncch.cpp \
+               $(SRC_DIR)/core/file_sys/archive_source_sd_savedata.cpp \
+               $(SRC_DIR)/core/file_sys/archive_systemsavedata.cpp \
+               $(SRC_DIR)/core/file_sys/cia_container.cpp \
+               $(SRC_DIR)/core/file_sys/disk_archive.cpp \
+               $(SRC_DIR)/core/file_sys/delay_generator.cpp \
+               $(SRC_DIR)/core/file_sys/ivfc_archive.cpp \
+               $(SRC_DIR)/core/file_sys/layered_fs.cpp \
+               $(SRC_DIR)/core/file_sys/ncch_container.cpp \
+               $(SRC_DIR)/core/file_sys/patch.cpp \
+               $(SRC_DIR)/core/file_sys/path_parser.cpp \
+               $(SRC_DIR)/core/file_sys/romfs_reader.cpp \
+               $(SRC_DIR)/core/file_sys/savedata_archive.cpp \
+               $(SRC_DIR)/core/file_sys/seed_db.cpp \
+               $(SRC_DIR)/core/file_sys/ticket.cpp \
+               $(SRC_DIR)/core/file_sys/title_metadata.cpp \
+               $(SRC_DIR)/core/frontend/applets/default_applets.cpp \
+               $(SRC_DIR)/core/frontend/applets/mii_selector.cpp \
+               $(SRC_DIR)/core/frontend/applets/swkbd.cpp \
+               $(SRC_DIR)/core/frontend/camera/blank_camera.cpp \
+               $(SRC_DIR)/core/frontend/camera/factory.cpp \
+               $(SRC_DIR)/core/frontend/camera/interface.cpp \
+               $(SRC_DIR)/core/frontend/emu_window.cpp \
+               $(SRC_DIR)/core/frontend/framebuffer_layout.cpp \
+               $(SRC_DIR)/core/frontend/mic.cpp \
+               $(SRC_DIR)/core/gdbstub/gdbstub.cpp \
+               $(SRC_DIR)/core/hle/applets/applet.cpp \
+               $(SRC_DIR)/core/hle/applets/erreula.cpp \
+               $(SRC_DIR)/core/hle/applets/mii_selector.cpp \
+               $(SRC_DIR)/core/hle/applets/mint.cpp \
+               $(SRC_DIR)/core/hle/applets/swkbd.cpp \
+               $(SRC_DIR)/core/hle/kernel/address_arbiter.cpp \
+               $(SRC_DIR)/core/hle/kernel/client_port.cpp \
+               $(SRC_DIR)/core/hle/kernel/client_session.cpp \
+               $(SRC_DIR)/core/hle/kernel/config_mem.cpp \
+               $(SRC_DIR)/core/hle/kernel/event.cpp \
+               $(SRC_DIR)/core/hle/kernel/handle_table.cpp \
+               $(SRC_DIR)/core/hle/kernel/hle_ipc.cpp \
+               $(SRC_DIR)/core/hle/kernel/ipc.cpp \
+               $(SRC_DIR)/core/hle/kernel/ipc_debugger/recorder.cpp \
+               $(SRC_DIR)/core/hle/kernel/kernel.cpp \
+               $(SRC_DIR)/core/hle/kernel/memory.cpp \
+               $(SRC_DIR)/core/hle/kernel/mutex.cpp \
+               $(SRC_DIR)/core/hle/kernel/object.cpp \
+               $(SRC_DIR)/core/hle/kernel/process.cpp \
+               $(SRC_DIR)/core/hle/kernel/resource_limit.cpp \
+               $(SRC_DIR)/core/hle/kernel/semaphore.cpp \
+               $(SRC_DIR)/core/hle/kernel/server_port.cpp \
+               $(SRC_DIR)/core/hle/kernel/server_session.cpp \
+               $(SRC_DIR)/core/hle/kernel/session.cpp \
+               $(SRC_DIR)/core/hle/kernel/shared_memory.cpp \
+               $(SRC_DIR)/core/hle/kernel/shared_page.cpp \
+               $(SRC_DIR)/core/hle/kernel/svc.cpp \
+               $(SRC_DIR)/core/hle/kernel/thread.cpp \
+               $(SRC_DIR)/core/hle/kernel/timer.cpp \
+               $(SRC_DIR)/core/hle/kernel/vm_manager.cpp \
+               $(SRC_DIR)/core/hle/kernel/wait_object.cpp \
+               $(SRC_DIR)/core/hle/lock.cpp \
+               $(SRC_DIR)/core/hle/romfs.cpp \
+               $(SRC_DIR)/core/hle/service/ac/ac.cpp \
+               $(SRC_DIR)/core/hle/service/ac/ac_i.cpp \
+               $(SRC_DIR)/core/hle/service/ac/ac_u.cpp \
+               $(SRC_DIR)/core/hle/service/act/act.cpp \
+               $(SRC_DIR)/core/hle/service/act/act_a.cpp \
+               $(SRC_DIR)/core/hle/service/act/act_u.cpp \
+               $(SRC_DIR)/core/hle/service/am/am.cpp \
+               $(SRC_DIR)/core/hle/service/am/am_app.cpp \
+               $(SRC_DIR)/core/hle/service/am/am_net.cpp \
+               $(SRC_DIR)/core/hle/service/am/am_sys.cpp \
+               $(SRC_DIR)/core/hle/service/am/am_u.cpp \
+               $(SRC_DIR)/core/hle/service/apt/applet_manager.cpp \
+               $(SRC_DIR)/core/hle/service/apt/apt.cpp \
+               $(SRC_DIR)/core/hle/service/apt/apt_a.cpp \
+               $(SRC_DIR)/core/hle/service/apt/apt_s.cpp \
+               $(SRC_DIR)/core/hle/service/apt/apt_u.cpp \
+               $(SRC_DIR)/core/hle/service/apt/ns.cpp \
+               $(SRC_DIR)/core/hle/service/apt/ns_s.cpp \
+               $(SRC_DIR)/core/hle/service/apt/bcfnt/bcfnt.cpp \
+               $(SRC_DIR)/core/hle/service/boss/boss.cpp \
+               $(SRC_DIR)/core/hle/service/boss/boss_p.cpp \
+               $(SRC_DIR)/core/hle/service/boss/boss_u.cpp \
+               $(SRC_DIR)/core/hle/service/cam/cam.cpp \
+               $(SRC_DIR)/core/hle/service/cam/cam_c.cpp \
+               $(SRC_DIR)/core/hle/service/cam/cam_q.cpp \
+               $(SRC_DIR)/core/hle/service/cam/cam_s.cpp \
+               $(SRC_DIR)/core/hle/service/cam/cam_u.cpp \
+               $(SRC_DIR)/core/hle/service/cecd/cecd.cpp \
+               $(SRC_DIR)/core/hle/service/cecd/cecd_ndm.cpp \
+               $(SRC_DIR)/core/hle/service/cecd/cecd_s.cpp \
+               $(SRC_DIR)/core/hle/service/cecd/cecd_u.cpp \
+               $(SRC_DIR)/core/hle/service/cfg/cfg.cpp \
+               $(SRC_DIR)/core/hle/service/cfg/cfg_i.cpp \
+               $(SRC_DIR)/core/hle/service/cfg/cfg_nor.cpp \
+               $(SRC_DIR)/core/hle/service/cfg/cfg_s.cpp \
+               $(SRC_DIR)/core/hle/service/cfg/cfg_u.cpp \
+               $(SRC_DIR)/core/hle/service/csnd/csnd_snd.cpp \
+               $(SRC_DIR)/core/hle/service/dlp/dlp.cpp \
+               $(SRC_DIR)/core/hle/service/dlp/dlp_clnt.cpp \
+               $(SRC_DIR)/core/hle/service/dlp/dlp_fkcl.cpp \
+               $(SRC_DIR)/core/hle/service/dlp/dlp_srvr.cpp \
+               $(SRC_DIR)/core/hle/service/dsp/dsp_dsp.cpp \
+               $(SRC_DIR)/core/hle/service/err_f.cpp \
+               $(SRC_DIR)/core/hle/service/frd/frd.cpp \
+               $(SRC_DIR)/core/hle/service/frd/frd_a.cpp \
+               $(SRC_DIR)/core/hle/service/frd/frd_u.cpp \
+               $(SRC_DIR)/core/hle/service/fs/archive.cpp \
+               $(SRC_DIR)/core/hle/service/fs/directory.cpp \
+               $(SRC_DIR)/core/hle/service/fs/file.cpp \
+               $(SRC_DIR)/core/hle/service/fs/fs_user.cpp \
+               $(SRC_DIR)/core/hle/service/gsp/gsp.cpp \
+               $(SRC_DIR)/core/hle/service/gsp/gsp_gpu.cpp \
+               $(SRC_DIR)/core/hle/service/gsp/gsp_lcd.cpp \
+               $(SRC_DIR)/core/hle/service/hid/hid.cpp \
+               $(SRC_DIR)/core/hle/service/hid/hid_spvr.cpp \
+               $(SRC_DIR)/core/hle/service/hid/hid_user.cpp \
+               $(SRC_DIR)/core/hle/service/http_c.cpp \
+               $(SRC_DIR)/core/hle/service/ir/extra_hid.cpp \
+               $(SRC_DIR)/core/hle/service/ir/ir.cpp \
+               $(SRC_DIR)/core/hle/service/ir/ir_rst.cpp \
+               $(SRC_DIR)/core/hle/service/ir/ir_u.cpp \
+               $(SRC_DIR)/core/hle/service/ir/ir_user.cpp \
+               $(SRC_DIR)/core/hle/service/ldr_ro/cro_helper.cpp \
+               $(SRC_DIR)/core/hle/service/ldr_ro/ldr_ro.cpp \
+               $(SRC_DIR)/core/hle/service/mic_u.cpp \
+               $(SRC_DIR)/core/hle/service/mvd/mvd.cpp \
+               $(SRC_DIR)/core/hle/service/mvd/mvd_std.cpp \
+               $(SRC_DIR)/core/hle/service/ndm/ndm_u.cpp \
+               $(SRC_DIR)/core/hle/service/news/news.cpp \
+               $(SRC_DIR)/core/hle/service/news/news_s.cpp \
+               $(SRC_DIR)/core/hle/service/news/news_u.cpp \
+               $(SRC_DIR)/core/hle/service/nfc/nfc.cpp \
+               $(SRC_DIR)/core/hle/service/nfc/nfc_m.cpp \
+               $(SRC_DIR)/core/hle/service/nfc/nfc_u.cpp \
+               $(SRC_DIR)/core/hle/service/nim/nim.cpp \
+               $(SRC_DIR)/core/hle/service/nim/nim_aoc.cpp \
+               $(SRC_DIR)/core/hle/service/nim/nim_s.cpp \
+               $(SRC_DIR)/core/hle/service/nim/nim_u.cpp \
+               $(SRC_DIR)/core/hle/service/nwm/nwm.cpp \
+               $(SRC_DIR)/core/hle/service/nwm/nwm_cec.cpp \
+               $(SRC_DIR)/core/hle/service/nwm/nwm_ext.cpp \
+               $(SRC_DIR)/core/hle/service/nwm/nwm_inf.cpp \
+               $(SRC_DIR)/core/hle/service/nwm/nwm_sap.cpp \
+               $(SRC_DIR)/core/hle/service/nwm/nwm_soc.cpp \
+               $(SRC_DIR)/core/hle/service/nwm/nwm_tst.cpp \
+               $(SRC_DIR)/core/hle/service/nwm/nwm_uds.cpp \
+               $(SRC_DIR)/core/hle/service/nwm/uds_beacon.cpp \
+               $(SRC_DIR)/core/hle/service/nwm/uds_connection.cpp \
+               $(SRC_DIR)/core/hle/service/nwm/uds_data.cpp \
+               $(SRC_DIR)/core/hle/service/pm/pm.cpp \
+               $(SRC_DIR)/core/hle/service/pm/pm_app.cpp \
+               $(SRC_DIR)/core/hle/service/pm/pm_dbg.cpp \
+               $(SRC_DIR)/core/hle/service/ps/ps_ps.cpp \
+               $(SRC_DIR)/core/hle/service/ptm/ptm.cpp \
+               $(SRC_DIR)/core/hle/service/ptm/ptm_gets.cpp \
+               $(SRC_DIR)/core/hle/service/ptm/ptm_play.cpp \
+               $(SRC_DIR)/core/hle/service/ptm/ptm_sets.cpp \
+               $(SRC_DIR)/core/hle/service/ptm/ptm_sysm.cpp \
+               $(SRC_DIR)/core/hle/service/ptm/ptm_u.cpp \
+               $(SRC_DIR)/core/hle/service/pxi/dev.cpp \
+               $(SRC_DIR)/core/hle/service/pxi/pxi.cpp \
+               $(SRC_DIR)/core/hle/service/qtm/qtm.cpp \
+               $(SRC_DIR)/core/hle/service/qtm/qtm_c.cpp \
+               $(SRC_DIR)/core/hle/service/qtm/qtm_s.cpp \
+               $(SRC_DIR)/core/hle/service/qtm/qtm_sp.cpp \
+               $(SRC_DIR)/core/hle/service/qtm/qtm_u.cpp \
+               $(SRC_DIR)/core/hle/service/service.cpp \
+               $(SRC_DIR)/core/hle/service/sm/sm.cpp \
+               $(SRC_DIR)/core/hle/service/sm/srv.cpp \
+               $(SRC_DIR)/core/hle/service/soc_u.cpp \
+               $(SRC_DIR)/core/hle/service/ssl_c.cpp \
+               $(SRC_DIR)/core/hle/service/y2r_u.cpp \
+               $(SRC_DIR)/core/hw/aes/arithmetic128.cpp \
+               $(SRC_DIR)/core/hw/aes/ccm.cpp \
+               $(SRC_DIR)/core/hw/aes/key.cpp \
+               $(SRC_DIR)/core/hw/gpu.cpp \
+               $(SRC_DIR)/core/hw/hw.cpp \
+               $(SRC_DIR)/core/hw/lcd.cpp \
+               $(SRC_DIR)/core/hw/rsa/rsa.cpp \
+               $(SRC_DIR)/core/hw/y2r.cpp \
+               $(SRC_DIR)/core/loader/3dsx.cpp \
+               $(SRC_DIR)/core/loader/elf.cpp \
+               $(SRC_DIR)/core/loader/loader.cpp \
+               $(SRC_DIR)/core/loader/ncch.cpp \
+               $(SRC_DIR)/core/loader/smdh.cpp \
+               $(SRC_DIR)/core/memory.cpp \
+               $(SRC_DIR)/core/movie.cpp \
+               $(SRC_DIR)/core/perf_stats.cpp \
+               $(SRC_DIR)/core/savestate.cpp \
+               $(SRC_DIR)/core/settings.cpp \
+               $(SRC_DIR)/core/telemetry_session.cpp \
+               $(SRC_DIR)/core/tracer/recorder.cpp
+
+ifeq ($(HAVE_DYNARMIC), 1)
+SOURCES_CXX += $(SRC_DIR)/core/arm/dynarmic/arm_dynarmic.cpp \
+               $(SRC_DIR)/core/arm/dynarmic/arm_dynarmic.h \
+               $(SRC_DIR)/core/arm/dynarmic/arm_dynarmic_cp15.cpp \
+               $(SRC_DIR)/core/arm/dynarmic/arm_dynarmic_cp15.h
+endif
+
+ifeq ($(HAVE_RPC), 1)
+SOURCES_CXX += $(SRC_DIR)/core/rpc/packet.cpp \
+               $(SRC_DIR)/core/rpc/rpc_server.cpp \
+               $(SRC_DIR)/core/rpc/server.cpp \
+               $(SRC_DIR)/core/rpc/udp_server.cpp
+endif
+
+# Video Core
+SOURCES_CXX += $(SRC_DIR)/video_core/command_processor.cpp \
+               $(SRC_DIR)/video_core/debug_utils/debug_utils.cpp \
+               $(SRC_DIR)/video_core/geometry_pipeline.cpp \
+               $(SRC_DIR)/video_core/pica.cpp \
+               $(SRC_DIR)/video_core/primitive_assembly.cpp \
+               $(SRC_DIR)/video_core/regs.cpp \
+               $(SRC_DIR)/video_core/renderer_base.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/gl_rasterizer.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/gl_rasterizer_cache.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/gl_resource_manager.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/gl_shader_decompiler.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/gl_shader_disk_cache.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/gl_shader_gen.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/gl_shader_manager.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/gl_shader_util.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/gl_state.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/gl_stream_buffer.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/gl_surface_params.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/gl_vars.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/post_processing_opengl.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/renderer_opengl.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/texture_filters/anime4k/anime4k_ultrafast.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/texture_filters/bicubic/bicubic.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/texture_filters/scale_force/scale_force.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/texture_filters/texture_filterer.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/texture_filters/xbrz/xbrz_freescale.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/gl_format_reinterpreter.cpp \
+               $(SRC_DIR)/video_core/shader/shader.cpp \
+               $(SRC_DIR)/video_core/shader/shader_interpreter.cpp \
+               $(SRC_DIR)/video_core/swrasterizer/clipper.cpp \
+               $(SRC_DIR)/video_core/swrasterizer/framebuffer.cpp \
+               $(SRC_DIR)/video_core/swrasterizer/lighting.cpp \
+               $(SRC_DIR)/video_core/swrasterizer/proctex.cpp \
+               $(SRC_DIR)/video_core/swrasterizer/rasterizer.cpp \
+               $(SRC_DIR)/video_core/swrasterizer/swrasterizer.cpp \
+               $(SRC_DIR)/video_core/swrasterizer/texturing.cpp \
+               $(SRC_DIR)/video_core/texture/etc1.cpp \
+               $(SRC_DIR)/video_core/texture/texture_decode.cpp \
+               $(SRC_DIR)/video_core/vertex_loader.cpp \
+               $(SRC_DIR)/video_core/video_core.cpp
+
+ifeq ($(ARCH), x86_64)
+INCFLAGS += -I$(EXTERNALS_DIR)/xbyak/xbyak
+SOURCES_CXX += $(SRC_DIR)/video_core/shader/shader_jit_x64.cpp \
+               $(SRC_DIR)/video_core/shader/shader_jit_x64_compiler.cpp
+endif
+
+# Audio Core
+SOURCES_CXX += $(SRC_DIR)/audio_core/codec.cpp \
+               $(SRC_DIR)/audio_core/dsp_interface.cpp \
+               $(SRC_DIR)/audio_core/hle/adts_reader.cpp \
+               $(SRC_DIR)/audio_core/hle/decoder.cpp \
+               $(SRC_DIR)/audio_core/hle/filter.cpp \
+               $(SRC_DIR)/audio_core/hle/hle.cpp \
+               $(SRC_DIR)/audio_core/hle/mixers.cpp \
+               $(SRC_DIR)/audio_core/hle/source.cpp \
+               $(SRC_DIR)/audio_core/lle/lle.cpp \
+               $(SRC_DIR)/audio_core/interpolate.cpp \
+               $(SRC_DIR)/audio_core/sink_details.cpp \
+               $(SRC_DIR)/audio_core/time_stretch.cpp \
+               $(SRC_DIR)/audio_core/libretro_sink.cpp
+
+ifeq ($(HAVE_FFMPEG), 1)
+DEFINES += -DHAVE_FFMPEG
+SOURCES_CXX += $(SRC_DIR)/audio_core/hle/ffmpeg_decoder.cpp \
+               $(SRC_DIR)/audio_core/hle/ffmpeg_dl.cpp
+endif
+
+# Network
+SOURCES_CXX += $(SRC_DIR)/network/network.cpp \
+               $(SRC_DIR)/network/packet.cpp \
+               $(SRC_DIR)/network/room.cpp \
+               $(SRC_DIR)/network/room_member.cpp \
+               $(SRC_DIR)/network/verify_user.cpp
+
+# Citra Libretro
+SOURCES_CXX += $(SRC_DIR)/citra_libretro/emu_window/libretro_window.cpp \
+               $(SRC_DIR)/citra_libretro/input/input_factory.cpp \
+               $(SRC_DIR)/citra_libretro/input/mouse_tracker.cpp \
+               $(SRC_DIR)/citra_libretro/citra_libretro.cpp \
+               $(SRC_DIR)/citra_libretro/environment.cpp \
+               $(SRC_DIR)/citra_libretro/core_settings.cpp \
+               $(SRC_DIR)/citra_libretro/libretro_logger.cpp
+
+SHADER_FILES += $(SRC_DIR)/video_core/renderer_opengl/texture_filters/anime4k/refine.frag \
+                $(SRC_DIR)/video_core/renderer_opengl/texture_filters/anime4k/refine.vert \
+                $(SRC_DIR)/video_core/renderer_opengl/texture_filters/anime4k/x_gradient.frag \
+                $(SRC_DIR)/video_core/renderer_opengl/texture_filters/anime4k/y_gradient.frag \
+                $(SRC_DIR)/video_core/renderer_opengl/texture_filters/anime4k/y_gradient.vert \
+                $(SRC_DIR)/video_core/renderer_opengl/texture_filters/bicubic/bicubic.frag \
+                $(SRC_DIR)/video_core/renderer_opengl/texture_filters/scale_force/scale_force.frag \
+                $(SRC_DIR)/video_core/renderer_opengl/texture_filters/tex_coord.vert \
+                $(SRC_DIR)/video_core/renderer_opengl/texture_filters/xbrz/xbrz_freescale.frag \
+                $(SRC_DIR)/video_core/renderer_opengl/texture_filters/xbrz/xbrz_freescale.vert
