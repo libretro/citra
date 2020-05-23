@@ -145,8 +145,6 @@ public:
 
     std::array<bool, 2> clip_distance; // GL_CLIP_DISTANCE
 
-    GLuint renderbuffer;
-
     OpenGLState();
 
     /// Get the currently active OpenGL state
