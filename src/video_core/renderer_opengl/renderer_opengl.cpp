@@ -35,6 +35,20 @@
 #include "video_core/renderer_opengl/renderer_opengl.h"
 #include "video_core/video_core.h"
 
+namespace Frontend {
+
+struct Frame {
+    u32 width{};                      /// Width of the frame (to detect resize)
+    u32 height{};                     /// Height of the frame
+    bool color_reloaded = false;      /// Texture attachment was recreated (ie: resized)
+    OpenGL::OGLRenderbuffer color{};  /// Buffer shared between the render/present FBO
+    OpenGL::OGLFramebuffer render{};  /// FBO created on the render thread
+    OpenGL::OGLFramebuffer present{}; /// FBO created on the present thread
+    GLsync render_fence{};            /// Fence created on the render thread
+    GLsync present_fence{};           /// Fence created on the presentation thread
+};
+} // namespace Frontend
+
 namespace OpenGL {
 
 // If the size of this is too small, it ends up creating a soft cap on FPS as the renderer will have
@@ -75,7 +89,6 @@ public:
         std::queue<Frontend::Frame*>().swap(free_queue);
         present_queue.clear();
         present_cv.notify_all();
-        free_cv.notify_all();
     }
 
     void ReloadPresentFrame(Frontend::Frame* frame, u32 height, u32 width) override {
@@ -86,7 +99,7 @@ public:
         glBindFramebuffer(GL_FRAMEBUFFER, frame->present.handle);
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER,
                                   frame->color.handle);
-        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        if (!glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
             LOG_CRITICAL(Render_OpenGL, "Failed to recreate present FBO!");
         }
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, previous_draw_fbo);
@@ -112,7 +125,7 @@ public:
         state.Apply();
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER,
                                   frame->color.handle);
-        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        if (!glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
             LOG_CRITICAL(Render_OpenGL, "Failed to recreate render FBO!");
         }
         prev_state.Apply();
@@ -142,12 +155,19 @@ public:
         present_cv.notify_one();
     }
 
-    // This is virtual as it is to be overriden in OGLVideoDumpingMailbox below.
-    virtual void LoadPresentFrame() {
+    Frontend::Frame* TryGetPresentFrame(int timeout_ms) override {
+        std::unique_lock<std::mutex> lock(swap_chain_lock);
+        // wait for new entries in the present_queue
+        present_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms),
+                            [&] { return !present_queue.empty(); });
+        if (present_queue.empty()) {
+            // timed out waiting for a frame to draw so return the previous frame
+            return previous_frame;
+        }
+
         // free the previous frame and add it back to the free queue
         if (previous_frame) {
             free_queue.push(previous_frame);
-            free_cv.notify_one();
         }
 
         // the newest entries are pushed to the front of the queue
@@ -159,76 +179,7 @@ public:
         }
         present_queue.clear();
         previous_frame = frame;
-    }
-
-    Frontend::Frame* TryGetPresentFrame(int timeout_ms) override {
-        std::unique_lock<std::mutex> lock(swap_chain_lock);
-        // wait for new entries in the present_queue
-        present_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms),
-                            [&] { return !present_queue.empty(); });
-        if (present_queue.empty()) {
-            // timed out waiting for a frame to draw so return the previous frame
-            return previous_frame;
-        }
-
-        LoadPresentFrame();
-        return previous_frame;
-    }
-};
-
-/// This mailbox is different in that it will never discard rendered frames
-class OGLVideoDumpingMailbox : public OGLTextureMailbox {
-public:
-    bool quit = false;
-
-    Frontend::Frame* GetRenderFrame() override {
-        std::unique_lock<std::mutex> lock(swap_chain_lock);
-
-        // If theres no free frames, we will wait until one shows up
-        if (free_queue.empty()) {
-            free_cv.wait(lock, [&] { return (!free_queue.empty() || quit); });
-            if (quit) {
-                throw OGLTextureMailboxException("VideoDumpingMailbox quitting");
-            }
-
-            if (free_queue.empty()) {
-                LOG_CRITICAL(Render_OpenGL, "Could not get free frame");
-                return nullptr;
-            }
-        }
-
-        Frontend::Frame* frame = free_queue.front();
-        free_queue.pop();
         return frame;
-    }
-
-    void LoadPresentFrame() override {
-        // free the previous frame and add it back to the free queue
-        if (previous_frame) {
-            free_queue.push(previous_frame);
-            free_cv.notify_one();
-        }
-
-        Frontend::Frame* frame = present_queue.back();
-        present_queue.pop_back();
-        previous_frame = frame;
-
-        // Do not remove entries from the present_queue, as video dumping would require
-        // that we preserve all frames
-    }
-
-    Frontend::Frame* TryGetPresentFrame(int timeout_ms) override {
-        std::unique_lock<std::mutex> lock(swap_chain_lock);
-        // wait for new entries in the present_queue
-        present_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms),
-                            [&] { return !present_queue.empty(); });
-        if (present_queue.empty()) {
-            // timed out waiting for a frame
-            return nullptr;
-        }
-
-        LoadPresentFrame();
-        return previous_frame;
     }
 };
 
@@ -340,35 +291,21 @@ struct ScreenRectVertex {
  *
  * The projection part of the matrix is trivial, hence these operations are represented
  * by a 3x2 matrix.
- *
- * @param flipped Whether the frame should be flipped upside down.
  */
-static std::array<GLfloat, 3 * 2> MakeOrthographicMatrix(const float width, const float height,
-                                                         bool flipped) {
-
+static std::array<GLfloat, 3 * 2> MakeOrthographicMatrix(const float width, const float height) {
     std::array<GLfloat, 3 * 2> matrix; // Laid out in column-major order
 
+    // clang-format off
+    matrix[0] = 2.f / width; matrix[2] = 0.f;           matrix[4] = -1.f;
+    matrix[1] = 0.f;         matrix[3] = -2.f / height; matrix[5] = 1.f;
     // Last matrix row is implicitly assumed to be [0, 0, 1].
-    if (flipped) {
-        // clang-format off
-        matrix[0] = 2.f / width; matrix[2] = 0.f;           matrix[4] = -1.f;
-        matrix[1] = 0.f;         matrix[3] = 2.f / height;  matrix[5] = -1.f;
-        // clang-format on
-    } else {
-        // clang-format off
-        matrix[0] = 2.f / width; matrix[2] = 0.f;           matrix[4] = -1.f;
-        matrix[1] = 0.f;         matrix[3] = -2.f / height; matrix[5] = 1.f;
-        // clang-format on
-    }
+    // clang-format on
 
     return matrix;
 }
 
-RendererOpenGL::RendererOpenGL(Frontend::EmuWindow& window)
-    : RendererBase{window}, frame_dumper(Core::System::GetInstance().VideoDumper(), window) {
-
+RendererOpenGL::RendererOpenGL(Frontend::EmuWindow& window) : RendererBase{window} {
     window.mailbox = std::make_unique<OGLTextureMailbox>();
-    frame_dumper.mailbox = std::make_unique<OGLVideoDumpingMailbox>();
 }
 
 RendererOpenGL::~RendererOpenGL() = default;
@@ -391,18 +328,56 @@ void RendererOpenGL::SwapBuffers() {
 
     RenderScreenshot();
 
-    const auto& layout = render_window.GetFramebufferLayout();
-    RenderToMailbox(layout, render_window.mailbox, false);
+    RenderVideoDumping();
 
-    if (frame_dumper.IsDumping()) {
-        try {
-            RenderToMailbox(frame_dumper.GetLayout(), frame_dumper.mailbox, true);
-        } catch (const OGLTextureMailboxException& exception) {
-            LOG_DEBUG(Render_OpenGL, "Frame dumper exception caught: {}", exception.what());
+    const auto& layout = render_window.GetFramebufferLayout();
+
+    Frontend::Frame* frame;
+    {
+        MICROPROFILE_SCOPE(OpenGL_WaitPresent);
+
+        frame = render_window.mailbox->GetRenderFrame();
+
+        // Clean up sync objects before drawing
+
+        // INTEL driver workaround. We can't delete the previous render sync object until we are
+        // sure that the presentation is done
+        if (frame->present_fence) {
+            glClientWaitSync(frame->present_fence, 0, GL_TIMEOUT_IGNORED);
+        }
+
+        // delete the draw fence if the frame wasn't presented
+        if (frame->render_fence) {
+            glDeleteSync(frame->render_fence);
+            frame->render_fence = 0;
+        }
+
+        // wait for the presentation to be done
+        if (frame->present_fence) {
+            glWaitSync(frame->present_fence, 0, GL_TIMEOUT_IGNORED);
+            glDeleteSync(frame->present_fence);
+            frame->present_fence = 0;
         }
     }
 
-    m_current_frame++;
+    {
+        MICROPROFILE_SCOPE(OpenGL_RenderFrame);
+        // Recreate the frame if the size of the window has changed
+        if (layout.width != frame->width || layout.height != frame->height) {
+            LOG_DEBUG(Render_OpenGL, "Reloading render frame");
+            render_window.mailbox->ReloadRenderFrame(frame, layout.width, layout.height);
+        }
+
+        GLuint render_texture = frame->color.handle;
+        state.draw.draw_framebuffer = frame->render.handle;
+        state.Apply();
+        DrawScreens(layout);
+        // Create a fence for the frontend to wait on and swap this frame to OffTex
+        frame->render_fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        glFlush();
+        render_window.mailbox->ReleaseRenderFrame(frame);
+        m_current_frame++;
+    }
 
     Core::System::GetInstance().perf_stats->EndSystemFrame();
 
@@ -438,7 +413,7 @@ void RendererOpenGL::RenderScreenshot() {
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER,
                                   renderbuffer);
 
-        DrawScreens(layout, false);
+        DrawScreens(layout);
 
         glReadPixels(0, 0, layout.width, layout.height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
                      VideoCore::g_screenshot_bits);
@@ -491,54 +466,33 @@ void RendererOpenGL::PrepareRendertarget() {
     }
 }
 
-void RendererOpenGL::RenderToMailbox(const Layout::FramebufferLayout& layout,
-                                     std::unique_ptr<Frontend::TextureMailbox>& mailbox,
-                                     bool flipped) {
-
-    Frontend::Frame* frame;
-    {
-        MICROPROFILE_SCOPE(OpenGL_WaitPresent);
-
-        frame = mailbox->GetRenderFrame();
-
-        // Clean up sync objects before drawing
-
-        // INTEL driver workaround. We can't delete the previous render sync object until we are
-        // sure that the presentation is done
-        if (frame->present_fence) {
-            glClientWaitSync(frame->present_fence, 0, GL_TIMEOUT_IGNORED);
-        }
-
-        // delete the draw fence if the frame wasn't presented
-        if (frame->render_fence) {
-            glDeleteSync(frame->render_fence);
-            frame->render_fence = nullptr;
-        }
-
-        // wait for the presentation to be done
-        if (frame->present_fence) {
-            glWaitSync(frame->present_fence, 0, GL_TIMEOUT_IGNORED);
-            glDeleteSync(frame->present_fence);
-            frame->present_fence = nullptr;
-        }
+void RendererOpenGL::RenderVideoDumping() {
+    if (cleanup_video_dumping.exchange(false)) {
+        ReleaseVideoDumpingGLObjects();
     }
 
-    {
-        MICROPROFILE_SCOPE(OpenGL_RenderFrame);
-        // Recreate the frame if the size of the window has changed
-        if (layout.width != frame->width || layout.height != frame->height) {
-            LOG_DEBUG(Render_OpenGL, "Reloading render frame");
-            mailbox->ReloadRenderFrame(frame, layout.width, layout.height);
+    if (Core::System::GetInstance().VideoDumper().IsDumping()) {
+        if (prepare_video_dumping.exchange(false)) {
+            InitVideoDumpingGLObjects();
         }
 
-        GLuint render_texture = frame->color.handle;
-        state.draw.draw_framebuffer = frame->render.handle;
-        state.Apply();
-        DrawScreens(layout, flipped);
-        // Create a fence for the frontend to wait on and swap this frame to OffTex
-        frame->render_fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-        glFlush();
-        mailbox->ReleaseRenderFrame(frame);
+        const auto& layout = Core::System::GetInstance().VideoDumper().GetLayout();
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, frame_dumping_framebuffer.handle);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, frame_dumping_framebuffer.handle);
+        DrawScreens(layout);
+
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, frame_dumping_pbos[current_pbo].handle);
+        glReadPixels(0, 0, layout.width, layout.height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, 0);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, frame_dumping_pbos[next_pbo].handle);
+
+        GLubyte* pixels = static_cast<GLubyte*>(glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY));
+        VideoDumper::VideoFrame frame_data{layout.width, layout.height, pixels};
+        Core::System::GetInstance().VideoDumper().AddVideoFrame(frame_data);
+
+        glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+        current_pbo = (current_pbo + 1) % 2;
+        next_pbo = (current_pbo + 1) % 2;
     }
 }
 
@@ -962,7 +916,7 @@ void RendererOpenGL::DrawSingleScreenStereo(const ScreenInfo& screen_info_l,
 /**
  * Draws the emulated screens to the emulator window.
  */
-void RendererOpenGL::DrawScreens(const Layout::FramebufferLayout& layout, bool flipped) {
+void RendererOpenGL::DrawScreens(const Layout::FramebufferLayout& layout) {
     if (VideoCore::g_renderer_bg_color_update_requested.exchange(false)) {
         // Update background color before drawing
         glClearColor(Settings::values.bg_red, Settings::values.bg_green, Settings::values.bg_blue,
@@ -992,7 +946,7 @@ void RendererOpenGL::DrawScreens(const Layout::FramebufferLayout& layout, bool f
 
     // Set projection matrix
     std::array<GLfloat, 3 * 2> ortho_matrix =
-        MakeOrthographicMatrix((float)layout.width, (float)layout.height, flipped);
+        MakeOrthographicMatrix((float)layout.width, (float)layout.height);
     glUniformMatrix3x2fv(uniform_modelview_matrix, 1, GL_FALSE, ortho_matrix.data());
 
     // Bind texture in Texture Unit 0
@@ -1175,22 +1129,41 @@ void RendererOpenGL::TryPresent(int timeout_ms) {
 void RendererOpenGL::UpdateFramerate() {}
 
 void RendererOpenGL::PrepareVideoDumping() {
-    auto* mailbox = static_cast<OGLVideoDumpingMailbox*>(frame_dumper.mailbox.get());
-    {
-        std::unique_lock lock(mailbox->swap_chain_lock);
-        mailbox->quit = false;
-    }
-    frame_dumper.StartDumping();
+    prepare_video_dumping = true;
 }
 
 void RendererOpenGL::CleanupVideoDumping() {
-    frame_dumper.StopDumping();
-    auto* mailbox = static_cast<OGLVideoDumpingMailbox*>(frame_dumper.mailbox.get());
-    {
-        std::unique_lock lock(mailbox->swap_chain_lock);
-        mailbox->quit = true;
+    cleanup_video_dumping = true;
+}
+
+void RendererOpenGL::InitVideoDumpingGLObjects() {
+    const auto& layout = Core::System::GetInstance().VideoDumper().GetLayout();
+
+    frame_dumping_framebuffer.Create();
+    glGenRenderbuffers(1, &frame_dumping_renderbuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, frame_dumping_renderbuffer);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_RGB8, layout.width, layout.height);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, frame_dumping_framebuffer.handle);
+    glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER,
+                              frame_dumping_renderbuffer);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+
+    for (auto& buffer : frame_dumping_pbos) {
+        buffer.Create();
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, buffer.handle);
+        glBufferData(GL_PIXEL_PACK_BUFFER, layout.width * layout.height * 4, nullptr,
+                     GL_STREAM_READ);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     }
-    mailbox->free_cv.notify_one();
+}
+
+void RendererOpenGL::ReleaseVideoDumpingGLObjects() {
+    frame_dumping_framebuffer.Release();
+    glDeleteRenderbuffers(1, &frame_dumping_renderbuffer);
+
+    for (auto& buffer : frame_dumping_pbos) {
+        buffer.Release();
+    }
 }
 
 static const char* GetSource(GLenum source) {
