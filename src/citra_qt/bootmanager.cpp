@@ -381,6 +381,7 @@ void GRenderWindow::focusOutEvent(QFocusEvent* event) {
 
 void GRenderWindow::resizeEvent(QResizeEvent* event) {
     QOpenGLWidget::resizeEvent(event);
+    NotifyClientAreaSizeChanged(std::make_pair(event->size().width(), event->size().height()));
     OnFramebufferSizeChanged();
 }
 
@@ -428,6 +429,10 @@ void GRenderWindow::paintGL() {
 
 void GRenderWindow::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
+
+    // windowHandle() is not initialized until the Window is shown, so we connect it here.
+    connect(windowHandle(), &QWindow::screenChanged, this, &GRenderWindow::OnFramebufferSizeChanged,
+            Qt::UniqueConnection);
 }
 
 std::unique_ptr<Frontend::GraphicsContext> GRenderWindow::CreateSharedContext() const {
