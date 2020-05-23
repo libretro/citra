@@ -45,14 +45,20 @@ ResultStatus Init(Frontend::EmuWindow& emu_window, Memory::MemorySystem& memory)
 
     OpenGL::GLES = Settings::values.use_gles;
 
-    g_renderer = std::make_unique<OpenGL::RendererOpenGL>(emu_window);
-    ResultStatus result = g_renderer->Init();
+    if (!emu_window.ShouldDeferRendererInit()) {
+        g_renderer = std::make_unique<OpenGL::RendererOpenGL>(emu_window);
+        ResultStatus result = g_renderer->Init();
 
-    if (result != ResultStatus::Success) {
-        LOG_ERROR(Render, "initialization failed !");
+        if (result != ResultStatus::Success) {
+            LOG_ERROR(Render, "initialization failed !");
+        } else {
+            LOG_DEBUG(Render, "initialized OK");
+        }
+
+        return result;
     } else {
         // We will come back to it later
-        return Core::System::ResultStatus::Success;
+        return ResultStatus::Success;
     }
 }
 
