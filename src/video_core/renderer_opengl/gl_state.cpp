@@ -442,11 +442,4 @@ OpenGLState& OpenGLState::ResetFramebuffer(GLuint handle) {
     return *this;
 }
 
-OpenGLState& OpenGLState::ResetRenderbuffer(GLuint handle) {
-    if (renderbuffer == handle) {
-        renderbuffer = 0;
-    }
-    return *this;
-}
-
 } // namespace OpenGL
