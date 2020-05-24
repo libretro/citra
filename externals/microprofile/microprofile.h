@@ -103,6 +103,7 @@
 #endif
 
 #include <stdint.h>
+#include <strings.h>
 typedef uint64_t MicroProfileToken;
 typedef uint16_t MicroProfileGroupId;
 
