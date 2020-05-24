@@ -7,7 +7,7 @@ HAVE_RPC = 1
 TARGET_NAME    := citra
 EXTERNALS_DIR  += ./externals
 SRC_DIR        += ./src
-LIBS		   = -lm -lboost_serialization -lzstd
+LIBS		   = -lm -lzstd
 DEFINES        := -DHAVE_LIBRETRO
 
 STATIC_LINKING := 0
