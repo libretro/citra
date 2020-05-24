@@ -31,6 +31,22 @@
 #include "video_core/renderer_opengl/renderer_opengl.h"
 #include "video_core/video_core.h"
 
+#if defined(HAVE_LIBNX)
+#include <cstring>
+typedef void (*rglgen_func_t)(void);
+typedef rglgen_func_t (*rglgen_proc_address_t)(const char*);
+void rglgen_resolve_symbols_custom(rglgen_proc_address_t proc, const struct rglgen_sym_map *map)
+{
+    for (; map->sym; map++)
+    {
+        rglgen_func_t func = proc(map->sym);
+        memcpy(map->ptr, &func, sizeof(func));
+    }
+}
+
+extern const struct rglgen_sym_map rglgen_symbol_map_citra;
+#endif
+
 class CitraLibRetro {
 public:
     CitraLibRetro() : log_filter(Log::Level::Info) {}
@@ -378,6 +394,10 @@ void context_reset() {
         return;
     }
 
+#ifdef HAVE_LIBNX
+    rglgen_resolve_symbols_custom(&eglGetProcAddress, &rglgen_symbol_map_citra);
+#endif
+
     // Check to see if the frontend provides us with OpenGL symbols
     if (emu_instance->hw_render.get_proc_address != nullptr) {
         if (!gladLoadGLLoader((GLADloadproc)load_opengl_func)) {
@@ -432,7 +452,9 @@ bool retro_load_game(const struct retro_game_info* info) {
 
     LibRetro::settings.file_path = info->path;
 
+#ifndef HAVE_LIBNX
     LibRetro::SetHWSharedContext();
+#endif
 
     if (!LibRetro::SetPixelFormat(RETRO_PIXEL_FORMAT_XRGB8888)) {
         LOG_CRITICAL(Frontend, "XRGB8888 is not supported.");
@@ -440,9 +462,17 @@ bool retro_load_game(const struct retro_game_info* info) {
         return false;
     }
 
+#ifdef HAVE_LIBNX
+    emu_instance->hw_render.context_type = RETRO_HW_CONTEXT_OPENGL;
+    emu_instance->hw_render.version_major = 0;
+    emu_instance->hw_render.version_minor = 0;
+
+     rglgen_resolve_symbols_custom(&eglGetProcAddress, &rglgen_symbol_map_citra);
+#else
     emu_instance->hw_render.context_type = RETRO_HW_CONTEXT_OPENGL_CORE;
     emu_instance->hw_render.version_major = 3;
     emu_instance->hw_render.version_minor = 3;
+#endif
     emu_instance->hw_render.context_reset = context_reset;
     emu_instance->hw_render.context_destroy = context_destroy;
     emu_instance->hw_render.cache_context = false;
