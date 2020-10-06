@@ -173,7 +173,7 @@ else
 	LD = $(CXX)
 endif
 
-all: $(TARGET) shaders
+all: shaders $(TARGET)
 
 $(TARGET): $(OBJECTS)
 	@echo "** BUILDING $(TARGET) FOR PLATFORM $(platform) **"
