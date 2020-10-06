@@ -10,6 +10,9 @@
 #include <regex>
 #include <sstream>
 #include <thread>
+#ifdef HAVE_LIBNX
+#include <sys/select.h>
+#endif
 #include "common/logging/log.h"
 #include "enet/enet.h"
 #include "network/packet.h"
