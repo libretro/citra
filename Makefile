@@ -82,7 +82,8 @@ DEFINES += -DGIT_REV=\"$(GIT_REV)\" \
 		   -DBUILD_NAME=\"citra-libretro\" \
 		   -DBUILD_DATE=\"$(BUILD_DATE)\" \
 		   -DBUILD_VERSION=\"$(GIT_BRANCH)-$(GIT_DESC)\" \
-		   -DBUILD_FULLNAME=\"\"
+		   -DBUILD_FULLNAME=\"\" \
+		   -DSHADER_CACHE_VERSION=\"0\"
 
 ifeq ($(platform), unix)
 	EXT ?= so
