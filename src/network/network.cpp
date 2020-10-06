@@ -4,6 +4,9 @@
 
 #include "common/assert.h"
 #include "common/logging/log.h"
+#ifdef HAVE_LIBNX
+#include <sys/select.h>
+#endif
 #include "enet/enet.h"
 #include "network/network.h"
 
