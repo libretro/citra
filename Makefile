@@ -113,6 +113,7 @@ else ifeq ($(platform), libnx)
 else
    CC ?= gcc
    TARGET := $(TARGET_NAME)_libretro.dll
+   DEFINES += -D_WIN32_WINNT=0x0600 -DWINVER=0x0600
    SHARED := -shared -static-libgcc -static-libstdc++ -s -Wl,--version-script=$(CORE_DIR)/link.T -Wl,--no-undefined
    LDFLAGS += -lws2_32 -lwinmm
 
