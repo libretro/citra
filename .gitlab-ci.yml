@@ -35,7 +35,7 @@ libretro-build-windows-x64-mingw:
     - .core-defs
     - .libretro-windows-x64-mingw-make-default
 
-libretro-build-libnx-aarch64:
-  extends:
-    - .core-defs
-    - .libretro-libnx-static-retroarch-master
+# libretro-build-libnx-aarch64:
+#   extends:
+#     - .core-defs
+#     - .libretro-libnx-static-retroarch-master
