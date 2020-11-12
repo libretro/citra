@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2018 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (nbio_linux.c).
@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -39,14 +40,12 @@
 
 struct nbio_linux_t
 {
-   int fd;
-   bool busy;
-
+   void* ptr;
    aio_context_t ctx;
    struct iocb cb;
-
-   void* ptr;
    size_t len;
+   int fd;
+   bool busy;
 };
 
 /* there's also a Unix AIO thingy, but it's not in glibc
