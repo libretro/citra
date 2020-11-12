@@ -120,8 +120,9 @@ else
    ifeq ($(MSYSTEM),MINGW64)
    	  CC = x86_64-w64-mingw32-gcc
       CXX = x86_64-w64-mingw32-g++
-	  LDFLAGS += -lopengl32
+	  LDFLAGS += -lopengl32 -lmfuuid
 	  ASFLAGS += -DWIN64
+	  HAVE_MF = 1
    endif
 endif
 

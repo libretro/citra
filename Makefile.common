@@ -626,6 +626,12 @@ SOURCES_CXX += $(SRC_DIR)/audio_core/hle/ffmpeg_decoder.cpp \
                $(SRC_DIR)/audio_core/hle/ffmpeg_dl.cpp
 endif
 
+ifeq ($(HAVE_MF), 1)
+DEFINES += -DHAVE_MF
+SOURCES_CXX += $(SRC_DIR)/audio_core/hle/wmf_decoder.cpp \
+               $(SRC_DIR)/audio_core/hle/wmf_decoder_utils.cpp
+endif
+
 # Network
 SOURCES_CXX += $(SRC_DIR)/network/network.cpp \
                $(SRC_DIR)/network/packet.cpp \
