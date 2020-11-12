@@ -110,6 +110,18 @@ else ifeq ($(platform), libnx)
    HAVE_GLAD = 0
    HAVE_RPC = 0
    DEBUG = 0
+else
+   CC ?= gcc
+   TARGET := $(TARGET_NAME)_libretro.dll
+   SHARED := -shared -static-libgcc -static-libstdc++ -s -Wl,--version-script=$(CORE_DIR)/link.T -Wl,--no-undefined
+   LDFLAGS += -lws2_32 -lwinmm
+
+   ifeq ($(MSYSTEM),MINGW64)
+   	  CC = x86_64-w64-mingw32-gcc
+      CXX = x86_64-w64-mingw32-g++
+	  LDFLAGS += -lopengl32
+	  ASFLAGS += -DWIN64
+   endif
 endif
 
 ifneq (,$(findstring msvc,$(platform)))
