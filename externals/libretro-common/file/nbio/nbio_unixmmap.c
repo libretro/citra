@@ -1,4 +1,4 @@
-/* Copyright  (C) 2010-2018 The RetroArch team
+/* Copyright  (C) 2010-2020 The RetroArch team
  *
  * ---------------------------------------------------------------------------------------
  * The following license statement only applies to this file (nbio_unixmmap.c).
@@ -55,10 +55,10 @@
 
 struct nbio_mmap_unix_t
 {
+   void* ptr;
+   size_t len;
    int fd;
    int map_flags;
-   size_t len;
-   void* ptr;
 };
 
 static void *nbio_mmap_unix_open(const char * filename, unsigned mode)
