@@ -201,7 +201,7 @@ shaders: $(SHADER_FILES)
 	mkdir -p $(SRC_DIR)/video_core/shaders
 	for SHADER_FILE in $^; do \
 		FILENAME=$$(basename "$$SHADER_FILE"); \
-		SHADER_NAME=$${FILENAME//[.]/_}; \
+		SHADER_NAME=$$(echo "$$FILENAME" | sed -e "s/\./_/g"); \
 		rm -f $(SRC_DIR)/video_core/shaders/$$FILENAME; \
 		echo "#pragma once" >> $(SRC_DIR)/video_core/shaders/$$FILENAME; \
 		echo "constexpr std::string_view $$SHADER_NAME = R\"(" >> $(SRC_DIR)/video_core/shaders/$$FILENAME; \
