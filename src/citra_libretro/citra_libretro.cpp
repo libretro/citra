@@ -435,7 +435,6 @@ void context_destroy() {
     }
 
     emu_instance->emu_window->DestroyContext();
-    VideoCore::g_renderer = nullptr;
 }
 
 void retro_reset() {
