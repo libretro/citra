@@ -118,8 +118,8 @@ else
    LDFLAGS += -static -lm -ldinput8 -ldxguid -ldxerr8 -luser32 -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lshell32 -lversion -luuid -lws2_32
 
    ifeq ($(MSYSTEM),MINGW64)
-   	  CC = x86_64-w64-mingw32-gcc
-      CXX = x86_64-w64-mingw32-g++
+   	  CC ?= x86_64-w64-mingw32-gcc
+          CXX ?= x86_64-w64-mingw32-g++
 	  LDFLAGS += -lopengl32 -lmfuuid
 	  ASFLAGS += -DWIN64
 	  HAVE_MF = 1
