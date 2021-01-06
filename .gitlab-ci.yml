@@ -7,17 +7,12 @@ variables:
   GIT_SUBMODULE_STRATEGY: recursive
 
 include:
-  - template: Jobs/Code-Quality.gitlab-ci.yml
   - project: 'libretro-infrastructure/ci-templates'
     file: '/libnx-static.yml'
   - project: 'libretro-infrastructure/ci-templates'
     file: '/windows-x64-mingw.yml'
   - project: 'libretro-infrastructure/ci-templates'
     file: '/linux-x64.yml'
-  
-code_quality:
-  artifacts:
-    paths: [gl-code-quality-report.json]
 
 stages:
   - build-prepare
