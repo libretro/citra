@@ -21,6 +21,7 @@ stages:
   - test
 
 libretro-build-linux-x64:
+  image: $CI_SERVER_HOST:5050/libretro-infrastructure/libretro-build-amd64-ubuntu:latest
   extends:
     - .core-defs
     - .libretro-linux-x64-make-default
