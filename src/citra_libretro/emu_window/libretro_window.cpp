@@ -16,7 +16,7 @@
 /// LibRetro expects a "default" GL state.
 void ResetGLState() {
     // Reset internal state.
-    OpenGL::OpenGLState state {};
+    OpenGL::OpenGLState state{};
     state.Apply();
 
     // Clean up global state.
@@ -114,9 +114,7 @@ void EmuWindow_LibRetro::DoneCurrent() {
     // They don't get any say in the matter - GL context is always current!
 }
 
-void EmuWindow_LibRetro::OnMinimalClientAreaChangeRequest(std::pair<u32, u32> minimal_size) {
-    width = minimal_size.first;
-    height = minimal_size.second;
+void EmuWindow_LibRetro::OnMinimalClientAreaChangeRequest(std::pair<u32, u32> _minimal_size) {
 }
 
 void EmuWindow_LibRetro::UpdateLayout() {
@@ -196,7 +194,10 @@ void EmuWindow_LibRetro::UpdateLayout() {
     }
 
     NotifyClientAreaSizeChanged(std::pair<unsigned, unsigned>(baseX, baseY));
-    OnMinimalClientAreaChangeRequest(std::pair<unsigned, unsigned>(baseX, baseY));
+
+    width = baseX;
+    height = baseY;
+
     UpdateCurrentFramebufferLayout(baseX, baseY);
 }
 
