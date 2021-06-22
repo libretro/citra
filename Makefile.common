@@ -263,6 +263,10 @@ endif
 # Externals - fmt
 SOURCES_CXX += $(EXTERNALS_DIR)/fmt/src/format.cc
 
+# Externals - lodepng
+INCFLAGS += -I$(EXTERNALS_DIR)/lodepng/lodepng
+SOURCES_CXX += $(EXTERNALS_DIR)/lodepng/lodepng/lodepng.cpp
+
 # Externals - nihstro
 SOURCES_CXX += $(EXTERNALS_DIR)/nihstro/src/parser_assembly.cpp \
                $(EXTERNALS_DIR)/nihstro/src/preprocessor.cpp \
@@ -638,6 +642,9 @@ SOURCES_CXX += $(SRC_DIR)/network/network.cpp \
                $(SRC_DIR)/network/room.cpp \
                $(SRC_DIR)/network/room_member.cpp \
                $(SRC_DIR)/network/verify_user.cpp
+
+# Citra
+SOURCES_CXX += $(SRC_DIR)/citra/lodepng_image_interface.cpp
 
 # Citra Libretro
 SOURCES_CXX += $(SRC_DIR)/citra_libretro/emu_window/libretro_window.cpp \

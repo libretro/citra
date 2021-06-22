@@ -15,6 +15,7 @@
 #include "libretro.h"
 
 #include "audio_core/libretro_sink.h"
+#include "citra/lodepng_image_interface.h"
 #include "citra_libretro/citra_libretro.h"
 #include "citra_libretro/core_settings.h"
 #include "citra_libretro/environment.h"
@@ -81,6 +82,9 @@ void retro_init() {
     // Setup default, stub handlers for HLE applets
     Frontend::RegisterDefaultApplets();
 
+    // Register generic image interface
+    Core::System::GetInstance().RegisterImageInterface(std::make_shared<LodePNGImageInterface>());
+
     LibRetro::Input::Init();
 }
 
@@ -107,6 +111,8 @@ void LibRetro::OnConfigureEnvironment() {
         {"citra_use_hw_shaders", "Enable hardware shaders; enabled|disabled"},
         {"citra_use_acc_geo_shaders", "Enable accurate geometry shaders (only for H/W shaders); enabled|disabled"},
         {"citra_use_acc_mul", "Enable accurate shaders multiplication (only for H/W shaders); enabled|disabled"},
+        {"citra_custom_textures", "Enable custom textures; disabled|enabled"},
+        {"citra_dump_textures", "Dump textures; disabled|enabled"},
         {"citra_resolution_factor",
          "Resolution scale factor; 1x (Native)|2x|3x|4x|5x|6x|7x|8x|9x|10x"},
         {"citra_layout_option", "Screen layout positioning; Default Top-Bottom Screen|Single "
@@ -201,8 +207,10 @@ void UpdateSettings() {
     // TODO: Support changing texture filters
     Settings::values.use_gles = false;
     Settings::values.texture_filter_name = "none";
-    Settings::values.dump_textures = false;
-    Settings::values.custom_textures = false;
+    Settings::values.dump_textures =
+        LibRetro::FetchVariable("citra_dump_textures", "disabled") == "enabled";
+    Settings::values.custom_textures =
+        LibRetro::FetchVariable("citra_custom_textures", "disabled") == "enabled";
     Settings::values.filter_mode = false;
     Settings::values.pp_shader_name = "none (builtin)";
     Settings::values.use_disk_shader_cache = false;
