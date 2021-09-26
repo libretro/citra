@@ -52,6 +52,3 @@
 [submodule "zstd"]
     path = externals/zstd
     url = https://github.com/facebook/zstd.git
-[submodule "boost_serialization"]
-	path = externals/boost-serialization
-	url = https://github.com/boostorg/serialization.git

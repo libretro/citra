@@ -17,56 +17,57 @@ SOURCES_C   :=
 SOURCES_CXX :=
 
 # Begone boost linking
-CXXFLAGS += -DBOOST_ERROR_CODE_HEADER_ONLY -DBOOST_SYSTEM_NO_LIB -DBOOST_DATE_TIME_NO_LIB -DBOOST_REGEX_NO_LIB
+CXXFLAGS += -DBOOST_ERROR_CODE_HEADER_ONLY -DBOOST_SYSTEM_NO_LIB -DBOOST_DATE_TIME_NO_LIB -DBOOST_REGEX_NO_LIB \
+    -DNULL_POINTER_TAG=BOOST_SERIALIZATION_NULL_POINTER_TAG # Stupid workaround for boost serialization
 
-SOURCES_CXX +=  $(EXTERNALS_DIR)/boost-serialization/src/archive_exception.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/basic_pointer_oserializer.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/extended_type_info_no_rtti.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/polymorphic_text_oarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/stl_port.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/xml_archive_exception.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/basic_archive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/basic_serializer_map.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/binary_iarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/extended_type_info_typeid.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/polymorphic_text_wiarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/text_iarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/xml_grammar.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/basic_iarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/basic_text_iprimitive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/binary_oarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/polymorphic_binary_iarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/polymorphic_text_woarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/text_oarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/xml_iarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/basic_iserializer.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/basic_text_oprimitive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/binary_wiarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/polymorphic_binary_oarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/polymorphic_xml_iarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/text_wiarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/xml_oarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/basic_oarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/basic_text_wiprimitive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/binary_woarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/polymorphic_iarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/polymorphic_xml_oarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/text_woarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/xml_wgrammar.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/basic_oserializer.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/basic_text_woprimitive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/codecvt_null.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/polymorphic_oarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/polymorphic_xml_wiarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/utf8_codecvt_facet.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/xml_wiarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/basic_pointer_iserializer.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/basic_xml_archive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/extended_type_info.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/polymorphic_text_iarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/polymorphic_xml_woarchive.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/void_cast.cpp \
-                $(EXTERNALS_DIR)/boost-serialization/src/xml_woarchive.cpp
+SOURCES_CXX +=  $(EXTERNALS_DIR)/boost/libs/serialization/src/archive_exception.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/basic_pointer_oserializer.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/extended_type_info_no_rtti.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/polymorphic_text_oarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/stl_port.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/xml_archive_exception.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/basic_archive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/basic_serializer_map.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/binary_iarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/extended_type_info_typeid.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/polymorphic_text_wiarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/text_iarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/xml_grammar.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/basic_iarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/basic_text_iprimitive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/binary_oarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/polymorphic_binary_iarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/polymorphic_text_woarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/text_oarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/xml_iarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/basic_iserializer.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/basic_text_oprimitive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/binary_wiarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/polymorphic_binary_oarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/polymorphic_xml_iarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/text_wiarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/xml_oarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/basic_oarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/basic_text_wiprimitive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/binary_woarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/polymorphic_iarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/polymorphic_xml_oarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/text_woarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/xml_wgrammar.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/basic_oserializer.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/basic_text_woprimitive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/codecvt_null.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/polymorphic_oarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/polymorphic_xml_wiarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/utf8_codecvt_facet.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/xml_wiarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/basic_pointer_iserializer.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/basic_xml_archive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/extended_type_info.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/polymorphic_text_iarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/polymorphic_xml_woarchive.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/void_cast.cpp \
+                $(EXTERNALS_DIR)/boost/libs/serialization/src/xml_woarchive.cpp
 
 ifeq ($(platform), libnx)
 INCFLAGS  += -isystem$(EXTERNALS_DIR)/switch-compat/include
