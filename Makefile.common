@@ -11,7 +11,8 @@ INCFLAGS := -I$(SRC_DIR) \
             -I$(EXTERNALS_DIR)/cryptopp \
             -I$(EXTERNALS_DIR)/libretro-common/include \
             -I$(EXTERNALS_DIR)/teakra/include \
-            -I$(EXTERNALS_DIR)/soundtouch/include
+            -I$(EXTERNALS_DIR)/soundtouch/include \
+            -I$(EXTERNALS_DIR)/zstd/lib
 
 SOURCES_C   :=
 SOURCES_CXX :=
@@ -310,6 +311,34 @@ SOURCES_CXX += $(EXTERNALS_DIR)/teakra/src/ahbm.cpp \
                $(EXTERNALS_DIR)/teakra/src/processor.cpp \
                $(EXTERNALS_DIR)/teakra/src/teakra.cpp \
                $(EXTERNALS_DIR)/teakra/src/test_generator.cpp
+
+# Externals - Zstd
+SOURCES_C += $(EXTERNALS_DIR)/zstd/lib/common/debug.c \
+             $(EXTERNALS_DIR)/zstd/lib/common/entropy_common.c \
+             $(EXTERNALS_DIR)/zstd/lib/common/error_private.c \
+             $(EXTERNALS_DIR)/zstd/lib/common/fse_decompress.c \
+             $(EXTERNALS_DIR)/zstd/lib/common/pool.c \
+             $(EXTERNALS_DIR)/zstd/lib/common/threading.c \
+             $(EXTERNALS_DIR)/zstd/lib/common/xxhash.c \
+             $(EXTERNALS_DIR)/zstd/lib/common/zstd_common.c \
+             $(EXTERNALS_DIR)/zstd/lib/compress/fse_compress.c \
+             $(EXTERNALS_DIR)/zstd/lib/compress/hist.c \
+             $(EXTERNALS_DIR)/zstd/lib/compress/huf_compress.c \
+             $(EXTERNALS_DIR)/zstd/lib/compress/zstd_compress_literals.c \
+             $(EXTERNALS_DIR)/zstd/lib/compress/zstd_compress_sequences.c \
+             $(EXTERNALS_DIR)/zstd/lib/compress/zstd_compress_superblock.c \
+             $(EXTERNALS_DIR)/zstd/lib/compress/zstd_compress.c \
+             $(EXTERNALS_DIR)/zstd/lib/compress/zstd_double_fast.c \
+             $(EXTERNALS_DIR)/zstd/lib/compress/zstd_fast.c \
+             $(EXTERNALS_DIR)/zstd/lib/compress/zstd_lazy.c \
+             $(EXTERNALS_DIR)/zstd/lib/compress/zstd_ldm.c \
+             $(EXTERNALS_DIR)/zstd/lib/compress/zstd_opt.c \
+             $(EXTERNALS_DIR)/zstd/lib/compress/zstdmt_compress.c \
+             $(EXTERNALS_DIR)/zstd/lib/decompress/huf_decompress.c \
+             $(EXTERNALS_DIR)/zstd/lib/decompress/zstd_ddict.c \
+             $(EXTERNALS_DIR)/zstd/lib/decompress/zstd_decompress_block.c \
+             $(EXTERNALS_DIR)/zstd/lib/decompress/zstd_decompress.c
+
 
 # Common
 SOURCES_CXX += $(SRC_DIR)/common/detached_tasks.cpp \

@@ -7,7 +7,7 @@ HAVE_RPC = 1
 TARGET_NAME    := citra
 EXTERNALS_DIR  += ./externals
 SRC_DIR        += ./src
-LIBS		   = -lm -lzstd
+LIBS		   = -lm
 DEFINES        := -DHAVE_LIBRETRO
 
 STATIC_LINKING := 0
