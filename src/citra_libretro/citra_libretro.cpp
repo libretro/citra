@@ -4,6 +4,7 @@
 
 #include <list>
 #include <numeric>
+#include <vector>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -564,16 +565,37 @@ bool retro_load_game_special(unsigned game_type, const struct retro_game_info* i
     return retro_load_game(info);
 }
 
+std::optional<std::vector<u8>> savestate = {};
+
 size_t retro_serialize_size() {
-    return 0;
+    try {
+        savestate = Core::System::GetInstance().SaveStateBuffer();
+        return savestate.value().size();
+    } catch (const std::exception& e) {
+        LOG_ERROR(Core, "Error saving savestate: {}", e.what());
+        savestate.reset();
+        return 0;
+    }
 }
 
-bool retro_serialize(void* data_, size_t size) {
+bool retro_serialize(void* data, size_t size) {
+    if(!savestate.has_value()) return false;
+
+    memcpy(data, (*savestate).data(), size);
+    savestate.reset();
+
     return true;
 }
 
-bool retro_unserialize(const void* data_, size_t size) {
-    return true;
+bool retro_unserialize(const void* data, size_t size) {
+    try {
+        const std::vector<u8> buffer((const u8*)data, (const u8*)data + size);
+
+        return Core::System::GetInstance().LoadStateBuffer(buffer);
+    } catch (const std::exception& e) {
+        LOG_ERROR(Core, "Error loading savestate: {}", e.what());
+        return false;
+    }
 }
 
 void* retro_get_memory_data(unsigned id) {

@@ -305,6 +305,12 @@ public:
 
     void LoadState(u32 slot);
 
+#ifdef __LIBRETRO__
+    std::vector<u8> SaveStateBuffer() const;
+
+    bool LoadStateBuffer(std::vector<u8> buffer);
+#endif
+
 private:
     /**
      * Initialize the emulated system.

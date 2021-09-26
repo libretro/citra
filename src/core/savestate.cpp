@@ -154,4 +154,74 @@ void System::LoadState(u32 slot) {
     ia&* this;
 }
 
+#ifdef __LIBRETRO__
+std::vector<u8> System::SaveStateBuffer() const {
+    std::ostringstream sstream{std::ios_base::binary};
+    // Serialize
+    oarchive oa{sstream};
+    oa&* this;
+
+    const std::string& str{sstream.str()};
+
+    CSTHeader header{};
+    header.filetype = header_magic_bytes;
+    header.program_id = title_id;
+    std::string rev_bytes;
+    CryptoPP::StringSource(Common::g_scm_rev, true,
+                           new CryptoPP::HexDecoder(new CryptoPP::StringSink(rev_bytes)));
+    std::memcpy(header.revision.data(), rev_bytes.data(), sizeof(header.revision));
+    header.time = std::chrono::duration_cast<std::chrono::seconds>(
+                      std::chrono::system_clock::now().time_since_epoch())
+                      .count();
+
+    auto compressed = Common::Compression::CompressDataZSTDDefault(
+        reinterpret_cast<const u8*>(str.data()), str.size());
+
+    std::vector<u8> buffer((u8*)&header, (u8*)&header + sizeof(header));
+    std::copy(compressed.begin(), compressed.end(), std::back_inserter(buffer));
+
+    return buffer;
+}
+
+bool System::LoadStateBuffer(std::vector<u8> buffer) {
+    CSTHeader header;
+
+    if (buffer.size() < sizeof(header)) {
+        LOG_ERROR(Core, "Save state too small");
+        return false;
+    }
+
+    header = *((CSTHeader*)buffer.data());
+
+    if (header.filetype != header_magic_bytes) {
+        LOG_ERROR(Core, "Invalid save state");
+        return false;
+    }
+
+    if (header.program_id != title_id) {
+        LOG_ERROR(Core, "Save state isn't for the current game");
+        return false;
+    }
+    std::string revision = fmt::format("{:02x}", fmt::join(header.revision, ""));
+    if (revision != Common::g_scm_rev) {
+        LOG_ERROR(Core, "Save state file created from a different revision (core: {}, savestate: {})", Common::g_scm_rev, revision);
+        return false;
+    }
+
+    std::vector<u8> state(buffer.begin() + sizeof(CSTHeader), buffer.end()); 
+    auto decompressed = Common::Compression::DecompressDataZSTD(state);
+
+    std::istringstream sstream{
+        std::string{reinterpret_cast<char*>(decompressed.data()), decompressed.size()},
+        std::ios_base::binary};
+    decompressed.clear();
+
+    // Deserialize
+    iarchive ia{sstream};
+    ia&* this;
+
+    return true;
+}
+#endif
+
 } // namespace Core

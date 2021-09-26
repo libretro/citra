@@ -13,6 +13,8 @@
 #include "core/settings.h"
 #include "video_core/renderer_opengl/gl_state.h"
 
+static bool first_init = true;
+
 /// LibRetro expects a "default" GL state.
 void ResetGLState() {
     // Reset internal state.
@@ -202,6 +204,9 @@ void EmuWindow_LibRetro::UpdateLayout() {
 }
 
 bool EmuWindow_LibRetro::ShouldDeferRendererInit() const {
+    if(!first_init) return false;
+    first_init = false;
+
     // load_game doesn't always provide a GL context.
     return true;
 }
