@@ -71,7 +71,7 @@ ifeq ($(STATIC_LINKING), 1)
 EXT := a
 endif
 
-GIT_REV := "$(shell git rev-parse --short HEAD || echo unknown)"
+GIT_REV := "$(shell git rev-parse HEAD || echo unknown)"
 GIT_BRANCH := "$(shell git rev-parse --abbrev-ref HEAD || echo unknown)"
 GIT_DESC := "$(shell git describe --always --long --dirty || echo unknown)"
 BUILD_DATE := "$(shell date +'%d/%m/%Y %H:%M')"
