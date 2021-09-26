@@ -129,7 +129,8 @@ DEFINES += -DHAVE_DYNARMIC
 
 DYNARMICINCFLAGS := -I$(EXTERNALS_DIR)/dynarmic/src \
                     -I$(EXTERNALS_DIR)/fmt/include \
-                    -I$(EXTERNALS_DIR)/dynarmic/externals/mp/include
+                    -I$(EXTERNALS_DIR)/dynarmic/externals/mp/include \
+                    -I$(EXTERNALS_DIR)/dynarmic/externals/robin-map/include
 
 SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/common/assert.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/common/crypto/aes.cpp \
@@ -153,6 +154,7 @@ SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/common/assert.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/common/math_util.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/common/memory_pool.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/common/u128.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/imm.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/types.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/frontend/A64/types.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/frontend/ir/basic_block.cpp \
@@ -166,6 +168,7 @@ SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/common/assert.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/ir_opt/dead_code_elimination_pass.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/ir_opt/verification_pass.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/asimd_load_store_structures.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/asimd_one_reg_modified_immediate.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/asimd_three_same.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/impl/asimd_two_regs_misc.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/disassembler/disassembler_arm.cpp \
@@ -218,6 +221,7 @@ SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/common/assert.cpp \
                         $(EXTERNALS_DIR)/dynarmic/src/backend/x64/emit_x64_sm4.cpp \
                         $(EXTERNALS_DIR)/dynarmic/src/backend/x64/emit_x64_vector.cpp \
                         $(EXTERNALS_DIR)/dynarmic/src/backend/x64/emit_x64_vector_floating_point.cpp \
+                        $(EXTERNALS_DIR)/dynarmic/src/backend/x64/emit_x64_vector_saturation.cpp \
                         $(EXTERNALS_DIR)/dynarmic/src/backend/x64/hostloc.cpp \
                         $(EXTERNALS_DIR)/dynarmic/src/backend/x64/perf_map.cpp \
                         $(EXTERNALS_DIR)/dynarmic/src/backend/x64/reg_alloc.cpp \
