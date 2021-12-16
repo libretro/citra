@@ -318,6 +318,16 @@ void UpdateSettings() {
                 FileUtil::GetUserPath(FileUtil::UserPath::RootDir, target_dir);
                 const auto& target_dir_result = FileUtil::GetUserPath(FileUtil::UserPath::UserDir, target_dir);
                 LOG_INFO(Frontend, "User dir set to \"{}\".", target_dir_result);
+
+                // Update sysdata path as well, used for the AES keys for example
+                target_dir += "/sysdata/";
+
+                if (!FileUtil::CreateDir(target_dir)) {
+                    LOG_ERROR(Frontend, "Failed to create \"{}\". Using Citra's default path for the 'sysdata' folder.", target_dir);
+                } else {
+                    const auto& target_sysdata_dir = FileUtil::GetUserPath(FileUtil::UserPath::SysDataDir, target_dir);
+                    LOG_INFO(Frontend, "Sysdata dir set to \"{}\".", target_sysdata_dir);
+                }
             }
         }
     }
