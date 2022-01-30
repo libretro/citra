@@ -29,13 +29,11 @@
 #define fseeko _fseeki64
 #define ftello _ftelli64
 #define fileno _fileno
+#define fstat _fstat64
 #endif
 
 // 64 bit offsets for MSVC and MinGW. MinGW also needs this for using _wstat64
 #define stat _stat64
-#ifndef __LIBRETRO__
-#define fstat _fstat64
-#endif
 
 #else
 #ifdef __APPLE__

@@ -252,9 +252,7 @@ SOURCES_C += $(EXTERNALS_DIR)/enet/callbacks.c \
              $(EXTERNALS_DIR)/enet/peer.c \
              $(EXTERNALS_DIR)/enet/protocol.c \
              $(EXTERNALS_DIR)/enet/unix.c \
-             $(EXTERNALS_DIR)/enet/win32.c \
-             $(EXTERNALS_DIR)/libretro-common/glsym/glsym_gl.c \
-		     $(EXTERNALS_DIR)/libretro-common/glsym/rglgen.c
+             $(EXTERNALS_DIR)/enet/win32.c
 
 CFLAGS += -DHAS_SOCKLEN_T
 
@@ -262,7 +260,7 @@ CFLAGS += -DHAS_SOCKLEN_T
 # Externals - glad
 ifeq ($(HAVE_GLAD), 1)
 DEFINES += -DHAVE_GLAD
-INCFLAGS += -I$(EXTERNALS_DIR)/glad/include -isystem$(EXTERNALS_DIR)/glad/include
+INCFLAGS += -I$(EXTERNALS_DIR)/glad/include
 SOURCES_C += $(EXTERNALS_DIR)/glad/src/glad.c
 endif
 
@@ -339,6 +337,11 @@ SOURCES_C += $(EXTERNALS_DIR)/zstd/lib/common/debug.c \
              $(EXTERNALS_DIR)/zstd/lib/decompress/zstd_decompress_block.c \
              $(EXTERNALS_DIR)/zstd/lib/decompress/zstd_decompress.c
 
+# Externals - libretro-common/rglgen
+ifeq ($(HAVE_RGLGEN), 1)
+SOURCES_C += $(EXTERNALS_DIR)/libretro-common/glsym/glsym_gl.c \
+		     $(EXTERNALS_DIR)/libretro-common/glsym/rglgen.c
+endif
 
 # Common
 SOURCES_CXX += $(SRC_DIR)/common/detached_tasks.cpp \

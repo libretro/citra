@@ -430,8 +430,8 @@ private:
 
         std::size_t swizzle_offset =
             instr.opcode.Value().GetInfo().type == OpCode::Type::MultiplyAdd
-                ? instr.mad.operand_desc_id
-                : instr.common.operand_desc_id;
+                ? ((std::size_t)instr.mad.operand_desc_id)
+                : ((std::size_t)instr.common.operand_desc_id);
         const SwizzlePattern swizzle = {swizzle_data[swizzle_offset]};
 
         shader.AddLine("// {}: {}", offset, instr.opcode.Value().GetInfo().name);

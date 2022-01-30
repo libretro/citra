@@ -2,6 +2,7 @@ HAVE_DYNARMIC = 0
 HAVE_FFMPEG = 0
 HAVE_GLAD = 1
 HAVE_SSE = 0
+HAVE_RGLGEN = 0
 HAVE_RPC = 1
 
 TARGET_NAME    := citra
@@ -108,8 +109,119 @@ else ifeq ($(platform), libnx)
    ARCH = aarch64
    STATIC_LINKING = 1
    HAVE_GLAD = 0
+   HAVE_RGLGEN = 1
    HAVE_RPC = 0
    DEBUG = 0
+else ifneq (,$(findstring windows_msvc2019,$(platform)))
+	LIBS =
+
+	PlatformSuffix = $(subst windows_msvc2019_,,$(platform))
+	ifneq (,$(findstring desktop,$(PlatformSuffix)))
+		WinPartition = desktop
+		MSVC2019CompileFlags = -D_UNICODE -DUNICODE -DWINVER=0x0600 -D_WIN32_WINNT=0x0600
+		LDFLAGS += -MANIFEST -NXCOMPAT -DYNAMICBASE -DEBUG -OPT:REF -INCREMENTAL:NO -SUBSYSTEM:WINDOWS -MANIFESTUAC:"level='asInvoker' uiAccess='false'" -OPT:ICF -ERRORREPORT:PROMPT -NOLOGO -TLBID:1
+	else ifneq (,$(findstring uwp,$(PlatformSuffix)))
+		WinPartition = uwp
+		MSVC2019CompileFlags = -DWINDLL -D_UNICODE -DUNICODE -DWRL_NO_DEFAULT_LIB
+		LDFLAGS += -APPCONTAINER -NXCOMPAT -DYNAMICBASE -MANIFEST:NO -OPT:REF -SUBSYSTEM:CONSOLE -MANIFESTUAC:NO -OPT:ICF -ERRORREPORT:PROMPT -NOLOGO -TLBID:1 -DEBUG:FULL -WINMD:NO
+	endif
+
+	ifeq ($(DEBUG), 1)
+		MSVC2019CompileFlags += -DEBUG
+
+	else
+		MSVC2019CompileFlags += -O2 -GS"-" -MD
+	endif
+
+	MSVC2019CompileFlags += -D_WIN32=1 -DNOMINMAX -DBOOST_ALL_NO_LIB
+
+	CFLAGS += $(MSVC2019CompileFlags) -nologo
+	CXXFLAGS += $(MSVC2019CompileFlags) -nologo -EHsc -Zc:throwingNew,inline
+
+	TargetArchMoniker = $(subst $(WinPartition)_,,$(PlatformSuffix))
+
+	CC  = cl.exe
+	CXX = cl.exe
+
+	SPACE :=
+	SPACE := $(SPACE) $(SPACE)
+	BACKSLASH :=
+	BACKSLASH := \$(BACKSLASH)
+	filter_out1 = $(filter-out $(firstword $1),$1)
+	filter_out2 = $(call filter_out1,$(call filter_out1,$1))
+
+	reg_query = $(call filter_out2,$(subst $2,,$(shell reg query "$2" -v "$1" 2>/dev/null)))
+	fix_path = $(subst $(SPACE),\ ,$(subst \,/,$1))
+
+	b1 := (
+	b2 := )
+	ProgramFiles86w := $(ProgramFiles$(b1)x86$(b2))
+	ProgramFiles86 := $(shell cygpath "$(ProgramFiles86w)")
+
+	WindowsSdkDir ?= $(call reg_query,InstallationFolder,HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Microsoft\Microsoft SDKs\Windows\v10.0)
+	WindowsSdkDir ?= $(call reg_query,InstallationFolder,HKEY_CURRENT_USER\SOFTWARE\Wow6432Node\Microsoft\Microsoft SDKs\Windows\v10.0)
+	WindowsSdkDir ?= $(call reg_query,InstallationFolder,HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Microsoft SDKs\Windows\v10.0)
+	WindowsSdkDir ?= $(call reg_query,InstallationFolder,HKEY_CURRENT_USER\SOFTWARE\Microsoft\Microsoft SDKs\Windows\v10.0)
+	WindowsSdkDir := $(WindowsSdkDir)
+
+	WindowsSDKVersion ?= $(firstword $(foreach folder,$(subst $(subst \,/,$(WindowsSdkDir)Include/),,$(wildcard $(call fix_path,$(WindowsSdkDir)Include\*))),$(if $(wildcard $(call fix_path,$(WindowsSdkDir)Include/$(folder)/um/Windows.h)),$(folder),)))$(BACKSLASH)
+	WindowsSDKVersion := $(WindowsSDKVersion)
+
+	VsInstallBuildTools = $(ProgramFiles86)/Microsoft Visual Studio/2019/BuildTools
+	VsInstallEnterprise = $(ProgramFiles86)/Microsoft Visual Studio/2019/Enterprise
+	VsInstallProfessional = $(ProgramFiles86)/Microsoft Visual Studio/2019/Professional
+	VsInstallCommunity = $(ProgramFiles86)/Microsoft Visual Studio/2019/Community
+
+	VsInstallRoot ?= $(shell if [ -d "$(VsInstallBuildTools)" ]; then echo "$(VsInstallBuildTools)"; fi)
+	ifeq ($(VsInstallRoot), )
+		VsInstallRoot = $(shell if [ -d "$(VsInstallEnterprise)" ]; then echo "$(VsInstallEnterprise)"; fi)
+	endif
+	ifeq ($(VsInstallRoot), )
+		VsInstallRoot = $(shell if [ -d "$(VsInstallProfessional)" ]; then echo "$(VsInstallProfessional)"; fi)
+	endif
+	ifeq ($(VsInstallRoot), )
+		VsInstallRoot = $(shell if [ -d "$(VsInstallCommunity)" ]; then echo "$(VsInstallCommunity)"; fi)
+	endif
+	VsInstallRoot := $(VsInstallRoot)
+
+	VcCompilerToolsVer := $(shell cat "$(VsInstallRoot)/VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt" | grep -o '[0-9\.]*')
+	VcCompilerToolsDir := $(VsInstallRoot)/VC/Tools/MSVC/$(VcCompilerToolsVer)
+	VcCompilerLibDir := $(VcCompilerToolsDir)/lib/$(TargetArchMoniker)
+
+	WindowsSDKSharedIncludeDir := $(shell cygpath -w "$(WindowsSdkDir)\Include\$(WindowsSDKVersion)\shared")
+	WindowsSDKUCRTIncludeDir := $(shell cygpath -w "$(WindowsSdkDir)\Include\$(WindowsSDKVersion)\ucrt")
+	WindowsSDKUMIncludeDir := $(shell cygpath -w "$(WindowsSdkDir)\Include\$(WindowsSDKVersion)\um")
+	WindowsSDKUCRTLibDir := $(shell cygpath -w "$(WindowsSdkDir)\Lib\$(WindowsSDKVersion)\ucrt\$(TargetArchMoniker)")
+	WindowsSDKUMLibDir := $(shell cygpath -w "$(WindowsSdkDir)\Lib\$(WindowsSDKVersion)\um\$(TargetArchMoniker)")
+
+	LIB := $(shell IFS=$$'\n'; cygpath -w "$(VcCompilerLibDir)")
+	INCLUDE := $(shell IFS=$$'\n'; cygpath -w "$(VcCompilerToolsDir)/include")
+
+# For some reason the HostX86 compiler doesn't like compiling for x64
+# ("no such file" opening a shared library), and vice-versa.
+# Work around it for now by using the strictly x86 compiler for x86, and x64 for x64.
+# NOTE: What about ARM?
+	ifneq (,$(findstring x64,$(TargetArchMoniker)))
+		override TARGET_ARCH = x86_64
+		VCCompilerToolsBinDir := $(VcCompilerToolsDir)/bin/HostX64/$(TargetArchMoniker)
+      	LIB := $(LIB);$(CORE_DIR)/dx9sdk/Lib/x64
+	else
+		override TARGET_ARCH = x86
+		VCCompilerToolsBinDir := $(VcCompilerToolsDir)/bin/HostX86/$(TargetArchMoniker)
+      	LIB := $(LIB);$(CORE_DIR)/dx9sdk/Lib/x86
+	endif
+
+	PATH := $(shell IFS=$$'\n'; cygpath "$(VCCompilerToolsBinDir)"):$(PATH)
+	PATH := $(PATH):$(shell IFS=$$'\n'; cygpath "$(VsInstallRoot)/Common7/IDE")
+
+	export INCLUDE := $(INCLUDE);$(WindowsSDKSharedIncludeDir);$(WindowsSDKUCRTIncludeDir);$(WindowsSDKUMIncludeDir)
+	export LIB := $(LIB);$(WindowsSDKUCRTLibDir);$(WindowsSDKUMLibDir);$(FFMPEGDIR)/Windows/$(TARGET_ARCH)/lib
+	TARGET := $(TARGET_NAME)_libretro.dll
+	PSS_STYLE :=2
+	LDFLAGS += -DLL
+	PLATFORM_EXT = win32
+	LDFLAGS += ws2_32.lib user32.lib shell32.lib winmm.lib gdi32.lib opengl32.lib imm32.lib ole32.lib oleaut32.lib version.lib uuid.lib mfuuid.lib
+	HAVE_MF = 1
 else
    CC ?= gcc
    TARGET := $(TARGET_NAME)_libretro.dll
@@ -141,7 +253,10 @@ endif
 ifeq ($(DEBUG), 1)
    CXXFLAGS += -O0 -g
 else
-   CXXFLAGS += -O3 -ffast-math -ftree-vectorize -DNDEBUG
+# Add Unix optimization flags
+	ifeq (,$(findstring msvc,$(platform)))
+   		CXXFLAGS += -O3 -ffast-math -ftree-vectorize -DNDEBUG
+	endif
 endif
 
 include Makefile.common
@@ -151,11 +266,16 @@ CCFILES = $(filter %.cc,$(SOURCES_CXX))
 
 OBJECTS := $(SOURCES_C:.c=.o) $(CPPFILES:.cpp=.o) $(CCFILES:.cc=.o)
 
-CXXFLAGS += -std=c++17
+ifeq (,$(findstring msvc,$(platform)))
+	CXXFLAGS += -std=c++17
+else
+	CXXFLAGS += -std:c++latest
+endif
 
-CFLAGS   	  += -Wall -D__LIBRETRO__ $(fpic) $(DEFINES) $(INCFLAGS) $(INCFLAGS_PLATFORM)
-DYNARMICFLAGS += -Wall -D__LIBRETRO__ $(fpic) $(DEFINES) $(DYNARMICINCFLAGS) $(INCFLAGS_PLATFORM) $(CXXFLAGS)
-CXXFLAGS 	  += -Wall -D__LIBRETRO__ $(fpic) $(DEFINES) $(INCFLAGS) $(INCFLAGS_PLATFORM)
+
+CFLAGS   	  += -D__LIBRETRO__ $(fpic) $(DEFINES) $(INCFLAGS) $(INCFLAGS_PLATFORM)
+DYNARMICFLAGS += -D__LIBRETRO__ $(fpic) $(DEFINES) $(DYNARMICINCFLAGS) $(INCFLAGS_PLATFORM) $(CXXFLAGS)
+CXXFLAGS 	  += -D__LIBRETRO__ $(fpic) $(DEFINES) $(INCFLAGS) $(INCFLAGS_PLATFORM)
 
 OBJOUT   = -o
 LINKOUT  = -o 
@@ -204,6 +324,9 @@ endif
 
 $(foreach p,$(OBJECTS),$(if $(findstring $(EXTERNALS_DIR)/dynarmic/src,$p),$p,)):
 	$(CXX) $(DYNARMICFLAGS) $(fpic) -c $(OBJOUT)$@ $(@:.o=.cpp)
+
+%.o: %.cc
+	$(CXX) $(CXXFLAGS) $(fpic) -c $(OBJOUT)$@ $<
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) $(fpic) -c $(OBJOUT)$@ $<
