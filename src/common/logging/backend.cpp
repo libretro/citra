@@ -283,9 +283,6 @@ const char* GetLevelName(Level log_level) {
     return "Invalid";
 }
 
-void SetGlobalFilter(const Filter& filter) {
-    Impl::Instance().SetGlobalFilter(filter);
-}
 
 void AddBackend(std::unique_ptr<Backend> backend) {
     Impl::Instance().AddBackend(std::move(backend));
@@ -303,7 +300,6 @@ void FmtLogMessageImpl(Class log_class, Level log_level, const char* filename,
                        unsigned int line_num, const char* function, const char* format,
                        const fmt::format_args& args) {
     auto& instance = Impl::Instance();
-    auto filter = g_logger->GetGlobalFilter();
     if (!filter.CheckMessage(log_class, log_level))
         return;
 

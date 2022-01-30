@@ -626,6 +626,7 @@ SOURCES_CXX += $(SRC_DIR)/video_core/command_processor.cpp \
                $(SRC_DIR)/video_core/renderer_opengl/texture_filters/texture_filterer.cpp \
                $(SRC_DIR)/video_core/renderer_opengl/texture_filters/xbrz/xbrz_freescale.cpp \
                $(SRC_DIR)/video_core/renderer_opengl/gl_format_reinterpreter.cpp \
+               $(SRC_DIR)/video_core/renderer_opengl/texture_downloader_es.cpp \
                $(SRC_DIR)/video_core/shader/shader.cpp \
                $(SRC_DIR)/video_core/shader/shader_interpreter.cpp \
                $(SRC_DIR)/video_core/swrasterizer/clipper.cpp \
@@ -692,11 +693,12 @@ SOURCES_CXX += $(SRC_DIR)/citra_libretro/emu_window/libretro_window.cpp \
                $(SRC_DIR)/citra_libretro/core_settings.cpp \
                $(SRC_DIR)/citra_libretro/libretro_logger.cpp
 
-SHADER_FILES += $(SRC_DIR)/video_core/renderer_opengl/texture_filters/anime4k/refine.frag \
-                $(SRC_DIR)/video_core/renderer_opengl/texture_filters/anime4k/refine.vert \
+SHADER_FILES += $(SRC_DIR)/video_core/renderer_opengl/depth_to_color.vert \
+                $(SRC_DIR)/video_core/renderer_opengl/depth_to_color.frag \
+                $(SRC_DIR)/video_core/renderer_opengl/ds_to_color.frag \
+                $(SRC_DIR)/video_core/renderer_opengl/texture_filters/anime4k/refine.frag \
                 $(SRC_DIR)/video_core/renderer_opengl/texture_filters/anime4k/x_gradient.frag \
                 $(SRC_DIR)/video_core/renderer_opengl/texture_filters/anime4k/y_gradient.frag \
-                $(SRC_DIR)/video_core/renderer_opengl/texture_filters/anime4k/y_gradient.vert \
                 $(SRC_DIR)/video_core/renderer_opengl/texture_filters/bicubic/bicubic.frag \
                 $(SRC_DIR)/video_core/renderer_opengl/texture_filters/scale_force/scale_force.frag \
                 $(SRC_DIR)/video_core/renderer_opengl/texture_filters/tex_coord.vert \
