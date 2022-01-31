@@ -56,6 +56,7 @@ public:
 
     Log::Filter log_filter;
     std::unique_ptr<EmuWindow_LibRetro> emu_window;
+    bool gl_setup = false;
     struct retro_hw_render_callback hw_render {};
 };
 
@@ -467,38 +468,42 @@ bool retro_load_game(const struct retro_game_info* info) {
 
     LibRetro::settings.file_path = info->path;
 
+    if(!emu_instance->gl_setup) {
 #ifndef HAVE_LIBNX
-    LibRetro::SetHWSharedContext();
+        LibRetro::SetHWSharedContext();
 #endif
 
-    if (!LibRetro::SetPixelFormat(RETRO_PIXEL_FORMAT_XRGB8888)) {
-        LOG_CRITICAL(Frontend, "XRGB8888 is not supported.");
-        LibRetro::DisplayMessage("XRGB8888 is not supported.");
-        return false;
-    }
+        if (!LibRetro::SetPixelFormat(RETRO_PIXEL_FORMAT_XRGB8888)) {
+            LOG_CRITICAL(Frontend, "XRGB8888 is not supported.");
+            LibRetro::DisplayMessage("XRGB8888 is not supported.");
+            return false;
+        }
 
 #ifdef HAVE_LIBNX
-    emu_instance->hw_render.context_type = RETRO_HW_CONTEXT_OPENGL;
-    emu_instance->hw_render.version_major = 0;
-    emu_instance->hw_render.version_minor = 0;
+        emu_instance->hw_render.context_type = RETRO_HW_CONTEXT_OPENGL;
+        emu_instance->hw_render.version_major = 0;
+        emu_instance->hw_render.version_minor = 0;
 
-     rglgen_resolve_symbols_custom(&eglGetProcAddress, &rglgen_symbol_map_citra);
+        rglgen_resolve_symbols_custom(&eglGetProcAddress, &rglgen_symbol_map_citra);
 #else
-    emu_instance->hw_render.context_type = RETRO_HW_CONTEXT_OPENGL_CORE;
-    emu_instance->hw_render.version_major = 3;
-    emu_instance->hw_render.version_minor = 3;
+        emu_instance->hw_render.context_type = RETRO_HW_CONTEXT_OPENGL_CORE;
+        emu_instance->hw_render.version_major = 3;
+        emu_instance->hw_render.version_minor = 3;
 #endif
-    emu_instance->hw_render.context_reset = context_reset;
-    emu_instance->hw_render.context_destroy = context_destroy;
-    emu_instance->hw_render.cache_context = false;
-    emu_instance->hw_render.bottom_left_origin = true;
-    if (!LibRetro::SetHWRenderer(&emu_instance->hw_render)) {
-        LOG_CRITICAL(Frontend, "OpenGL 3.3 is not supported.");
-        LibRetro::DisplayMessage("OpenGL 3.3 is not supported.");
-        return false;
+        emu_instance->hw_render.context_reset = context_reset;
+        emu_instance->hw_render.context_destroy = context_destroy;
+        emu_instance->hw_render.cache_context = false;
+        emu_instance->hw_render.bottom_left_origin = true;
+        if (!LibRetro::SetHWRenderer(&emu_instance->hw_render)) {
+            LOG_CRITICAL(Frontend, "OpenGL 3.3 is not supported.");
+            LibRetro::DisplayMessage("OpenGL 3.3 is not supported.");
+            return false;
+        }
+
+        emu_instance->emu_window = std::make_unique<EmuWindow_LibRetro>();
+        emu_instance->gl_setup = true;
     }
 
-    emu_instance->emu_window = std::make_unique<EmuWindow_LibRetro>();
     UpdateSettings();
 
     const Core::System::ResultStatus load_result{Core::System::GetInstance().Load(
@@ -554,7 +559,6 @@ bool retro_load_game(const struct retro_game_info* info) {
 void retro_unload_game() {
     LOG_DEBUG(Frontend, "Unloading game...");
     Core::System::GetInstance().Shutdown();
-    emu_instance->emu_window.reset();
 }
 
 unsigned retro_get_region() {
