@@ -596,6 +596,7 @@ SOURCES_CXX += $(SRC_DIR)/core/arm/dynarmic/arm_dynarmic.cpp \
 endif
 
 ifeq ($(HAVE_RPC), 1)
+DEFINES += -DHAVE_RPC
 SOURCES_CXX += $(SRC_DIR)/core/rpc/packet.cpp \
                $(SRC_DIR)/core/rpc/rpc_server.cpp \
                $(SRC_DIR)/core/rpc/server.cpp \

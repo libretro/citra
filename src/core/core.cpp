@@ -402,7 +402,9 @@ System::ResultStatus System::Init(Frontend::EmuWindow& emu_window, u32 system_mo
 
     telemetry_session = std::make_unique<Core::TelemetrySession>();
 
+#ifdef HAVE_RPC
     rpc_server = std::make_unique<RPC::RPCServer>();
+#endif
 
     service_manager = std::make_unique<Service::SM::ServiceManager>(*this);
     archive_manager = std::make_unique<Service::FS::ArchiveManager>(*this);
@@ -537,7 +539,9 @@ void System::Shutdown(bool is_deserializing) {
         app_loader.reset();
     }
     telemetry_session.reset();
+#ifdef HAVE_RPC
     rpc_server.reset();
+#endif
     archive_manager.reset();
     service_manager.reset();
     dsp_core.reset();

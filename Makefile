@@ -224,6 +224,8 @@ else ifneq (,$(findstring windows_msvc2019,$(platform)))
 	PLATFORM_EXT = win32
 	LDFLAGS += ws2_32.lib user32.lib shell32.lib winmm.lib gdi32.lib opengl32.lib imm32.lib ole32.lib oleaut32.lib version.lib uuid.lib mfuuid.lib
 	HAVE_MF = 1
+	# RPC crashes, TODO: Figure out why
+	HAVE_RPC = 0
 else
    CC ?= gcc
    TARGET := $(TARGET_NAME)_libretro.dll
