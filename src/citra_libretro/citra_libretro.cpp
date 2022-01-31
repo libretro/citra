@@ -554,6 +554,7 @@ bool retro_load_game(const struct retro_game_info* info) {
 void retro_unload_game() {
     LOG_DEBUG(Frontend, "Unloading game...");
     Core::System::GetInstance().Shutdown();
+    emu_instance->emu_window.reset();
 }
 
 unsigned retro_get_region() {

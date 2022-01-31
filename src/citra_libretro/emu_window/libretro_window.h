@@ -37,7 +37,7 @@ public:
     void UpdateLayout();
 
     /// Enables for deferring a renderer's initalisation.
-    bool ShouldDeferRendererInit() const override;
+    bool ShouldDeferRendererInit() override;
 
     /// States whether a frame has been submitted. Resets after call.
     bool HasSubmittedFrame();
@@ -73,4 +73,6 @@ private:
     std::unique_ptr<LibRetro::Input::MouseTracker> tracker = nullptr;
 
     bool enableEmulatedPointer = true;
+
+    bool firstInit = true;
 };
