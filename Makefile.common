@@ -256,6 +256,10 @@ SOURCES_C += $(EXTERNALS_DIR)/enet/callbacks.c \
 
 CFLAGS += -DHAS_SOCKLEN_T
 
+## Externals - FFMPEG (static)
+ifeq ($(HAVE_FFMPEG_STATIC), 1)
+INCFLAGS += -I$(EXTERNALS_DIR)/ffmpeg
+endif
 
 # Externals - glad
 ifeq ($(HAVE_GLAD), 1)

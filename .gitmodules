@@ -55,3 +55,6 @@
 [submodule "libyuv"]
     path = externals/libyuv
     url = https://github.com/lemenkov/libyuv.git
+[submodule "externals/ffmpeg"]
+	path = externals/ffmpeg
+	url = https://github.com/FFmpeg/FFmpeg

@@ -1,5 +1,6 @@
 HAVE_DYNARMIC = 0
 HAVE_FFMPEG = 0
+HAVE_FFMPEG_STATIC = 0
 HAVE_GLAD = 1
 HAVE_SSE = 0
 HAVE_RGLGEN = 0
@@ -91,8 +92,9 @@ ifeq ($(platform), unix)
    TARGET := $(TARGET_NAME)_libretro.$(EXT)
    fpic := -fPIC
    SHARED := -shared -Wl,--version-script=$(SRC_DIR)/citra_libretro/link.T -Wl,--no-undefined
-   LIBS +=-lpthread -lGL -ldl -lavcodec -lavformat -lavutil
+   LIBS +=-lpthread -lGL -ldl $(EXTERNALS_DIR)/ffmpeg/libavcodec/libavcodec.a $(EXTERNALS_DIR)/ffmpeg/libavutil/libavutil.a
    HAVE_FFMPEG = 1
+   HAVE_FFMPEG_STATIC = 1
 
 #######################################
 # Nintendo Switch (libnx)
@@ -310,7 +312,16 @@ endif
 
 all: shaders $(TARGET)
 
-$(TARGET): $(OBJECTS)
+ffmpeg_configure:
+ifeq ($(HAVE_FFMPEG_STATIC), 1)
+	cd $(EXTERNALS_DIR)/ffmpeg && ./configure --disable-encoders --disable-decoders --enable-decoder=aac --enable-decoder=aac_fixed --enable-decoder=aac_latm --disable-programs
+endif
+ffmpeg_static: ffmpeg_configure
+ifeq ($(HAVE_FFMPEG_STATIC), 1)
+	cd $(EXTERNALS_DIR)/ffmpeg && $(MAKE) -j$(NUMPROC)
+endif
+
+$(TARGET): ffmpeg_static $(OBJECTS)
 ifeq ($(STATIC_LINKING), 1)
 	$(AR) rcs $@ $(OBJECTS)
 else
@@ -331,6 +342,9 @@ $(foreach p,$(OBJECTS),$(if $(findstring $(EXTERNALS_DIR)/dynarmic/src,$p),$p,))
 
 clean:
 	rm -f $(OBJECTS) $(TARGET)
+ifeq ($(HAVE_FFMPEG_STATIC), 1)
+	cd $(EXTERNALS_DIR)/ffmpeg && $(MAKE) clean
+endif
 
 shaders: $(SHADER_FILES)
 	mkdir -p $(SRC_DIR)/video_core/shaders
@@ -345,5 +359,4 @@ shaders: $(SHADER_FILES)
 	done
 
 
-.PHONY: clean
-
+.PHONY: clean ffmpeg_static
