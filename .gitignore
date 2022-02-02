@@ -12,6 +12,11 @@ doc-build/
 .vscode/
 .cache/
 CMakeLists.txt.user*
+*.dll
+*.dll.manifest
+*.exp
+*.lib
+*.pdb
 
 # *nix related
 # Common convention for backup or temporary files
