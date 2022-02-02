@@ -129,6 +129,8 @@ void LibRetro::OnConfigureEnvironment() {
         {"citra_is_new_3ds", "3DS system model; Old 3DS|New 3DS"},
         {"citra_region_value",
          "3DS system region; Auto|Japan|USA|Europe|Australia|China|Korea|Taiwan"},
+        {"citra_language", "3DS system language; English|Japanese|French|Spanish|German|Italian|Dutch|Portuguese|"
+                           "Russian|Korean|Traditional Chinese|Simplified Chinese"},
         {"citra_use_gdbstub", "Enable GDB stub; disabled|enabled"},
         {nullptr, nullptr}};
 
@@ -289,6 +291,36 @@ void UpdateSettings() {
         Settings::values.region_value = -1;
     } else {
         Settings::values.region_value = result->second;
+    }
+
+    auto language = LibRetro::FetchVariable("citra_language", "English");
+    if (language == "English") {
+        LibRetro::settings.language_value = Service::CFG::LANGUAGE_EN;
+    } else if (language == "Japanese") {
+        LibRetro::settings.language_value = Service::CFG::LANGUAGE_JP;
+    } else if (language == "French") {
+        LibRetro::settings.language_value = Service::CFG::LANGUAGE_FR;
+    } else if (language == "Spanish") {
+        LibRetro::settings.language_value = Service::CFG::LANGUAGE_ES;
+    } else if (language == "German") {
+        LibRetro::settings.language_value = Service::CFG::LANGUAGE_DE;
+    } else if (language == "Italian") {
+        LibRetro::settings.language_value = Service::CFG::LANGUAGE_IT;
+    } else if (language == "Dutch") {
+        LibRetro::settings.language_value = Service::CFG::LANGUAGE_NL;
+    } else if (language == "Portuguese") {
+        LibRetro::settings.language_value = Service::CFG::LANGUAGE_PT;
+    } else if (language == "Russian") {
+        LibRetro::settings.language_value = Service::CFG::LANGUAGE_RU;
+    } else if (language == "Korean") {
+        LibRetro::settings.language_value = Service::CFG::LANGUAGE_KO;
+    } else if (language == "Traditional Chinese") {
+        LibRetro::settings.language_value = Service::CFG::LANGUAGE_TW;
+    } else if (language == "Simplified Chinese") {
+        LibRetro::settings.language_value = Service::CFG::LANGUAGE_ZH;
+    } else {
+        LOG_ERROR(Frontend, "Invalid language: {}.", language);
+        LibRetro::settings.language_value = Service::CFG::LANGUAGE_EN;
     }
 
     Settings::values.current_input_profile.touch_device = "engine:emu_window";
