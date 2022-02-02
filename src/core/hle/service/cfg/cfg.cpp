@@ -27,6 +27,7 @@
 #include "core/hle/service/cfg/cfg_s.h"
 #include "core/hle/service/cfg/cfg_u.h"
 #include "core/settings.h"
+#include "citra_libretro/core_settings.h"
 
 SERIALIZE_EXPORT_IMPL(Service::CFG::Module)
 
@@ -649,6 +650,9 @@ static std::tuple<u32 /*region*/, SystemLanguage> AdjustLanguageInfoBlock(
 }
 
 void Module::SetPreferredRegionCodes(const std::vector<u32>& region_codes) {
+    // Apply language set in core options first
+    SetSystemLanguage(LibRetro::settings.language_value);
+
     const SystemLanguage current_language = GetSystemLanguage();
     auto [region, adjusted_language] = AdjustLanguageInfoBlock(region_codes, current_language);
 

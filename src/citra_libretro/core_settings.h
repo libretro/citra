@@ -5,6 +5,7 @@
 #pragma once
 
 #include <string>
+#include "core/hle/service/cfg/cfg.h"
 
 namespace LibRetro {
 
@@ -19,6 +20,8 @@ struct CoreSettings {
     LibRetro::CStickFunction analog_function;
 
     bool mouse_touchscreen;
+
+    Service::CFG::SystemLanguage language_value;
 
 } extern settings;
 
