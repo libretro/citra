@@ -111,8 +111,10 @@ void LibRetro::OnConfigureEnvironment() {
         {"citra_use_hw_renderer", "Enable hardware renderer; enabled|disabled"},
         {"citra_use_shader_jit", "Enable shader JIT; enabled|disabled"},
         {"citra_use_hw_shaders", "Enable hardware shaders; enabled|disabled"},
+        {"citra_use_hw_shader_cache", "Save hardware shader cache to disk; enabled|disabled"},
         {"citra_use_acc_geo_shaders", "Enable accurate geometry shaders (only for H/W shaders); enabled|disabled"},
         {"citra_use_acc_mul", "Enable accurate shaders multiplication (only for H/W shaders); enabled|disabled"},
+        {"citra_texture_filter", "Texture filter type; none|Anime4K Ultrafast|Bicubic|ScaleForce|xBRZ freescale"},
         {"citra_custom_textures", "Enable custom textures; disabled|enabled"},
         {"citra_dump_textures", "Dump textures; disabled|enabled"},
         {"citra_resolution_factor",
@@ -212,16 +214,17 @@ void UpdateSettings() {
     Settings::values.swap_screen = LibRetro::FetchVariable("citra_swap_screen", "Top") == "Bottom";
     Settings::values.use_gdbstub =
         LibRetro::FetchVariable("citra_use_gdbstub", "disabled") == "enabled";
-    // TODO: Support changing texture filters
     Settings::values.use_gles = false;
-    Settings::values.texture_filter_name = "none";
+    Settings::values.texture_filter_name =
+        LibRetro::FetchVariable("citra_texture_filter", "none");
     Settings::values.dump_textures =
         LibRetro::FetchVariable("citra_dump_textures", "disabled") == "enabled";
     Settings::values.custom_textures =
         LibRetro::FetchVariable("citra_custom_textures", "disabled") == "enabled";
     Settings::values.filter_mode = false;
     Settings::values.pp_shader_name = "none (builtin)";
-    Settings::values.use_disk_shader_cache = false;
+    Settings::values.use_disk_shader_cache =
+        LibRetro::FetchVariable("citra_use_hw_shader_cache", "enabled") == "enabled";
     Settings::values.use_vsync_new = 1;
     Settings::values.render_3d = Settings::StereoRenderOption::Off;
     Settings::values.factor_3d = 0;
@@ -476,6 +479,10 @@ void context_reset() {
         LOG_DEBUG(Render, "initialized OK");
     } else {
         LOG_ERROR(Render, "initialization failed!");
+    }
+
+    if(Settings::values.use_disk_shader_cache) {
+        Core::System::GetInstance().Renderer().Rasterizer()->LoadDiskResources(false, nullptr);
     }
 
     emu_instance->emu_window->UpdateLayout();
