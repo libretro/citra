@@ -5,6 +5,17 @@ HAVE_GLAD = 1
 HAVE_SSE = 0
 HAVE_RGLGEN = 0
 HAVE_RPC = 1
+FFMPEG_DISABLE_VDPAU ?= 0
+HAVE_FFMPEG_CROSSCOMPILE ?= 0
+FFMPEG_XC_CPU ?=
+FFMPEG_XC_ARCH ?=
+FFMPEG_XC_PREFIX ?=
+FFMPEG_XC_SYSROOT ?=
+FFMPEG_XC_NM ?=
+FFMPEG_XC_AR ?=
+FFMPEG_XC_AS ?=
+FFMPEG_XC_CC ?=
+FFMPEG_XC_LD ?=
 
 TARGET_NAME    := citra
 EXTERNALS_DIR  += ./externals
@@ -76,7 +87,7 @@ endif
 GIT_REV := "$(shell git rev-parse HEAD || echo unknown)"
 GIT_BRANCH := "$(shell git rev-parse --abbrev-ref HEAD || echo unknown)"
 GIT_DESC := "$(shell git describe --always --long --dirty || echo unknown)"
-BUILD_DATE := "$(shell date +'%d/%m/%Y %H:%M')"
+BUILD_DATE := "$(shell date +'%d/%m/%Y_%H:%M')"
 
 DEFINES += -DGIT_REV=\"$(GIT_REV)\" \
 		   -DGIT_BRANCH=\"$(GIT_BRANCH)\" \
@@ -92,9 +103,14 @@ ifeq ($(platform), unix)
    TARGET := $(TARGET_NAME)_libretro.$(EXT)
    fpic := -fPIC
    SHARED := -shared -Wl,--version-script=$(SRC_DIR)/citra_libretro/link.T -Wl,--no-undefined
-   LIBS +=-lpthread -lGL -ldl $(EXTERNALS_DIR)/ffmpeg/libavcodec/libavcodec.a $(EXTERNALS_DIR)/ffmpeg/libavutil/libavutil.a
+   LIBS +=-lpthread -lGL -ldl
    HAVE_FFMPEG = 1
    HAVE_FFMPEG_STATIC = 1
+ifeq ($(HAVE_FFMPEG_STATIC), 1)
+   LIBS += $(EXTERNALS_DIR)/ffmpeg/libavcodec/libavcodec.a $(EXTERNALS_DIR)/ffmpeg/libavutil/libavutil.a
+else
+   LIBS += -lavcodec -lavutil
+endif
 
 #######################################
 # Nintendo Switch (libnx)
@@ -263,6 +279,62 @@ else
 	endif
 endif
 
+# Set ffmpeg configure options
+ifeq ($(HAVE_FFMPEG_STATIC), 1)
+FFMPEG_CONF_OPTS =--disable-encoders --disable-decoders --enable-decoder=aac --enable-decoder=aac_fixed --enable-decoder=aac_latm --disable-programs
+ifeq ($(FFMPEG_DISABLE_VDPAU), 1)
+FFMPEG_CONF_OPTS += --disable-vdpau
+endif
+ifeq ($(HAVE_FFMPEG_CROSSCOMPILE), 1)
+FFMPEG_CONF_OPTS+= --enable-cross-compile --target-os="linux"
+ifeq ($(FFMPEG_XC_CPU),)
+$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_CPU provided)
+else
+FFMPEG_CONF_OPTS += --cpu="$(FFMPEG_XC_CPU)"
+endif
+ifeq ($(FFMPEG_XC_ARCH),)
+$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_ARCH provided)
+else
+FFMPEG_CONF_OPTS += --arch="$(FFMPEG_XC_ARCH)"
+endif
+ifeq ($(FFMPEG_XC_PREFIX),)
+$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_PREFIX provided)
+else
+FFMPEG_CONF_OPTS += --cross-prefix="$(FFMPEG_XC_PREFIX)"
+endif
+ifeq ($(FFMPEG_XC_SYSROOT),)
+$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_SYSROOT provided)
+else
+FFMPEG_CONF_OPTS += --sysroot="$(FFMPEG_XC_SYSROOT)" --sysinclude="$(FFMPEG_XC_SYSROOT)/usr/include"
+endif
+ifeq ($(FFMPEG_XC_NM),)
+$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_NM provided)
+else
+FFMPEG_CONF_OPTS += --nm="$(FFMPEG_XC_NM)"
+endif
+ifeq ($(FFMPEG_XC_AR),)
+$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_AR provided)
+else
+FFMPEG_CONF_OPTS += --ar="$(FFMPEG_XC_AR)"
+endif
+ifeq ($(FFMPEG_XC_AS),)
+$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_AS provided)
+else
+FFMPEG_CONF_OPTS += --as="$(FFMPEG_XC_AS)"
+endif
+ifeq ($(FFMPEG_XC_CC),)
+$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_CC provided)
+else
+FFMPEG_CONF_OPTS += --cc="$(FFMPEG_XC_CC)"
+endif
+ifeq ($(FFMPEG_XC_LD),)
+$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_LD provided)
+else
+FFMPEG_CONF_OPTS += --ld="$(FFMPEG_XC_LD)"
+endif
+endif
+endif
+
 include Makefile.common
 
 CPPFILES = $(filter %.cpp,$(SOURCES_CXX))
@@ -316,7 +388,7 @@ all: shaders $(TARGET)
 
 ffmpeg_configure:
 ifeq ($(HAVE_FFMPEG_STATIC), 1)
-	cd $(EXTERNALS_DIR)/ffmpeg && ./configure --disable-encoders --disable-decoders --enable-decoder=aac --enable-decoder=aac_fixed --enable-decoder=aac_latm --disable-programs
+	cd $(EXTERNALS_DIR)/ffmpeg && ./configure $(FFMPEG_CONF_OPTS)
 endif
 ffmpeg_static: ffmpeg_configure
 ifeq ($(HAVE_FFMPEG_STATIC), 1)
