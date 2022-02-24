@@ -369,6 +369,21 @@ SOURCES_C += $(EXTERNALS_DIR)/libretro-common/glsym/glsym_gl.c \
 		     $(EXTERNALS_DIR)/libretro-common/glsym/rglgen.c
 endif
 
+ifeq ($(HAVE_LIBRETRO_VFS), 1)
+LIBRETRO_COMMON := $(EXTERNALS_DIR)/libretro-common
+DEFINES += -DHAVE_LIBRETRO_VFS
+SOURCES_C += $(LIBRETRO_COMMON)/compat/compat_posix_string.c \
+             $(LIBRETRO_COMMON)/compat/fopen_utf8.c \
+             $(LIBRETRO_COMMON)/encodings/encoding_utf.c \
+             $(LIBRETRO_COMMON)/compat/compat_strl.c \
+             $(LIBRETRO_COMMON)/file/file_path.c \
+             $(LIBRETRO_COMMON)/streams/file_stream.c \
+             $(LIBRETRO_COMMON)/streams/file_stream_transforms.c \
+             $(LIBRETRO_COMMON)/string/stdstring.c \
+             $(LIBRETRO_COMMON)/time/rtime.c \
+             $(LIBRETRO_COMMON)/vfs/vfs_implementation.c
+endif
+
 # Common
 SOURCES_CXX += $(SRC_DIR)/common/detached_tasks.cpp \
                $(SRC_DIR)/common/cityhash.cpp \

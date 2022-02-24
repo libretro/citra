@@ -10,6 +10,10 @@
 #include "common/scm_rev.h"
 #include "environment.h"
 
+#ifdef HAVE_LIBRETRO_VFS
+#include "streams/file_stream.h"
+#endif
+
 using namespace LibRetro;
 
 namespace LibRetro {
@@ -124,6 +128,14 @@ retro_log_printf_t GetLoggingBackend() {
 int16_t CheckInput(unsigned port, unsigned device, unsigned index, unsigned id) {
     return input_state_cb(port, device, index, id);
 }
+
+#ifdef HAVE_LIBRETRO_VFS
+void SetVFSCallback(struct retro_vfs_interface_info* vfs_iface_info) {
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, vfs_iface_info))
+            filestream_vfs_init(vfs_iface_info);
+}
+#endif
+
 }; // namespace LibRetro
 
 void retro_get_system_info(struct retro_system_info* info) {

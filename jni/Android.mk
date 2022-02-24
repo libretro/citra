@@ -12,6 +12,7 @@ $(shell make -C .. shaders)
 include $(CLEAR_VARS)
 LOCAL_MODULE := dynarmic
 HAVE_DYNARMIC := 1
+HAVE_LIBRETRO_VFS := 0
 ARCH := aarch64
 
 include ../Makefile.common
@@ -45,6 +46,7 @@ CUSTOM_DEF += -DGIT_REV=\"$(GIT_REV)\" \
            -DSHADER_CACHE_VERSION=\"0\"
 
 ARCH := aarch64
+HAVE_LIBRETRO_VFS := 1
 HAVE_DYNARMIC = 0
 HAVE_FFMPEG := 0
 HAVE_FFMPEG_STATIC := 0

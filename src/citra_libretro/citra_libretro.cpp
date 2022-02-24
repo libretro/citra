@@ -34,6 +34,10 @@
 #include "video_core/renderer_opengl/renderer_opengl.h"
 #include "video_core/video_core.h"
 
+#ifdef HAVE_LIBRETRO_VFS
+#include <streams/file_stream_transforms.h>
+#endif
+
 #if defined(HAVE_LIBNX)
 #include <cstring>
 typedef void (*rglgen_func_t)(void);
@@ -106,6 +110,12 @@ unsigned retro_api_version() {
 }
 
 void LibRetro::OnConfigureEnvironment() {
+
+#ifdef HAVE_LIBRETRO_VFS
+    struct retro_vfs_interface_info vfs_iface_info { 1, nullptr };
+    LibRetro::SetVFSCallback(&vfs_iface_info);
+#endif
+
     static const retro_variable values[] = {
         {"citra_use_cpu_jit", "Enable CPU JIT; enabled|disabled"},
         {"citra_use_hw_renderer", "Enable hardware renderer; enabled|disabled"},

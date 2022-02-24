@@ -396,6 +396,12 @@ FileUtil::IOFile ShaderDiskCache::AppendTransferableFile() {
     const auto transferable_path{GetTransferablePath()};
     const bool existed = FileUtil::Exists(transferable_path);
 
+#ifdef HAVE_LIBRETRO_VFS
+    if (!existed) {
+        FileUtil::CreateEmptyFile(transferable_path);
+    }
+#endif
+
     FileUtil::IOFile file(transferable_path, "ab");
     if (!file.IsOpen()) {
         LOG_ERROR(Render_OpenGL, "Failed to open transferable cache in path={}", transferable_path);
@@ -427,6 +433,14 @@ void ShaderDiskCache::SaveVirtualPrecompiledFile() {
         decompressed_precompiled_cache.data(), decompressed_precompiled_cache.size());
 
     const auto precompiled_path{GetPrecompiledPath()};
+    const bool existed = FileUtil::Exists(precompiled_path);
+
+#ifdef HAVE_LIBRETRO_VFS
+    if (!existed) {
+        FileUtil::CreateEmptyFile(precompiled_path);
+    }
+#endif
+
     FileUtil::IOFile file(precompiled_path, "wb");
 
     if (!file.IsOpen()) {

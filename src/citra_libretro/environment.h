@@ -82,4 +82,8 @@ bool Shutdown();
 /// Displays the specified message to the screen.
 bool DisplayMessage(const char* sg);
 
+#ifdef HAVE_LIBRETRO_VFS
+void SetVFSCallback(struct retro_vfs_interface_info* vfs_iface_info);
+#endif
+
 } // namespace LibRetro

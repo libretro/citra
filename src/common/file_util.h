@@ -22,6 +22,14 @@
 #include "common/string_util.h"
 #endif
 
+#ifdef HAVE_LIBRETRO_VFS
+#define SKIP_STDIO_REDEFINES
+#include <streams/file_stream_transforms.h>
+#define CORE_FILE RFILE
+#else
+#define CORE_FILE FILE
+#endif
+
 namespace FileUtil {
 
 // User paths for GetUserPath
@@ -103,7 +111,7 @@ private:
 [[nodiscard]] u64 GetSize(int fd);
 
 // Overloaded GetSize, accepts FILE*
-[[nodiscard]] u64 GetSize(FILE* f);
+[[nodiscard]] u64 GetSize(CORE_FILE* f);
 
 // Returns true if successful, or path already exists.
 bool CreateDir(const std::string& filename);
@@ -345,7 +353,12 @@ public:
     // clear error state
     void Clear() {
         m_good = true;
+
+#ifdef HAVE_LIBRETRO_VFS
+        filestream_rewind(m_file);
+#else
         std::clearerr(m_file);
+#endif
     }
 
 private:
@@ -354,7 +367,7 @@ private:
 
     bool Open();
 
-    std::FILE* m_file = nullptr;
+    CORE_FILE* m_file = nullptr;
     bool m_good = true;
 
     std::string filename;
