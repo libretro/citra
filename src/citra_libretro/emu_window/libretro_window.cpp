@@ -22,7 +22,9 @@ void ResetGLState() {
     state.Apply();
 
     // Clean up global state.
-    glLogicOp(GL_COPY);
+    if (!Settings::values.use_gles) {
+        glLogicOp(GL_COPY);
+    }
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);

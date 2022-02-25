@@ -337,6 +337,8 @@ endif
 
 include Makefile.common
 
+SOURCES_CXX += $(DYNARMICSOURCES_CXX)
+
 CPPFILES = $(filter %.cpp,$(SOURCES_CXX))
 CCFILES = $(filter %.cc,$(SOURCES_CXX))
 
