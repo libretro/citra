@@ -49,3 +49,7 @@ node_modules/
 # RA artifacts
 *.o
 src/video_core/shaders/
+
+# Android
+obj/
+libs/

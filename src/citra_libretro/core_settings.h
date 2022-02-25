@@ -23,6 +23,10 @@ struct CoreSettings {
 
     Service::CFG::SystemLanguage language_value;
 
+    bool touch_touchscreen;
+
+    bool render_touchscreen;
+
 } extern settings;
 
 } // namespace LibRetro

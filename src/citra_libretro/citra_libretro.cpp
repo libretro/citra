@@ -125,7 +125,9 @@ void LibRetro::OnConfigureEnvironment() {
         {"citra_analog_function",
          "Right analog function; C-Stick and Touchscreen Pointer|Touchscreen Pointer|C-Stick"},
         {"citra_deadzone", "Emulated pointer deadzone (%); 15|20|25|30|35|0|5|10"},
-        {"citra_mouse_touchscreen", "Enable mouse input for touchscreen; enabled|disabled"},
+        {"citra_mouse_touchscreen", "Simulate touchscreen interactions with mouse; enabled|disabled"},
+        {"citra_touch_touchscreen", "Simulate touchscreen interactions with touchscreen; disabled|enabled"},
+        {"citra_render_touchscreen", "Render simulated touchscreen interactions; disabled|enabled"},
         {"citra_use_virtual_sd", "Enable virtual SD card; enabled|disabled"},
         {"citra_use_libretro_save_path", "Savegame location; LibRetro Default|Citra Default"},
         {"citra_is_new_3ds", "3DS system model; Old 3DS|New 3DS"},
@@ -214,7 +216,11 @@ void UpdateSettings() {
     Settings::values.swap_screen = LibRetro::FetchVariable("citra_swap_screen", "Top") == "Bottom";
     Settings::values.use_gdbstub =
         LibRetro::FetchVariable("citra_use_gdbstub", "disabled") == "enabled";
+#if defined(USING_GLES)
+    Settings::values.use_gles = true;
+#else
     Settings::values.use_gles = false;
+#endif
     Settings::values.texture_filter_name =
         LibRetro::FetchVariable("citra_texture_filter", "none");
     Settings::values.dump_textures =
@@ -233,6 +239,10 @@ void UpdateSettings() {
     Settings::values.bg_blue = 0;
     LibRetro::settings.mouse_touchscreen =
         LibRetro::FetchVariable("citra_mouse_touchscreen", "enabled") == "enabled";
+    LibRetro::settings.touch_touchscreen =
+        LibRetro::FetchVariable("citra_touch_touchscreen", "disabled") == "enabled";
+    LibRetro::settings.render_touchscreen =
+        LibRetro::FetchVariable("citra_render_touchscreen", "disabled") == "enabled";
 
     // These values are a bit more hard to define, unfortunately.
     auto scaling = LibRetro::FetchVariable("citra_resolution_factor", "1x (Native)");
@@ -456,7 +466,11 @@ void context_reset() {
 
     // Check to see if the frontend provides us with OpenGL symbols
     if (emu_instance->hw_render.get_proc_address != nullptr) {
-        if (!gladLoadGLLoader((GLADloadproc)load_opengl_func)) {
+        bool loaded = Settings::values.use_gles
+            ? gladLoadGLES2Loader((GLADloadproc)load_opengl_func)
+            : gladLoadGLLoader((GLADloadproc)load_opengl_func);
+
+        if (!loaded) {
             LOG_CRITICAL(Frontend, "Glad failed to load (frontend-provided symbols)!");
             return;
         }
@@ -522,12 +536,16 @@ bool retro_load_game(const struct retro_game_info* info) {
             return false;
         }
 
-#ifdef HAVE_LIBNX
+#if defined(HAVE_LIBNX)
         emu_instance->hw_render.context_type = RETRO_HW_CONTEXT_OPENGL;
         emu_instance->hw_render.version_major = 0;
         emu_instance->hw_render.version_minor = 0;
 
         rglgen_resolve_symbols_custom(&eglGetProcAddress, &rglgen_symbol_map_citra);
+#elif defined(USING_GLES)
+        emu_instance->hw_render.context_type = RETRO_HW_CONTEXT_OPENGLES3;
+        emu_instance->hw_render.version_major = 3;
+        emu_instance->hw_render.version_minor = 2;
 #else
         emu_instance->hw_render.context_type = RETRO_HW_CONTEXT_OPENGL_CORE;
         emu_instance->hw_render.version_major = 3;

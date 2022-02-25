@@ -134,7 +134,7 @@ DYNARMICINCFLAGS := -I$(EXTERNALS_DIR)/dynarmic/src \
                     -I$(EXTERNALS_DIR)/dynarmic/externals/mp/include \
                     -I$(EXTERNALS_DIR)/dynarmic/externals/robin-map/include
 
-SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/common/assert.cpp \
+DYNARMICSOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/common/assert.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/common/crypto/aes.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/common/crypto/crc32.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/common/crypto/sm4.cpp \
@@ -202,13 +202,14 @@ SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/common/assert.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/translate_arm.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/frontend/A32/translate/translate_thumb.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/ir_opt/a32_constant_memory_reads_pass.cpp \
+                $(EXTERNALS_DIR)/dynarmic/src/ir_opt/a32_merge_interpret_blocks.cpp \
                 $(EXTERNALS_DIR)/dynarmic/src/ir_opt/a32_get_set_elimination_pass.cpp
 
     ifeq ($(ARCH), x86_64)
         DEFINES += -DXBYAK_NO_OP_NAMES
         DYNARMICINCFLAGS += -I$(EXTERNALS_DIR)/xbyak/xbyak
 
-        SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/backend/x64/abi.cpp \
+        DYNARMICSOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/backend/x64/abi.cpp \
                         $(EXTERNALS_DIR)/dynarmic/src/backend/x64/block_of_code.cpp \
                         $(EXTERNALS_DIR)/dynarmic/src/backend/x64/block_range_information.cpp \
                         $(EXTERNALS_DIR)/dynarmic/src/backend/x64/callback.cpp \
@@ -232,12 +233,33 @@ SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/common/assert.cpp \
                         $(EXTERNALS_DIR)/dynarmic/src/backend/x64/a32_jitstate.cpp
 
         ifeq ($(platform), win)
-            SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/backend/x64/exception_handler_windows.cpp
+            DYNARMICSOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/backend/x64/exception_handler_windows.cpp
         else ifeq ($(platform), unix)
-            SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/backend/x64/exception_handler_posix.cpp
+            DYNARMICSOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/backend/x64/exception_handler_posix.cpp
         else
-            SOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/backend/x64/exception_handler_generic.cpp
+            DYNARMICSOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/backend/x64/exception_handler_generic.cpp
         endif
+    else ifeq ($(ARCH), aarch64)
+        DYNARMICSOURCES_CXX += $(EXTERNALS_DIR)/dynarmic/src/backend/A64/callback.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/perf_map.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/emit_a64_data_processing.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/emit_a64_packed.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/reg_alloc.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/exception_handler_generic.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/emitter \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/emitter/a64_emitter.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/constant_pool.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/emit_a64_saturation.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/a32_emit_a64.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/block_range_information.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/abi.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/emit_a64.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/hostloc.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/block_of_code.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/emit_a64_floating_point.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/a32_interface.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/exception_handler_posix.cpp \
+                       $(EXTERNALS_DIR)/dynarmic/src/backend/A64/a32_jitstate.cpp
     else
         $(error Bad architecture used with dynarmic: $(ARCH))
     endif
@@ -590,9 +612,7 @@ SOURCES_CXX += $(SRC_DIR)/core/announce_multiplayer_session.cpp \
 
 ifeq ($(HAVE_DYNARMIC), 1)
 SOURCES_CXX += $(SRC_DIR)/core/arm/dynarmic/arm_dynarmic.cpp \
-               $(SRC_DIR)/core/arm/dynarmic/arm_dynarmic.h \
-               $(SRC_DIR)/core/arm/dynarmic/arm_dynarmic_cp15.cpp \
-               $(SRC_DIR)/core/arm/dynarmic/arm_dynarmic_cp15.h
+               $(SRC_DIR)/core/arm/dynarmic/arm_dynarmic_cp15.cpp
 endif
 
 ifeq ($(HAVE_RPC), 1)

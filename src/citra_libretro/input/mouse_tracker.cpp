@@ -19,7 +19,13 @@ namespace Input {
 MouseTracker::MouseTracker() {
     // Could potentially also use Citra's built-in shaders, if they can be
     //  wrangled to cooperate.
-    const GLchar* vertex = R"(
+
+    std::string vertex;
+    if (Settings::values.use_gles) {
+        vertex += ::OpenGL::fragment_shader_precision_OES;
+    }
+
+    vertex += R"(
         in vec2 position;
 
         void main()
@@ -28,7 +34,11 @@ MouseTracker::MouseTracker() {
         }
     )";
 
-    const GLchar* fragment = R"(
+    std::string fragment;
+    if (Settings::values.use_gles) {
+        fragment += ::OpenGL::fragment_shader_precision_OES;
+    }
+    fragment += R"(
         out vec4 color;
 
         void main()
@@ -43,7 +53,7 @@ MouseTracker::MouseTracker() {
     glBindVertexArray(vao.handle);
     glBindBuffer(GL_ARRAY_BUFFER, vbo.handle);
 
-    shader.Create(vertex, fragment);
+    shader.Create(vertex.c_str(), fragment.c_str());
 
     auto positionVariable = (GLuint)glGetAttribLocation(shader.handle, "position");
     glEnableVertexAttribArray(positionVariable);
@@ -94,6 +104,31 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
                 bottomScreen.top;
         }
     }
+
+    if (LibRetro::settings.touch_touchscreen) {
+        // Check touchscreen input
+        state |= LibRetro::CheckInput(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
+
+        // Read in and convert pointer values to absolute values on the canvas
+        auto pointerX = LibRetro::CheckInput(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X);
+        auto pointerY = LibRetro::CheckInput(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y);
+        auto newX = static_cast<int>((pointerX + 0x7fff) / (float)(0x7fff * 2) * bufferWidth);
+        auto newY = static_cast<int>((pointerY + 0x7fff) / (float)(0x7fff * 2) * bufferHeight);
+
+        // Use mouse pointer movement
+        if ((pointerX != 0 || pointerY != 0) && (newX != lastMouseX || newY != lastMouseY)) {
+            lastMouseX = newX;
+            lastMouseY = newY;
+
+            x = std::max(static_cast<int>(bottomScreen.left),
+                         std::min(newX, static_cast<int>(bottomScreen.right))) -
+                bottomScreen.left;
+            y = std::max(static_cast<int>(bottomScreen.top),
+                         std::min(newY, static_cast<int>(bottomScreen.bottom))) -
+                bottomScreen.top;
+        }
+    }
+
     if (LibRetro::settings.analog_function != LibRetro::CStickFunction::CStick) {
         // Check right analog input
         state |= LibRetro::CheckInput(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3);
@@ -147,6 +182,10 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
 }
 
 void MouseTracker::Render(int bufferWidth, int bufferHeight) {
+    if (!LibRetro::settings.render_touchscreen) {
+        return;
+    }
+
     // Convert to OpenGL coordinates
     float centerX = (projectedX / bufferWidth) * 2 - 1;
     float centerY = (projectedY / bufferHeight) * 2 - 1;
