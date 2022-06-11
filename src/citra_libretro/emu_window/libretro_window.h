@@ -67,8 +67,6 @@ private:
     // For tracking LibRetro state
     bool hasTouched = false;
 
-    GLuint framebuffer;
-
     // For tracking mouse cursor
     std::unique_ptr<LibRetro::Input::MouseTracker> tracker = nullptr;
 

@@ -76,7 +76,7 @@ void EmuWindow_LibRetro::SwapBuffers() {
 
 void EmuWindow_LibRetro::SetupFramebuffer() {
     // TODO: Expose interface in renderer_opengl to configure this in it's internal state
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(LibRetro::GetFramebuffer()));
 
     // glClear can be a slow path - skip clearing if we don't need to.
     if (doCleanFrame) {
@@ -228,8 +228,6 @@ bool EmuWindow_LibRetro::HasSubmittedFrame() {
 }
 
 void EmuWindow_LibRetro::CreateContext() {
-    framebuffer = static_cast<GLuint>(LibRetro::GetFramebuffer());
-
     if (enableEmulatedPointer) {
         tracker = std::make_unique<LibRetro::Input::MouseTracker>();
     }
