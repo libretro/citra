@@ -13,15 +13,12 @@
 #include "common/common_types.h"
 #include "common/file_util.h"
 #include "core/file_sys/romfs_reader.h"
-#include "core/hle/kernel/object.h"
+#include "core/hle/kernel/kernel.h"
 
 namespace Kernel {
 struct AddressMapping;
 class Process;
 } // namespace Kernel
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Loader namespace
 
 namespace Loader {
 
@@ -75,6 +72,7 @@ enum class ResultStatus {
     ErrorAlreadyLoaded,
     ErrorMemoryAllocationFailed,
     ErrorEncrypted,
+    ErrorGbaTitle,
 };
 
 constexpr u32 MakeMagic(char a, char b, char c, char d) {
@@ -94,6 +92,14 @@ public:
     virtual FileType GetFileType() = 0;
 
     /**
+     * Returns the preferred region codes of this file
+     * @return A vector of the preferred region codes
+     */
+    [[nodiscard]] virtual std::span<const u32> GetPreferredRegions() const {
+        return {};
+    }
+
+    /**
      * Load the application and return the created Process instance
      * @param process The newly created process.
      * @return The status result of the operation.
@@ -101,23 +107,36 @@ public:
     virtual ResultStatus Load(std::shared_ptr<Kernel::Process>& process) = 0;
 
     /**
-     * Loads the system mode that this application needs.
-     * This function defaults to 2 (96MB allocated to the application) if it can't read the
+     * Loads the core version (FIRM title ID low) that this application needs.
+     * This function defaults to 0x2 (NATIVE_FIRM) if it can't read the
      * information.
-     * @returns A pair with the optional system mode, and the status.
+     * @returns A pair with the optional core version, and the status.
      */
-    virtual std::pair<std::optional<u32>, ResultStatus> LoadKernelSystemMode() {
-        // 96MB allocated to the application.
-        return std::make_pair(2, ResultStatus::Success);
+    virtual std::pair<std::optional<u32>, ResultStatus> LoadCoreVersion() {
+        return std::make_pair(0x2, ResultStatus::Success);
     }
 
     /**
-     * Loads the N3ds mode that this application uses.
-     * It defaults to 0 (O3DS default) if it can't read the information.
-     * @returns A pair with the optional N3ds mode, and the status.
+     * Loads the memory mode that this application needs.
+     * This function defaults to Dev1 (96MB allocated to the application) if it can't read the
+     * information.
+     * @returns A pair with the optional memory mode, and the status.
      */
-    virtual std::pair<std::optional<u8>, ResultStatus> LoadKernelN3dsMode() {
-        return std::make_pair(0, ResultStatus::Success);
+    virtual std::pair<std::optional<Kernel::MemoryMode>, ResultStatus> LoadKernelMemoryMode() {
+        // 96MB allocated to the application.
+        return std::make_pair(Kernel::MemoryMode::Dev1, ResultStatus::Success);
+    }
+
+    /**
+     * Loads the N3DS hardware capabilities that this application uses.
+     * It defaults to all disabled (O3DS) if it can't read the information.
+     * @returns A pair with the optional N3DS hardware capabilities, and the status.
+     */
+    virtual std::pair<std::optional<Kernel::New3dsHwCapabilities>, ResultStatus>
+    LoadNew3dsHwCapabilities() {
+        return std::make_pair(
+            Kernel::New3dsHwCapabilities{false, false, Kernel::New3dsMemoryMode::Legacy},
+            ResultStatus::Success);
     }
 
     /**
@@ -135,7 +154,7 @@ public:
      * @param buffer Reference to buffer to store data
      * @return ResultStatus result of function
      */
-    virtual ResultStatus ReadCode(std::vector<u8>& buffer) {
+    virtual ResultStatus ReadCode([[maybe_unused]] std::vector<u8>& buffer) {
         return ResultStatus::ErrorNotImplemented;
     }
 
@@ -144,7 +163,7 @@ public:
      * @param buffer Reference to buffer to store data
      * @return ResultStatus result of function
      */
-    virtual ResultStatus ReadIcon(std::vector<u8>& buffer) {
+    virtual ResultStatus ReadIcon([[maybe_unused]] std::vector<u8>& buffer) {
         return ResultStatus::ErrorNotImplemented;
     }
 
@@ -153,7 +172,7 @@ public:
      * @param buffer Reference to buffer to store data
      * @return ResultStatus result of function
      */
-    virtual ResultStatus ReadBanner(std::vector<u8>& buffer) {
+    virtual ResultStatus ReadBanner([[maybe_unused]] std::vector<u8>& buffer) {
         return ResultStatus::ErrorNotImplemented;
     }
 
@@ -162,7 +181,7 @@ public:
      * @param buffer Reference to buffer to store data
      * @return ResultStatus result of function
      */
-    virtual ResultStatus ReadLogo(std::vector<u8>& buffer) {
+    virtual ResultStatus ReadLogo([[maybe_unused]] std::vector<u8>& buffer) {
         return ResultStatus::ErrorNotImplemented;
     }
 
@@ -171,7 +190,7 @@ public:
      * @param out_program_id Reference to store program id into
      * @return ResultStatus result of function
      */
-    virtual ResultStatus ReadProgramId(u64& out_program_id) {
+    virtual ResultStatus ReadProgramId([[maybe_unused]] u64& out_program_id) {
         return ResultStatus::ErrorNotImplemented;
     }
 
@@ -180,7 +199,7 @@ public:
      * @param out_extdata_id Reference to store extdata id into
      * @return ResultStatus result of function
      */
-    virtual ResultStatus ReadExtdataId(u64& out_extdata_id) {
+    virtual ResultStatus ReadExtdataId([[maybe_unused]] u64& out_extdata_id) {
         return ResultStatus::ErrorNotImplemented;
     }
 
@@ -190,7 +209,8 @@ public:
      * @param romfs_file The file containing the RomFS
      * @return ResultStatus result of function
      */
-    virtual ResultStatus ReadRomFS(std::shared_ptr<FileSys::RomFSReader>& romfs_file) {
+    virtual ResultStatus ReadRomFS(
+        [[maybe_unused]] std::shared_ptr<FileSys::RomFSReader>& romfs_file) {
         return ResultStatus::ErrorNotImplemented;
     }
 
@@ -199,7 +219,7 @@ public:
      * @param target_path The target path to dump to
      * @return ResultStatus result of function
      */
-    virtual ResultStatus DumpRomFS(const std::string& target_path) {
+    virtual ResultStatus DumpRomFS([[maybe_unused]] const std::string& target_path) {
         return ResultStatus::ErrorNotImplemented;
     }
 
@@ -209,7 +229,8 @@ public:
      * @param romfs_file The file containing the RomFS
      * @return ResultStatus result of function
      */
-    virtual ResultStatus ReadUpdateRomFS(std::shared_ptr<FileSys::RomFSReader>& romfs_file) {
+    virtual ResultStatus ReadUpdateRomFS(
+        [[maybe_unused]] std::shared_ptr<FileSys::RomFSReader>& romfs_file) {
         return ResultStatus::ErrorNotImplemented;
     }
 
@@ -218,7 +239,7 @@ public:
      * @param target_path The target path to dump to
      * @return ResultStatus result of function
      */
-    virtual ResultStatus DumpUpdateRomFS(const std::string& target_path) {
+    virtual ResultStatus DumpUpdateRomFS([[maybe_unused]] const std::string& target_path) {
         return ResultStatus::ErrorNotImplemented;
     }
 
@@ -227,7 +248,7 @@ public:
      * @param title Reference to store the application title into
      * @return ResultStatus result of function
      */
-    virtual ResultStatus ReadTitle(std::string& title) {
+    virtual ResultStatus ReadTitle([[maybe_unused]] std::string& title) {
         return ResultStatus::ErrorNotImplemented;
     }
 

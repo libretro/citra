@@ -8,7 +8,6 @@ if (POLICY CMP0071)
 endif()
 
 add_executable(citra-qt
-    Info.plist
     aboutdialog.cpp
     aboutdialog.h
     aboutdialog.ui
@@ -28,9 +27,6 @@ add_executable(citra-qt
     camera/qt_camera_base.h
     camera/qt_multimedia_camera.cpp
     camera/qt_multimedia_camera.h
-    cheats.cpp
-    cheats.h
-    cheats.ui
     citra-qt.rc
     compatdb.cpp
     compatdb.h
@@ -38,6 +34,8 @@ add_executable(citra-qt
     configuration/config.cpp
     configuration/config.h
     configuration/configure.ui
+    configuration/configuration_shared.cpp
+    configuration/configuration_shared.h
     configuration/configure_audio.cpp
     configuration/configure_audio.h
     configuration/configure_audio.ui
@@ -49,6 +47,7 @@ add_executable(citra-qt
     configuration/configure_debug.ui
     configuration/configure_enhancements.cpp
     configuration/configure_enhancements.h
+    configuration/configure_enhancements.ui
     configuration/configure_dialog.cpp
     configuration/configure_dialog.h
     configuration/configure_general.cpp
@@ -66,6 +65,9 @@ add_executable(citra-qt
     configuration/configure_motion_touch.cpp
     configuration/configure_motion_touch.h
     configuration/configure_motion_touch.ui
+    configuration/configure_per_game.cpp
+    configuration/configure_per_game.h
+    configuration/configure_per_game.ui
     configuration/configure_storage.cpp
     configuration/configure_storage.h
     configuration/configure_storage.ui
@@ -82,6 +84,9 @@ add_executable(citra-qt
     configuration/configure_web.cpp
     configuration/configure_web.h
     configuration/configure_web.ui
+    configuration/configure_cheats.cpp
+    configuration/configure_cheats.h
+    configuration/configure_cheats.ui
     debugger/console.h
     debugger/console.cpp
     debugger/graphics/graphics.cpp
@@ -115,6 +120,15 @@ add_executable(citra-qt
     debugger/wait_tree.cpp
     debugger/wait_tree.h
     discord.h
+    dumping/dumping_dialog.cpp
+    dumping/dumping_dialog.h
+    dumping/dumping_dialog.ui
+    dumping/option_set_dialog.cpp
+    dumping/option_set_dialog.h
+    dumping/option_set_dialog.ui
+    dumping/options_dialog.cpp
+    dumping/options_dialog.h
+    dumping/options_dialog.ui
     game_list.cpp
     game_list.h
     game_list_p.h
@@ -158,13 +172,11 @@ add_executable(citra-qt
     multiplayer/state.cpp
     multiplayer/state.h
     multiplayer/validation.h
+    precompiled_headers.h
     uisettings.cpp
     uisettings.h
     qt_image_interface.cpp
     qt_image_interface.h
-    updater/updater.cpp
-    updater/updater.h
-    updater/updater_p.h
     util/clickable_label.cpp
     util/clickable_label.h
     util/sequence_dialog/sequence_dialog.cpp
@@ -173,21 +185,9 @@ add_executable(citra-qt
     util/spinbox.h
     util/util.cpp
     util/util.h
+    util/vk_device_info.cpp
+    util/vk_device_info.h
 )
-
-if (ENABLE_FFMPEG_VIDEO_DUMPER)
-    target_sources(citra-qt PRIVATE
-        dumping/dumping_dialog.cpp
-        dumping/dumping_dialog.h
-        dumping/dumping_dialog.ui
-        dumping/option_set_dialog.cpp
-        dumping/option_set_dialog.h
-        dumping/option_set_dialog.ui
-        dumping/options_dialog.cpp
-        dumping/options_dialog.h
-        dumping/options_dialog.ui
-    )
-endif()
 
 file(GLOB COMPAT_LIST
      ${PROJECT_BINARY_DIR}/dist/compatibility_list/compatibility_list.qrc
@@ -195,15 +195,28 @@ file(GLOB COMPAT_LIST
 file(GLOB_RECURSE ICONS ${PROJECT_SOURCE_DIR}/dist/icons/*)
 file(GLOB_RECURSE THEMES ${PROJECT_SOURCE_DIR}/dist/qt_themes/*)
 
+if (ENABLE_QT_UPDATER)
+    target_sources(citra-qt PRIVATE
+        updater/updater.cpp
+        updater/updater.h
+        updater/updater_p.h
+    )
+    target_compile_definitions(citra-qt PUBLIC ENABLE_QT_UPDATER)
+endif()
+
 if (ENABLE_QT_TRANSLATION)
     set(CITRA_QT_LANGUAGES "${PROJECT_SOURCE_DIR}/dist/languages" CACHE PATH "Path to the translation bundle for the Qt frontend")
     option(GENERATE_QT_TRANSLATION "Generate en.ts as the translation source file" OFF)
 
     # Update source TS file if enabled
     if (GENERATE_QT_TRANSLATION)
-        get_target_property(SRCS citra-qt SOURCES)
-        qt5_create_translation(QM_FILES ${SRCS} ${UIS} ${CITRA_QT_LANGUAGES}/en.ts)
-        add_custom_target(translation ALL DEPENDS ${CITRA_QT_LANGUAGES}/en.ts)
+        get_target_property(QT_SRCS citra-qt SOURCES)
+        get_target_property(QT_INCLUDES citra-qt INCLUDE_DIRECTORIES)
+        qt_add_lupdate(citra-qt TS_FILES ${CITRA_QT_LANGUAGES}/en.ts
+            SOURCES ${QT_SRCS} ${UIS}
+            INCLUDE_DIRECTORIES ${QT_INCLUDES}
+            NO_GLOBAL_TARGET)
+        add_custom_target(translation ALL DEPENDS citra-qt_lupdate)
     endif()
 
     # Find all TS files except en.ts
@@ -211,7 +224,7 @@ if (ENABLE_QT_TRANSLATION)
     list(REMOVE_ITEM LANGUAGES_TS ${CITRA_QT_LANGUAGES}/en.ts)
 
     # Compile TS files to QM files
-    qt5_add_translation(LANGUAGES_QM ${LANGUAGES_TS})
+    qt_add_lrelease(citra-qt TS_FILES ${LANGUAGES_TS} NO_GLOBAL_TARGET QM_FILES_OUTPUT_VARIABLE LANGUAGES_QM)
 
     # Build a QRC file from the QM file list
     set(LANGUAGES_QRC ${CMAKE_CURRENT_BINARY_DIR}/languages.qrc)
@@ -223,7 +236,7 @@ if (ENABLE_QT_TRANSLATION)
     file(APPEND ${LANGUAGES_QRC} "</qresource></RCC>")
 
     # Add the QRC file to package in all QM files
-    qt5_add_resources(LANGUAGES ${LANGUAGES_QRC})
+    qt_add_resources(LANGUAGES ${LANGUAGES_QRC})
 else()
     set(LANGUAGES)
 endif()
@@ -237,18 +250,41 @@ target_sources(citra-qt
 )
 
 if (APPLE)
-    set(MACOSX_ICON "../../dist/citra.icns")
-    set_source_files_properties(${MACOSX_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-    target_sources(citra-qt PRIVATE ${MACOSX_ICON})
-    set_target_properties(citra-qt PROPERTIES MACOSX_BUNDLE TRUE)
-    set_target_properties(citra-qt PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist)
-    target_sources(citra-qt PRIVATE
-        macos_authorization.h
-        macos_authorization.mm
+    set(DIST_DIR "../../dist/apple")
+    set(APPLE_RESOURCES
+        "${DIST_DIR}/citra.icns"
+        "${DIST_DIR}/LaunchScreen.storyboard"
+        "${DIST_DIR}/launch_logo.png"
     )
+    target_sources(citra-qt PRIVATE ${APPLE_RESOURCES})
+
+    # Define app bundle metadata.
+    include(GenerateBuildInfo)
+    set_target_properties(citra-qt PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST "${DIST_DIR}/Info.plist.in"
+        MACOSX_BUNDLE_BUNDLE_NAME "Citra"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.citra-emu.citra"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${BUILD_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${BUILD_FULLNAME}"
+        MACOSX_BUNDLE_LONG_VERSION_STRING "${BUILD_FULLNAME}"
+        MACOSX_BUNDLE_ICON_FILE "citra.icns"
+        RESOURCE "${APPLE_RESOURCES}"
+    )
+
+    if (IOS)
+        set_target_properties(citra-qt PROPERTIES
+            # Have Xcode copy and sign MoltenVK into app bundle.
+            XCODE_EMBED_FRAMEWORKS "${MOLTENVK_LIBRARY}"
+            XCODE_EMBED_FRAMEWORKS_CODE_SIGN_ON_COPY YES
+            XCODE_ATTRIBUTE_LD_RUNPATH_SEARCH_PATHS "@executable_path/Frameworks"
+            # Support iPhone and iPad.
+            XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+        )
+    endif()
 elseif(WIN32)
     # compile as a win32 gui application instead of a console application
-    target_link_libraries(citra-qt PRIVATE Qt5::WinMain)
+    target_link_libraries(citra-qt PRIVATE Qt6::EntryPointImplementation)
     if(MSVC)
         set_target_properties(citra-qt PROPERTIES LINK_FLAGS_RELEASE "/SUBSYSTEM:WINDOWS")
     elseif(MINGW)
@@ -256,11 +292,24 @@ elseif(WIN32)
     endif()
 endif()
 
+if(ENABLE_SDL2)
+    target_link_libraries(citra-qt PRIVATE SDL2::SDL2)
+    target_compile_definitions(citra-qt PRIVATE HAVE_SDL2)
+endif()
+
 create_target_directory_groups(citra-qt)
 
-target_link_libraries(citra-qt PRIVATE audio_core common core input_common network video_core)
-target_link_libraries(citra-qt PRIVATE Boost::boost glad nihstro-headers Qt5::Widgets Qt5::Multimedia)
-target_link_libraries(citra-qt PRIVATE ${PLATFORM_LIBRARIES} Threads::Threads)
+target_link_libraries(citra-qt PRIVATE audio_core citra_common citra_core input_common network video_core)
+target_link_libraries(citra-qt PRIVATE Boost::boost glad nihstro-headers Qt6::Widgets Qt6::Multimedia Qt6::Concurrent)
+target_link_libraries(citra-qt PRIVATE ${PLATFORM_LIBRARIES} Threads::Threads vulkan-headers)
+
+if (NOT WIN32)
+    target_include_directories(citra-qt PRIVATE ${Qt6Gui_PRIVATE_INCLUDE_DIRS})
+endif()
+
+if (UNIX AND NOT APPLE)
+    target_link_libraries(citra-qt PRIVATE Qt6::DBus gamemode)
+endif()
 
 target_compile_definitions(citra-qt PRIVATE
     # Use QStringBuilder for string concatenation to reduce
@@ -295,21 +344,19 @@ if (USE_DISCORD_PRESENCE)
 endif()
 
 if (ENABLE_WEB_SERVICE)
-    target_compile_definitions(citra-qt PRIVATE -DENABLE_WEB_SERVICE)
+    target_link_libraries(citra-qt PRIVATE web_service)
 endif()
 
 if(UNIX AND NOT APPLE)
     install(TARGETS citra-qt RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
 endif()
 
-if (MSVC)
-    include(CopyCitraQt5Deps)
-    include(CopyCitraSDLDeps)
-    copy_citra_Qt5_deps(citra-qt)
-    copy_citra_SDL_deps(citra-qt)
+if (CITRA_USE_PRECOMPILED_HEADERS)
+    target_precompile_headers(citra-qt PRIVATE precompiled_headers.h)
+endif()
 
-    if (ENABLE_FFMPEG)
-        include(CopyCitraFFmpegDeps)
-        copy_citra_FFmpeg_deps(citra-qt)
-    endif()
+# Bundle in-place on MSVC so dependencies can be resolved by builds.
+if (MSVC)
+    include(BundleTarget)
+    bundle_target_in_place(citra-qt)
 endif()

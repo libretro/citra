@@ -6,12 +6,20 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 #include "common/common_types.h"
 #include "common/swap.h"
 
 namespace Common {
+
+/// Make a char lowercase
+[[nodiscard]] char ToLower(char c);
+
+/// Make a char uppercase
+[[nodiscard]] char ToUpper(char c);
 
 /// Make a string lowercase
 [[nodiscard]] std::string ToLower(std::string str);
@@ -26,7 +34,9 @@ namespace Common {
 
 [[nodiscard]] std::string TabsToSpaces(int tab_size, std::string in);
 
-void SplitString(const std::string& str, char delim, std::vector<std::string>& output);
+[[nodiscard]] bool EndsWith(const std::string& value, const std::string& ending);
+
+[[nodiscard]] std::vector<std::string> SplitString(const std::string& str, const char delim);
 
 // "C:/Windows/winhelp.exe" to "C:/Windows/", "winhelp", ".exe"
 bool SplitPath(const std::string& full_path, std::string* _pPath, std::string* _pFilename,
@@ -37,8 +47,8 @@ void BuildCompleteFilename(std::string& _CompleteFilename, const std::string& _P
 [[nodiscard]] std::string ReplaceAll(std::string result, const std::string& src,
                                      const std::string& dest);
 
-[[nodiscard]] std::string UTF16ToUTF8(const std::u16string& input);
-[[nodiscard]] std::u16string UTF8ToUTF16(const std::string& input);
+[[nodiscard]] std::string UTF16ToUTF8(std::u16string_view input);
+[[nodiscard]] std::u16string UTF8ToUTF16(std::string_view input);
 
 #ifdef _WIN32
 [[nodiscard]] std::string UTF16ToUTF8(const std::wstring& input);
@@ -73,6 +83,15 @@ std::string UTF16BufferToUTF8(const T& text) {
         return static_cast<char16_t>(static_cast<u16>(character));
     });
     return UTF16ToUTF8(buffer);
+}
+
+/**
+ * Removes trailing null bytes from the string.
+ */
+inline void TruncateString(std::string& str) {
+    while (str.size() && str.back() == '\0') {
+        str.pop_back();
+    }
 }
 
 /**

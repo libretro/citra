@@ -12,9 +12,6 @@
 #include "core/hle/result.h"
 #include "delay_generator.h"
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// FileSys namespace
-
 namespace FileSys {
 
 class FileBackend : NonCopyable {
@@ -88,6 +85,20 @@ public:
      * Flushes the file
      */
     virtual void Flush() const = 0;
+
+    /**
+     * Whether the backend supports cached reads.
+     */
+    virtual bool AllowsCachedReads() const {
+        return false;
+    }
+
+    /**
+     * Whether the cache is ready for a specified offset and length.
+     */
+    virtual bool CacheReady(std::size_t file_offset, std::size_t length) {
+        return false;
+    }
 
 protected:
     std::unique_ptr<DelayGenerator> delay_generator;

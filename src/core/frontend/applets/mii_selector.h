@@ -25,14 +25,14 @@ struct MiiSelectorConfig {
 
 struct MiiSelectorData {
     u32 return_code;
-    HLE::Applets::MiiData mii;
+    Mii::MiiData mii;
 };
 
 class MiiSelector {
 public:
     virtual ~MiiSelector() = default;
-    virtual void Setup(const MiiSelectorConfig& config) {
-        this->config = MiiSelectorConfig(config);
+    virtual void Setup(const MiiSelectorConfig& config_) {
+        config = MiiSelectorConfig(config_);
     }
 
     const MiiSelectorData& ReceiveData() const {
@@ -43,14 +43,14 @@ public:
      * Stores the data so that the HLE applet in core can
      * send this to the calling application
      */
-    void Finalize(u32 return_code, HLE::Applets::MiiData mii);
+    void Finalize(u32 return_code, Mii::MiiData mii);
 
 protected:
     MiiSelectorConfig config;
     MiiSelectorData data;
 };
 
-std::vector<HLE::Applets::MiiData> LoadMiis();
+std::vector<Mii::MiiData> LoadMiis();
 
 class DefaultMiiSelector final : public MiiSelector {
 public:

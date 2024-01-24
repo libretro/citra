@@ -5,15 +5,14 @@
 #include <array>
 #include "citra_qt/debugger/wait_tree.h"
 #include "citra_qt/uisettings.h"
-#include "citra_qt/util/util.h"
 #include "common/assert.h"
 #include "core/hle/kernel/event.h"
 #include "core/hle/kernel/mutex.h"
+#include "core/hle/kernel/process.h"
 #include "core/hle/kernel/semaphore.h"
 #include "core/hle/kernel/thread.h"
 #include "core/hle/kernel/timer.h"
 #include "core/hle/kernel/wait_object.h"
-#include "core/settings.h"
 
 namespace {
 
@@ -64,7 +63,7 @@ WaitTreeItem* WaitTreeItem::Parent() const {
     return parent;
 }
 
-const std::vector<std::unique_ptr<WaitTreeItem>>& WaitTreeItem::Children() const {
+std::span<const std::unique_ptr<WaitTreeItem>> WaitTreeItem::Children() const {
     return children;
 }
 
@@ -76,12 +75,13 @@ std::size_t WaitTreeItem::Row() const {
     return row;
 }
 
-std::vector<std::unique_ptr<WaitTreeThread>> WaitTreeItem::MakeThreadItemList() {
-    u32 num_cores = Core::GetNumCores();
+std::vector<std::unique_ptr<WaitTreeThread>> WaitTreeItem::MakeThreadItemList(
+    Core::System& system) {
+    const u32 num_cores = system.GetNumCores();
     std::vector<std::unique_ptr<WaitTreeThread>> item_list;
+    item_list.reserve(num_cores);
     for (u32 i = 0; i < num_cores; ++i) {
-        const auto& threads =
-            Core::System::GetInstance().Kernel().GetThreadManager(i).GetThreadList();
+        const auto threads = system.Kernel().GetThreadManager(i).GetThreadList();
         item_list.reserve(item_list.size() + threads.size());
         for (std::size_t j = 0; j < threads.size(); ++j) {
             item_list.push_back(std::make_unique<WaitTreeThread>(*threads[j]));
@@ -206,8 +206,8 @@ QString WaitTreeThread::GetText() const {
         break;
     }
     QString pc_info = tr(" PC = 0x%1 LR = 0x%2")
-                          .arg(thread.context->GetProgramCounter(), 8, 16, QLatin1Char('0'))
-                          .arg(thread.context->GetLinkRegister(), 8, 16, QLatin1Char('0'));
+                          .arg(thread.context.GetProgramCounter(), 8, 16, QLatin1Char('0'))
+                          .arg(thread.context.GetLinkRegister(), 8, 16, QLatin1Char('0'));
     return QStringLiteral("%1%2 (%3) ").arg(WaitTreeWaitObject::GetText(), pc_info, status);
 }
 
@@ -435,11 +435,12 @@ void WaitTreeModel::ClearItems() {
     thread_items.clear();
 }
 
-void WaitTreeModel::InitItems() {
-    thread_items = WaitTreeItem::MakeThreadItemList();
+void WaitTreeModel::InitItems(Core::System& system) {
+    thread_items = WaitTreeItem::MakeThreadItemList(system);
 }
 
-WaitTreeWidget::WaitTreeWidget(QWidget* parent) : QDockWidget(tr("Wait Tree"), parent) {
+WaitTreeWidget::WaitTreeWidget(Core::System& system_, QWidget* parent)
+    : QDockWidget(tr("Wait Tree"), parent), system{system_} {
     setObjectName(QStringLiteral("WaitTreeWidget"));
     view = new QTreeView(this);
     view->setHeaderHidden(true);
@@ -448,9 +449,10 @@ WaitTreeWidget::WaitTreeWidget(QWidget* parent) : QDockWidget(tr("Wait Tree"), p
 }
 
 void WaitTreeWidget::OnDebugModeEntered() {
-    if (!Core::System::GetInstance().IsPoweredOn())
+    if (!system.IsPoweredOn()) {
         return;
-    model->InitItems();
+    }
+    model->InitItems(system);
     view->setModel(model);
     setEnabled(true);
 }

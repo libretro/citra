@@ -22,21 +22,22 @@ constexpr TextureUnit PicaTexture(int unit) {
     return TextureUnit{unit};
 }
 
-constexpr TextureUnit TextureCube{6};
 constexpr TextureUnit TextureBufferLUT_LF{3};
 constexpr TextureUnit TextureBufferLUT_RG{4};
 constexpr TextureUnit TextureBufferLUT_RGBA{5};
+constexpr TextureUnit TextureNormalMap{6};
+constexpr TextureUnit TextureColorBuffer{7};
 
 } // namespace TextureUnits
 
 namespace ImageUnits {
-constexpr GLuint ShadowBuffer = 0;
-constexpr GLuint ShadowTexturePX = 1;
-constexpr GLuint ShadowTextureNX = 2;
-constexpr GLuint ShadowTexturePY = 3;
-constexpr GLuint ShadowTextureNY = 4;
-constexpr GLuint ShadowTexturePZ = 5;
-constexpr GLuint ShadowTextureNZ = 6;
+constexpr GLuint ShadowTexturePX = 0;
+constexpr GLuint ShadowTextureNX = 1;
+constexpr GLuint ShadowTexturePY = 2;
+constexpr GLuint ShadowTextureNY = 3;
+constexpr GLuint ShadowTexturePZ = 4;
+constexpr GLuint ShadowTextureNZ = 5;
+constexpr GLuint ShadowBuffer = 6;
 } // namespace ImageUnits
 
 class OpenGLState {
@@ -93,14 +94,10 @@ public:
     // 3 texture units - one for each that is used in PICA fragment shader emulation
     struct TextureUnit {
         GLuint texture_2d; // GL_TEXTURE_BINDING_2D
+        GLenum target;     // GL_TEXTURE_TARGET
         GLuint sampler;    // GL_SAMPLER_BINDING
     };
     std::array<TextureUnit, 3> texture_units;
-
-    struct {
-        GLuint texture_cube; // GL_TEXTURE_BINDING_CUBE_MAP
-        GLuint sampler;      // GL_SAMPLER_BINDING
-    } texture_cube_unit;
 
     struct {
         GLuint texture_buffer; // GL_TEXTURE_BINDING_BUFFER
@@ -114,14 +111,23 @@ public:
         GLuint texture_buffer; // GL_TEXTURE_BINDING_BUFFER
     } texture_buffer_lut_rgba;
 
+    struct {
+        GLuint texture_2d; // GL_TEXTURE_BINDING_2D
+    } color_buffer;
+
     // GL_IMAGE_BINDING_NAME
     GLuint image_shadow_buffer;
-    GLuint image_shadow_texture_px;
-    GLuint image_shadow_texture_nx;
-    GLuint image_shadow_texture_py;
-    GLuint image_shadow_texture_ny;
-    GLuint image_shadow_texture_pz;
-    GLuint image_shadow_texture_nz;
+    union {
+        std::array<GLuint, 6> image_shadow_texture;
+        struct {
+            GLuint image_shadow_texture_px;
+            GLuint image_shadow_texture_nx;
+            GLuint image_shadow_texture_py;
+            GLuint image_shadow_texture_ny;
+            GLuint image_shadow_texture_pz;
+            GLuint image_shadow_texture_nz;
+        };
+    };
 
     struct {
         GLuint read_framebuffer; // GL_READ_FRAMEBUFFER_BINDING
@@ -157,6 +163,14 @@ public:
     /// Get the currently active OpenGL state
     static OpenGLState GetCurState() {
         return cur_state;
+    }
+
+    bool EmulateColorBlend() const {
+        return blend.rgb_equation == GL_MIN || blend.rgb_equation == GL_MAX;
+    }
+
+    bool EmulateAlphaBlend() const {
+        return blend.a_equation == GL_MIN || blend.a_equation == GL_MAX;
     }
 
     /// Apply this state as the current OpenGL state

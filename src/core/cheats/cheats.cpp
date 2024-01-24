@@ -19,9 +19,12 @@ namespace Cheats {
 // we use the same value
 constexpr u64 run_interval_ticks = 50'000'000;
 
-CheatEngine::CheatEngine(Core::System& system_) : system(system_) {
+CheatEngine::CheatEngine(u64 title_id_, Core::System& system_)
+    : system(system_), title_id{title_id_} {
     LoadCheatFile();
-    Connect();
+    if (system.IsPoweredOn()) {
+        Connect();
+    }
 }
 
 void CheatEngine::Connect() {
@@ -32,7 +35,9 @@ void CheatEngine::Connect() {
 }
 
 CheatEngine::~CheatEngine() {
-    system.CoreTiming().UnscheduleEvent(event, 0);
+    if (system.IsPoweredOn()) {
+        system.CoreTiming().UnscheduleEvent(event, 0);
+    }
 }
 
 std::vector<std::shared_ptr<CheatBase>> CheatEngine::GetCheats() const {
@@ -45,7 +50,7 @@ void CheatEngine::AddCheat(const std::shared_ptr<CheatBase>& cheat) {
     cheats_list.push_back(cheat);
 }
 
-void CheatEngine::RemoveCheat(int index) {
+void CheatEngine::RemoveCheat(std::size_t index) {
     std::unique_lock<std::shared_mutex> lock(cheats_list_mutex);
     if (index < 0 || index >= cheats_list.size()) {
         LOG_ERROR(Core_Cheats, "Invalid index {}", index);
@@ -54,7 +59,7 @@ void CheatEngine::RemoveCheat(int index) {
     cheats_list.erase(cheats_list.begin() + index);
 }
 
-void CheatEngine::UpdateCheat(int index, const std::shared_ptr<CheatBase>& new_cheat) {
+void CheatEngine::UpdateCheat(std::size_t index, const std::shared_ptr<CheatBase>& new_cheat) {
     std::unique_lock<std::shared_mutex> lock(cheats_list_mutex);
     if (index < 0 || index >= cheats_list.size()) {
         LOG_ERROR(Core_Cheats, "Invalid index {}", index);
@@ -65,28 +70,22 @@ void CheatEngine::UpdateCheat(int index, const std::shared_ptr<CheatBase>& new_c
 
 void CheatEngine::SaveCheatFile() const {
     const std::string cheat_dir = FileUtil::GetUserPath(FileUtil::UserPath::CheatsDir);
-    const std::string filepath = fmt::format(
-        "{}{:016X}.txt", cheat_dir, system.Kernel().GetCurrentProcess()->codeset->program_id);
+    const std::string filepath = fmt::format("{}{:016X}.txt", cheat_dir, title_id);
 
     if (!FileUtil::IsDirectory(cheat_dir)) {
         FileUtil::CreateDir(cheat_dir);
     }
-
-    std::ofstream file;
-    OpenFStream(file, filepath, std::ios_base::out);
+    FileUtil::IOFile file(filepath, "w");
 
     auto cheats = GetCheats();
     for (const auto& cheat : cheats) {
-        file << cheat->ToString();
+        file.WriteString(cheat->ToString());
     }
-
-    file.flush();
 }
 
 void CheatEngine::LoadCheatFile() {
     const std::string cheat_dir = FileUtil::GetUserPath(FileUtil::UserPath::CheatsDir);
-    const std::string filepath = fmt::format(
-        "{}{:016X}.txt", cheat_dir, system.Kernel().GetCurrentProcess()->codeset->program_id);
+    const std::string filepath = fmt::format("{}{:016X}.txt", cheat_dir, title_id);
 
     if (!FileUtil::IsDirectory(cheat_dir)) {
         FileUtil::CreateDir(cheat_dir);
@@ -102,7 +101,7 @@ void CheatEngine::LoadCheatFile() {
     }
 }
 
-void CheatEngine::RunCallback([[maybe_unused]] u64 userdata, s64 cycles_late) {
+void CheatEngine::RunCallback([[maybe_unused]] std::uintptr_t user_data, s64 cycles_late) {
     {
         std::shared_lock<std::shared_mutex> lock(cheats_list_mutex);
         for (auto& cheat : cheats_list) {

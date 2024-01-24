@@ -121,6 +121,14 @@ public:
         void RegisterDisconnectEvent(Kernel::HLERequestContext& ctx);
 
         /**
+         * AC::GetConnectingProxyEnable service function
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         *      2 : bool, is proxy enabled
+         */
+        void GetConnectingProxyEnable(Kernel::HLERequestContext& ctx);
+
+        /**
          * AC::IsConnected service function
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
@@ -142,6 +150,12 @@ public:
     };
 
 protected:
+    enum class WifiStatus {
+        STATUS_DISCONNECTED = 0,
+        STATUS_CONNECTED_O3DS = 1,
+        STATUS_CONNECTED_N3DS = 2,
+    };
+
     struct ACConfig {
         std::array<u8, 0x200> data;
     };

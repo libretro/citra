@@ -3,11 +3,16 @@
 // Refer to the license.txt file included.
 
 #include <memory>
+#include <vector>
 #include <QDialog>
 #include "core/dumping/ffmpeg_backend.h"
 
 namespace Ui {
 class DumpingDialog;
+}
+
+namespace Core {
+class System;
 }
 
 class QLineEdit;
@@ -16,7 +21,7 @@ class DumpingDialog : public QDialog {
     Q_OBJECT
 
 public:
-    explicit DumpingDialog(QWidget* parent);
+    explicit DumpingDialog(QWidget* parent, Core::System& system);
     ~DumpingDialog() override;
 
     QString GetFilePath() const;
@@ -32,6 +37,7 @@ private:
                            QLineEdit* line_edit);
 
     std::unique_ptr<Ui::DumpingDialog> ui;
+    Core::System& system;
 
     QString last_path;
 

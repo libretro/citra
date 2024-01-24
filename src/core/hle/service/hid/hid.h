@@ -13,10 +13,10 @@
 #include "common/bit_field.h"
 #include "common/common_funcs.h"
 #include "common/common_types.h"
+#include "common/settings.h"
 #include "core/core_timing.h"
 #include "core/frontend/input.h"
 #include "core/hle/service/service.h"
-#include "core/settings.h"
 
 namespace Core {
 class System;
@@ -307,9 +307,9 @@ public:
 
 private:
     void LoadInputDevices();
-    void UpdatePadCallback(u64 userdata, s64 cycles_late);
-    void UpdateAccelerometerCallback(u64 userdata, s64 cycles_late);
-    void UpdateGyroscopeCallback(u64 userdata, s64 cycles_late);
+    void UpdatePadCallback(std::uintptr_t user_data, s64 cycles_late);
+    void UpdateAccelerometerCallback(std::uintptr_t user_data, s64 cycles_late);
+    void UpdateGyroscopeCallback(std::uintptr_t user_data, s64 cycles_late);
 
     Core::System& system;
 

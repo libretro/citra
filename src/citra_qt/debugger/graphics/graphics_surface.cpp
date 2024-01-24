@@ -15,8 +15,6 @@
 #include "citra_qt/debugger/graphics/graphics_surface.h"
 #include "citra_qt/util/spinbox.h"
 #include "common/color.h"
-#include "core/core.h"
-#include "core/hw/gpu.h"
 #include "core/memory.h"
 #include "video_core/pica_state.h"
 #include "video_core/regs_framebuffer.h"
@@ -34,12 +32,16 @@ void SurfacePicture::mousePressEvent(QMouseEvent* event) {
     if (!(event->buttons() & Qt::LeftButton))
         return;
 
-    if (pixmap() == nullptr)
+    const QPixmap pixmap = this->pixmap(Qt::ReturnByValue);
+    if (pixmap.isNull()) {
         return;
+    }
 
-    if (surface_widget)
-        surface_widget->Pick(event->x() * pixmap()->width() / width(),
-                             event->y() * pixmap()->height() / height());
+    if (surface_widget) {
+        const auto pos = event->position().toPoint();
+        surface_widget->Pick(pos.x() * pixmap.width() / width(),
+                             pos.y() * pixmap.height() / height());
+    }
 }
 
 void SurfacePicture::mouseMoveEvent(QMouseEvent* event) {
@@ -47,9 +49,10 @@ void SurfacePicture::mouseMoveEvent(QMouseEvent* event) {
     mousePressEvent(event);
 }
 
-GraphicsSurfaceWidget::GraphicsSurfaceWidget(std::shared_ptr<Pica::DebugContext> debug_context,
+GraphicsSurfaceWidget::GraphicsSurfaceWidget(Memory::MemorySystem& memory_,
+                                             std::shared_ptr<Pica::DebugContext> debug_context,
                                              QWidget* parent)
-    : BreakPointObserverDock(debug_context, tr("Pica Surface Viewer"), parent),
+    : BreakPointObserverDock(debug_context, tr("Pica Surface Viewer"), parent), memory{memory_},
       surface_source(Source::ColorBuffer) {
     setObjectName(QStringLiteral("PicaSurface"));
 
@@ -286,91 +289,80 @@ void GraphicsSurfaceWidget::Pick(int x, int y) {
         return;
     }
 
-    u8* buffer = Core::System::GetInstance().Memory().GetPhysicalPointer(surface_address);
-    if (buffer == nullptr) {
+    const u8* buffer = memory.GetPhysicalPointer(surface_address);
+    if (!buffer) {
         surface_info_label->setText(tr("(unable to access pixel data)"));
         surface_info_label->setAlignment(Qt::AlignCenter);
         return;
     }
 
-    unsigned nibbles_per_pixel = GraphicsSurfaceWidget::NibblesPerPixel(surface_format);
-    unsigned stride = nibbles_per_pixel * surface_width / 2;
-
-    unsigned bytes_per_pixel;
-    bool nibble_mode = (nibbles_per_pixel == 1);
-    if (nibble_mode) {
-        // As nibbles are contained in a byte we still need to access one byte per nibble
-        bytes_per_pixel = 1;
-    } else {
-        bytes_per_pixel = nibbles_per_pixel / 2;
-    }
+    const u32 nibbles_per_pixel = GraphicsSurfaceWidget::NibblesPerPixel(surface_format);
+    const u32 stride = nibbles_per_pixel * surface_width / 2;
+    const bool nibble_mode = (nibbles_per_pixel == 1);
+    const u32 bytes_per_pixel = [&] {
+        if (nibble_mode) {
+            // As nibbles are contained in a byte we still need to access one byte per nibble
+            return 1u;
+        } else {
+            return nibbles_per_pixel / 2;
+        }
+    }();
 
     const u32 coarse_y = y & ~7;
-    u32 offset = VideoCore::GetMortonOffset(x, y, bytes_per_pixel) + coarse_y * stride;
+    const u32 offset = VideoCore::GetMortonOffset(x, y, bytes_per_pixel) + coarse_y * stride;
     const u8* pixel = buffer + (nibble_mode ? (offset / 2) : offset);
 
-    auto GetText = [offset](Format format, const u8* pixel) {
+    const auto get_text = [offset](Format format, const u8* pixel) {
         switch (format) {
         case Format::RGBA8: {
-            auto value = Color::DecodeRGBA8(pixel) / 255.0f;
+            const auto value = Common::Color::DecodeRGBA8(pixel) / 255.0f;
             return QStringLiteral("Red: %1, Green: %2, Blue: %3, Alpha: %4")
-                .arg(QString::number(value.r(), 'f', 2))
-                .arg(QString::number(value.g(), 'f', 2))
-                .arg(QString::number(value.b(), 'f', 2))
-                .arg(QString::number(value.a(), 'f', 2));
+                .arg(QString::number(value.r(), 'f', 2), QString::number(value.g(), 'f', 2),
+                     QString::number(value.b(), 'f', 2), QString::number(value.a(), 'f', 2));
         }
         case Format::RGB8: {
-            auto value = Color::DecodeRGB8(pixel) / 255.0f;
+            const auto value = Common::Color::DecodeRGB8(pixel) / 255.0f;
             return QStringLiteral("Red: %1, Green: %2, Blue: %3")
-                .arg(QString::number(value.r(), 'f', 2))
-                .arg(QString::number(value.g(), 'f', 2))
-                .arg(QString::number(value.b(), 'f', 2));
+                .arg(QString::number(value.r(), 'f', 2), QString::number(value.g(), 'f', 2),
+                     QString::number(value.b(), 'f', 2));
         }
         case Format::RGB5A1: {
-            auto value = Color::DecodeRGB5A1(pixel) / 255.0f;
+            const auto value = Common::Color::DecodeRGB5A1(pixel) / 255.0f;
             return QStringLiteral("Red: %1, Green: %2, Blue: %3, Alpha: %4")
-                .arg(QString::number(value.r(), 'f', 2))
-                .arg(QString::number(value.g(), 'f', 2))
-                .arg(QString::number(value.b(), 'f', 2))
-                .arg(QString::number(value.a(), 'f', 2));
+                .arg(QString::number(value.r(), 'f', 2), QString::number(value.g(), 'f', 2),
+                     QString::number(value.b(), 'f', 2), QString::number(value.a(), 'f', 2));
         }
         case Format::RGB565: {
-            auto value = Color::DecodeRGB565(pixel) / 255.0f;
+            const auto value = Common::Color::DecodeRGB565(pixel) / 255.0f;
             return QStringLiteral("Red: %1, Green: %2, Blue: %3")
-                .arg(QString::number(value.r(), 'f', 2))
-                .arg(QString::number(value.g(), 'f', 2))
-                .arg(QString::number(value.b(), 'f', 2));
+                .arg(QString::number(value.r(), 'f', 2), QString::number(value.g(), 'f', 2),
+                     QString::number(value.b(), 'f', 2));
         }
         case Format::RGBA4: {
-            auto value = Color::DecodeRGBA4(pixel) / 255.0f;
+            const auto value = Common::Color::DecodeRGBA4(pixel) / 255.0f;
             return QStringLiteral("Red: %1, Green: %2, Blue: %3, Alpha: %4")
-                .arg(QString::number(value.r(), 'f', 2))
-                .arg(QString::number(value.g(), 'f', 2))
-                .arg(QString::number(value.b(), 'f', 2))
-                .arg(QString::number(value.a(), 'f', 2));
+                .arg(QString::number(value.r(), 'f', 2), QString::number(value.g(), 'f', 2),
+                     QString::number(value.b(), 'f', 2), QString::number(value.a(), 'f', 2));
         }
         case Format::IA8:
-            return QStringLiteral("Index: %1, Alpha: %2").arg(pixel[0]).arg(pixel[1]);
+            return QStringLiteral("Index: %1, Alpha: %2").arg(pixel[0], pixel[1]);
         case Format::RG8: {
-            auto value = Color::DecodeRG8(pixel) / 255.0f;
+            const auto value = Common::Color::DecodeRG8(pixel) / 255.0f;
             return QStringLiteral("Red: %1, Green: %2")
-                .arg(QString::number(value.r(), 'f', 2))
-                .arg(QString::number(value.g(), 'f', 2));
+                .arg(QString::number(value.r(), 'f', 2), QString::number(value.g(), 'f', 2));
         }
         case Format::I8:
             return QStringLiteral("Index: %1").arg(*pixel);
         case Format::A8:
             return QStringLiteral("Alpha: %1").arg(QString::number(*pixel / 255.0f, 'f', 2));
         case Format::IA4:
-            return QStringLiteral("Index: %1, Alpha: %2")
-                .arg(*pixel & 0xF)
-                .arg((*pixel & 0xF0) >> 4);
+            return QStringLiteral("Index: %1, Alpha: %2").arg(*pixel & 0xF, (*pixel & 0xF0) >> 4);
         case Format::I4: {
-            u8 i = (*pixel >> ((offset % 2) ? 4 : 0)) & 0xF;
+            const u8 i = (*pixel >> ((offset % 2) ? 4 : 0)) & 0xF;
             return QStringLiteral("Index: %1").arg(i);
         }
         case Format::A4: {
-            u8 a = (*pixel >> ((offset % 2) ? 4 : 0)) & 0xF;
+            const u8 a = (*pixel >> ((offset % 2) ? 4 : 0)) & 0xF;
             return QStringLiteral("Alpha: %1").arg(QString::number(a / 15.0f, 'f', 2));
         }
         case Format::ETC1:
@@ -378,20 +370,19 @@ void GraphicsSurfaceWidget::Pick(int x, int y) {
             // TODO: Display block information or channel values?
             return QStringLiteral("Compressed data");
         case Format::D16: {
-            auto value = Color::DecodeD16(pixel);
+            const auto value = Common::Color::DecodeD16(pixel);
             return QStringLiteral("Depth: %1").arg(QString::number(value / (float)0xFFFF, 'f', 4));
         }
         case Format::D24: {
-            auto value = Color::DecodeD24(pixel);
+            const auto value = Common::Color::DecodeD24(pixel);
             return QStringLiteral("Depth: %1")
                 .arg(QString::number(value / (float)0xFFFFFF, 'f', 4));
         }
         case Format::D24X8:
         case Format::X24S8: {
-            auto values = Color::DecodeD24S8(pixel);
+            const auto values = Common::Color::DecodeD24S8(pixel);
             return QStringLiteral("Depth: %1, Stencil: %2")
-                .arg(QString::number(values[0] / (float)0xFFFFFF, 'f', 4))
-                .arg(values[1]);
+                .arg(QString::number(values[0] / (float)0xFFFFFF, 'f', 4), values[1]);
         }
         case Format::Unknown:
             return QStringLiteral("Unknown format");
@@ -401,18 +392,18 @@ void GraphicsSurfaceWidget::Pick(int x, int y) {
     };
 
     QString nibbles;
-    for (unsigned i = 0; i < nibbles_per_pixel; i++) {
-        unsigned nibble_index = i;
+    for (u32 i = 0; i < nibbles_per_pixel; i++) {
+        u32 nibble_index = i;
         if (nibble_mode) {
             nibble_index += (offset % 2) ? 0 : 1;
         }
-        u8 byte = pixel[nibble_index / 2];
-        u8 nibble = (byte >> ((nibble_index % 2) ? 0 : 4)) & 0xF;
+        const u8 byte = pixel[nibble_index / 2];
+        const u8 nibble = (byte >> ((nibble_index % 2) ? 0 : 4)) & 0xF;
         nibbles.append(QString::number(nibble, 16).toUpper());
     }
 
     surface_info_label->setText(
-        QStringLiteral("Raw: 0x%3\n(%4)").arg(nibbles).arg(GetText(surface_format, pixel)));
+        QStringLiteral("Raw: 0x%3\n(%4)").arg(nibbles, get_text(surface_format, pixel)));
     surface_info_label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 }
 
@@ -554,9 +545,9 @@ void GraphicsSurfaceWidget::OnUpdate() {
     // TODO: Implement a good way to visualize alpha components!
 
     QImage decoded_image(surface_width, surface_height, QImage::Format_ARGB32);
-    u8* buffer = Core::System::GetInstance().Memory().GetPhysicalPointer(surface_address);
+    const u8* buffer = memory.GetPhysicalPointer(surface_address);
 
-    if (buffer == nullptr) {
+    if (!buffer) {
         surface_picture_label->hide();
         surface_info_label->setText(tr("(invalid surface address)"));
         surface_info_label->setAlignment(Qt::AlignCenter);
@@ -613,27 +604,27 @@ void GraphicsSurfaceWidget::OnUpdate() {
 
                 switch (surface_format) {
                 case Format::D16: {
-                    u32 data = Color::DecodeD16(pixel);
+                    u32 data = Common::Color::DecodeD16(pixel);
                     color.r() = data & 0xFF;
                     color.g() = (data >> 8) & 0xFF;
                     break;
                 }
                 case Format::D24: {
-                    u32 data = Color::DecodeD24(pixel);
+                    u32 data = Common::Color::DecodeD24(pixel);
                     color.r() = data & 0xFF;
                     color.g() = (data >> 8) & 0xFF;
                     color.b() = (data >> 16) & 0xFF;
                     break;
                 }
                 case Format::D24X8: {
-                    Common::Vec2<u32> data = Color::DecodeD24S8(pixel);
+                    Common::Vec2<u32> data = Common::Color::DecodeD24S8(pixel);
                     color.r() = data.x & 0xFF;
                     color.g() = (data.x >> 8) & 0xFF;
                     color.b() = (data.x >> 16) & 0xFF;
                     break;
                 }
                 case Format::X24S8: {
-                    Common::Vec2<u32> data = Color::DecodeD24S8(pixel);
+                    Common::Vec2<u32> data = Common::Color::DecodeD24S8(pixel);
                     color.r() = color.g() = color.b() = data.y;
                     break;
                 }
@@ -676,8 +667,8 @@ void GraphicsSurfaceWidget::SaveSurface() {
     }
 
     if (selected_filter == png_filter) {
-        const QPixmap* const pixmap = surface_picture_label->pixmap();
-        ASSERT_MSG(pixmap != nullptr, "No pixmap set");
+        const QPixmap pixmap = surface_picture_label->pixmap(Qt::ReturnByValue);
+        ASSERT_MSG(!pixmap.isNull(), "No pixmap set");
 
         QFile file{filename};
         if (!file.open(QIODevice::WriteOnly)) {
@@ -685,14 +676,13 @@ void GraphicsSurfaceWidget::SaveSurface() {
             return;
         }
 
-        if (!pixmap->save(&file, "PNG")) {
+        if (!pixmap.save(&file, "PNG")) {
             QMessageBox::warning(this, tr("Error"),
                                  tr("Failed to save surface data to file '%1'").arg(filename));
         }
     } else if (selected_filter == bin_filter) {
-        const u8* const buffer =
-            Core::System::GetInstance().Memory().GetPhysicalPointer(surface_address);
-        ASSERT_MSG(buffer != nullptr, "Memory not accessible");
+        const u8* const buffer = memory.GetPhysicalPointer(surface_address);
+        ASSERT_MSG(buffer, "Memory not accessible");
 
         QFile file{filename};
         if (!file.open(QIODevice::WriteOnly)) {

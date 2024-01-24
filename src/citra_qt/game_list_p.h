@@ -6,8 +6,10 @@
 
 #include <algorithm>
 #include <map>
+#include <span>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QImage>
@@ -22,6 +24,10 @@
 #include "common/logging/log.h"
 #include "common/string_util.h"
 #include "core/loader/smdh.h"
+
+namespace Service::FS {
+enum class MediaType : u32;
+}
 
 enum class GameListItemType {
     Game = QStandardItem::UserType + 1,
@@ -151,35 +157,40 @@ public:
     static constexpr int ProgramIdRole = SortRole + 3;
     static constexpr int ExtdataIdRole = SortRole + 4;
     static constexpr int LongTitleRole = SortRole + 5;
+    static constexpr int MediaTypeRole = SortRole + 6;
 
     GameListItemPath() = default;
-    GameListItemPath(const QString& game_path, const std::vector<u8>& smdh_data, u64 program_id,
-                     u64 extdata_id) {
+    GameListItemPath(const QString& game_path, std::span<const u8> smdh_data, u64 program_id,
+                     u64 extdata_id, Service::FS::MediaType media_type) {
         setData(type(), TypeRole);
         setData(game_path, FullPathRole);
         setData(qulonglong(program_id), ProgramIdRole);
         setData(qulonglong(extdata_id), ExtdataIdRole);
+        setData(quint32(media_type), MediaTypeRole);
 
-        if (UISettings::values.game_list_icon_size == UISettings::GameListIconSize::NoIcon) {
+        if (UISettings::values.game_list_icon_size.GetValue() ==
+            UISettings::GameListIconSize::NoIcon) {
             // Do not display icons
             setData(QPixmap(), Qt::DecorationRole);
         }
 
-        bool large =
-            UISettings::values.game_list_icon_size == UISettings::GameListIconSize::LargeIcon;
+        bool large = UISettings::values.game_list_icon_size.GetValue() ==
+                     UISettings::GameListIconSize::LargeIcon;
 
         if (!Loader::IsValidSMDH(smdh_data)) {
             // SMDH is not valid, set a default icon
-            if (UISettings::values.game_list_icon_size != UISettings::GameListIconSize::NoIcon)
+            if (UISettings::values.game_list_icon_size.GetValue() !=
+                UISettings::GameListIconSize::NoIcon)
                 setData(GetDefaultIcon(large), Qt::DecorationRole);
             return;
         }
 
         Loader::SMDH smdh;
-        memcpy(&smdh, smdh_data.data(), sizeof(Loader::SMDH));
+        std::memcpy(&smdh, smdh_data.data(), sizeof(Loader::SMDH));
 
         // Get icon from SMDH
-        if (UISettings::values.game_list_icon_size != UISettings::GameListIconSize::NoIcon) {
+        if (UISettings::values.game_list_icon_size.GetValue() !=
+            UISettings::GameListIconSize::NoIcon) {
             setData(GetQPixmapFromSMDH(smdh, large), Qt::DecorationRole);
         }
 
@@ -211,16 +222,17 @@ public:
                  QString::fromStdString(fmt::format("{:016X}", data(ProgramIdRole).toULongLong()))},
             };
 
-            const QString& row1 = display_texts.at(UISettings::values.game_list_row_1).simplified();
+            const QString& row1 =
+                display_texts.at(UISettings::values.game_list_row_1.GetValue()).simplified();
 
             if (role == SortRole)
                 return row1.toLower();
 
             QString row2;
-            auto row_2_id = UISettings::values.game_list_row_2;
+            const auto row_2_id = UISettings::values.game_list_row_2.GetValue();
             if (row_2_id != UISettings::GameListText::NoText) {
                 if (!row1.isEmpty()) {
-                    row2 = UISettings::values.game_list_single_line_mode
+                    row2 = UISettings::values.game_list_single_line_mode.GetValue()
                                ? QStringLiteral("     ")
                                : QStringLiteral("\n     ");
                 }
@@ -264,8 +276,8 @@ public:
         }
         const CompatStatus& status = iterator->second;
         setData(compatibility, CompatNumberRole);
-        setText(QObject::tr(status.text));
-        setToolTip(QObject::tr(status.tooltip));
+        setText(tr(status.text));
+        setToolTip(tr(status.tooltip));
         setData(CreateCirclePixmapFromColor(status.color), Qt::DecorationRole);
     }
 
@@ -282,7 +294,7 @@ public:
 class GameListItemRegion : public GameListItem {
 public:
     GameListItemRegion() = default;
-    explicit GameListItemRegion(const std::vector<u8>& smdh_data) {
+    explicit GameListItemRegion(std::span<const u8> smdh_data) {
         setData(type(), TypeRole);
 
         if (!Loader::IsValidSMDH(smdh_data)) {
@@ -291,7 +303,7 @@ public:
         }
 
         Loader::SMDH smdh;
-        memcpy(&smdh, smdh_data.data(), sizeof(Loader::SMDH));
+        std::memcpy(&smdh, smdh_data.data(), sizeof(Loader::SMDH));
 
         setText(GetRegionFromSMDH(smdh));
         setData(GetRegionFromSMDH(smdh), SortRole);
@@ -315,6 +327,12 @@ public:
     explicit GameListItemSize(const qulonglong size_bytes) {
         setData(type(), TypeRole);
         setData(size_bytes, SizeRole);
+    }
+    explicit GameListItemSize(const QString& string) {
+        // This is required to avoid incorrect virtual function call in
+        // GameListItem's constructor
+        setText(string);
+        setData(string, SortRole);
     }
 
     void setData(const QVariant& value, int role) override {
@@ -355,7 +373,7 @@ public:
         UISettings::GameDir* game_dir = &directory;
         setData(QVariant(UISettings::values.game_dirs.indexOf(directory)), GameDirRole);
 
-        const int icon_size = IconSizes.at(UISettings::values.game_list_icon_size);
+        const int icon_size = IconSizes.at(UISettings::values.game_list_icon_size.GetValue());
         switch (dir_type) {
         case GameListItemType::InstalledDir:
             setData(QIcon::fromTheme(QStringLiteral("sd_card")).pixmap(icon_size),
@@ -398,7 +416,7 @@ public:
     explicit GameListAddDir() {
         setData(type(), TypeRole);
 
-        int icon_size = IconSizes.at(UISettings::values.game_list_icon_size);
+        int icon_size = IconSizes.at(UISettings::values.game_list_icon_size.GetValue());
         setData(QIcon::fromTheme(QStringLiteral("plus")).pixmap(icon_size), Qt::DecorationRole);
         setData(QObject::tr("Add New Game Directory"), Qt::DisplayRole);
     }
@@ -431,6 +449,9 @@ public:
     void setFocus();
 
 private:
+    void changeEvent(QEvent*) override;
+    void RetranslateUI();
+
     class KeyReleaseEater : public QObject {
     public:
         explicit KeyReleaseEater(GameList* gamelist, QObject* parent = nullptr);

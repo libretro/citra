@@ -7,12 +7,11 @@
 #include <array>
 #include <cstddef>
 #include <functional>
+#include <span>
 #include <type_traits>
 #include <boost/serialization/access.hpp>
 #include <boost/serialization/array.hpp>
 #include <boost/serialization/base_object.hpp>
-#include <nihstro/shader_bytecode.h>
-#include "common/assert.h"
 #include "common/common_funcs.h"
 #include "common/common_types.h"
 #include "common/hash.h"
@@ -21,24 +20,20 @@
 #include "video_core/regs_rasterizer.h"
 #include "video_core/regs_shader.h"
 
-using nihstro::DestRegister;
-using nihstro::RegisterType;
-using nihstro::SourceRegister;
-
 namespace Pica::Shader {
 
-constexpr unsigned MAX_PROGRAM_CODE_LENGTH = 4096;
-constexpr unsigned MAX_SWIZZLE_DATA_LENGTH = 4096;
+constexpr u32 MAX_PROGRAM_CODE_LENGTH = 4096;
+constexpr u32 MAX_SWIZZLE_DATA_LENGTH = 4096;
 using ProgramCode = std::array<u32, MAX_PROGRAM_CODE_LENGTH>;
 using SwizzleData = std::array<u32, MAX_SWIZZLE_DATA_LENGTH>;
 
 struct AttributeBuffer {
-    alignas(16) Common::Vec4<float24> attr[16];
+    alignas(16) Common::Vec4<f24> attr[16];
 
 private:
     friend class boost::serialization::access;
     template <class Archive>
-    void serialize(Archive& ar, const unsigned int file_version) {
+    void serialize(Archive& ar, const u32 file_version) {
         ar& attr;
     }
 };
@@ -50,16 +45,16 @@ using VertexHandler = std::function<void(const AttributeBuffer&)>;
 using WindingSetter = std::function<void()>;
 
 struct OutputVertex {
-    Common::Vec4<float24> pos;
-    Common::Vec4<float24> quat;
-    Common::Vec4<float24> color;
-    Common::Vec2<float24> tc0;
-    Common::Vec2<float24> tc1;
-    float24 tc0_w;
+    Common::Vec4<f24> pos;
+    Common::Vec4<f24> quat;
+    Common::Vec4<f24> color;
+    Common::Vec2<f24> tc0;
+    Common::Vec2<f24> tc1;
+    f24 tc0_w;
     INSERT_PADDING_WORDS(1);
-    Common::Vec3<float24> view;
+    Common::Vec3<f24> view;
     INSERT_PADDING_WORDS(1);
-    Common::Vec2<float24> tc2;
+    Common::Vec2<f24> tc2;
 
     static void ValidateSemantics(const RasterizerRegs& regs);
     static OutputVertex FromAttributeBuffer(const RasterizerRegs& regs,
@@ -67,7 +62,7 @@ struct OutputVertex {
 
 private:
     template <class Archive>
-    void serialize(Archive& ar, const unsigned int) {
+    void serialize(Archive& ar, const u32) {
         ar& pos;
         ar& quat;
         ar& color;
@@ -80,8 +75,8 @@ private:
     friend class boost::serialization::access;
 };
 #define ASSERT_POS(var, pos)                                                                       \
-    static_assert(offsetof(OutputVertex, var) == pos * sizeof(float24), "Semantic at wrong "       \
-                                                                        "offset.")
+    static_assert(offsetof(OutputVertex, var) == pos * sizeof(f24), "Semantic at wrong "           \
+                                                                    "offset.")
 ASSERT_POS(pos, RasterizerRegs::VSOutputAttributes::POSITION_X);
 ASSERT_POS(quat, RasterizerRegs::VSOutputAttributes::QUATERNION_X);
 ASSERT_POS(color, RasterizerRegs::VSOutputAttributes::COLOR_R);
@@ -91,7 +86,7 @@ ASSERT_POS(tc0_w, RasterizerRegs::VSOutputAttributes::TEXCOORD0_W);
 ASSERT_POS(view, RasterizerRegs::VSOutputAttributes::VIEW_X);
 ASSERT_POS(tc2, RasterizerRegs::VSOutputAttributes::TEXCOORD2_U);
 #undef ASSERT_POS
-static_assert(std::is_pod<OutputVertex>::value, "Structure is not POD");
+static_assert(std::is_trivial_v<OutputVertex>, "Structure is not POD");
 static_assert(sizeof(OutputVertex) == 24 * sizeof(float), "OutputVertex has invalid size");
 
 /**
@@ -109,16 +104,16 @@ struct GSEmitter {
     struct Handlers {
         VertexHandler vertex_handler;
         WindingSetter winding_setter;
-    } * handlers;
+    }* handlers;
 
     GSEmitter();
     ~GSEmitter();
-    void Emit(Common::Vec4<float24> (&output_regs)[16]);
+    void Emit(std::span<Common::Vec4<f24>, 16> output_regs);
 
 private:
     friend class boost::serialization::access;
     template <class Archive>
-    void serialize(Archive& ar, const unsigned int file_version) {
+    void serialize(Archive& ar, const u32 file_version) {
         ar& buffer;
         ar& vertex_id;
         ar& prim_emit;
@@ -137,62 +132,44 @@ static_assert(std::is_standard_layout<GSEmitter>::value, "GSEmitter is not stand
  */
 struct UnitState {
     explicit UnitState(GSEmitter* emitter = nullptr);
-    struct Registers {
-        // The registers are accessed by the shader JIT using SSE instructions, and are therefore
-        // required to be 16-byte aligned.
-        alignas(16) Common::Vec4<float24> input[16];
-        alignas(16) Common::Vec4<float24> temporary[16];
-        alignas(16) Common::Vec4<float24> output[16];
-
-    private:
-        friend class boost::serialization::access;
-        template <class Archive>
-        void serialize(Archive& ar, const unsigned int file_version) {
-            ar& input;
-            ar& temporary;
-            ar& output;
-        }
-    } registers;
-    static_assert(std::is_pod<Registers>::value, "Structure is not POD");
-
-    bool conditional_code[2];
 
     // Two Address registers and one loop counter
     // TODO: How many bits do these actually have?
     s32 address_registers[3];
 
+    bool conditional_code[2];
+
+    struct Registers {
+        // The registers are accessed by the shader JIT using SSE instructions, and are therefore
+        // required to be 16-byte aligned.
+        alignas(16) std::array<Common::Vec4<f24>, 16> input;
+        alignas(16) std::array<Common::Vec4<f24>, 16> temporary;
+        alignas(16) std::array<Common::Vec4<f24>, 16> output;
+
+    private:
+        friend class boost::serialization::access;
+        template <class Archive>
+        void serialize(Archive& ar, const u32 file_version) {
+            ar& input;
+            ar& temporary;
+            ar& output;
+        }
+    } registers;
+    static_assert(std::is_trivial_v<Registers>, "Structure is not POD");
+
     GSEmitter* emitter_ptr;
 
-    static std::size_t InputOffset(const SourceRegister& reg) {
-        switch (reg.GetRegisterType()) {
-        case RegisterType::Input:
-            return offsetof(UnitState, registers.input) +
-                   reg.GetIndex() * sizeof(Common::Vec4<float24>);
-
-        case RegisterType::Temporary:
-            return offsetof(UnitState, registers.temporary) +
-                   reg.GetIndex() * sizeof(Common::Vec4<float24>);
-
-        default:
-            UNREACHABLE();
-            return 0;
-        }
+    static std::size_t InputOffset(s32 register_index) {
+        return offsetof(UnitState, registers.input) + register_index * sizeof(Common::Vec4<f24>);
     }
 
-    static std::size_t OutputOffset(const DestRegister& reg) {
-        switch (reg.GetRegisterType()) {
-        case RegisterType::Output:
-            return offsetof(UnitState, registers.output) +
-                   reg.GetIndex() * sizeof(Common::Vec4<float24>);
+    static std::size_t OutputOffset(s32 register_index) {
+        return offsetof(UnitState, registers.output) + register_index * sizeof(Common::Vec4<f24>);
+    }
 
-        case RegisterType::Temporary:
-            return offsetof(UnitState, registers.temporary) +
-                   reg.GetIndex() * sizeof(Common::Vec4<float24>);
-
-        default:
-            UNREACHABLE();
-            return 0;
-        }
+    static std::size_t TemporaryOffset(s32 register_index) {
+        return offsetof(UnitState, registers.temporary) +
+               register_index * sizeof(Common::Vec4<f24>);
     }
 
     /**
@@ -208,7 +185,7 @@ struct UnitState {
 private:
     friend class boost::serialization::access;
     template <class Archive>
-    void serialize(Archive& ar, const unsigned int file_version) {
+    void serialize(Archive& ar, const u32 file_version) {
         ar& registers;
         ar& conditional_code;
         ar& address_registers;
@@ -231,7 +208,7 @@ struct GSUnitState : public UnitState {
 private:
     friend class boost::serialization::access;
     template <class Archive>
-    void serialize(Archive& ar, const unsigned int file_version) {
+    void serialize(Archive& ar, const u32 file_version) {
         ar& boost::serialization::base_object<UnitState>(*this);
         ar& emitter;
     }
@@ -240,27 +217,27 @@ private:
 struct Uniforms {
     // The float uniforms are accessed by the shader JIT using SSE instructions, and are
     // therefore required to be 16-byte aligned.
-    alignas(16) Common::Vec4<float24> f[96];
+    alignas(16) std::array<Common::Vec4<f24>, 96> f;
 
     std::array<bool, 16> b;
     std::array<Common::Vec4<u8>, 4> i;
 
-    static std::size_t GetFloatUniformOffset(unsigned index) {
-        return offsetof(Uniforms, f) + index * sizeof(Common::Vec4<float24>);
+    static std::size_t GetFloatUniformOffset(u32 index) {
+        return offsetof(Uniforms, f) + index * sizeof(Common::Vec4<f24>);
     }
 
-    static std::size_t GetBoolUniformOffset(unsigned index) {
+    static std::size_t GetBoolUniformOffset(u32 index) {
         return offsetof(Uniforms, b) + index * sizeof(bool);
     }
 
-    static std::size_t GetIntUniformOffset(unsigned index) {
+    static std::size_t GetIntUniformOffset(u32 index) {
         return offsetof(Uniforms, i) + index * sizeof(Common::Vec4<u8>);
     }
 
 private:
     friend class boost::serialization::access;
     template <class Archive>
-    void serialize(Archive& ar, const unsigned int file_version) {
+    void serialize(Archive& ar, const u32 file_version) {
         ar& f;
         ar& b;
         ar& i;
@@ -275,7 +252,7 @@ struct ShaderSetup {
 
     /// Data private to ShaderEngines
     struct EngineData {
-        unsigned int entry_point;
+        u32 entry_point;
         /// Used by the JIT, points to a compiled shader object.
         const void* cached_shader = nullptr;
     } engine_data;
@@ -312,7 +289,7 @@ private:
 
     friend class boost::serialization::access;
     template <class Archive>
-    void serialize(Archive& ar, const unsigned int file_version) {
+    void serialize(Archive& ar, const u32 file_version) {
         ar& uniforms;
         ar& program_code;
         ar& swizzle_data;
@@ -331,7 +308,7 @@ public:
      * Performs any shader unit setup that only needs to happen once per shader (as opposed to once
      * per vertex, which would happen within the `Run` function).
      */
-    virtual void SetupBatch(ShaderSetup& setup, unsigned int entry_point) = 0;
+    virtual void SetupBatch(ShaderSetup& setup, u32 entry_point) = 0;
 
     /**
      * Runs the currently setup shader.

@@ -4,9 +4,12 @@
 
 #pragma once
 
+#include <optional>
 #include <unordered_map>
 #include <boost/serialization/base_object.hpp>
 #include "common/common_types.h"
+#include "core/file_sys/errors.h"
+#include "core/hle/service/fs/archive.h"
 #include "core/hle/service/service.h"
 
 namespace Core {
@@ -16,6 +19,13 @@ class System;
 namespace Service::FS {
 
 class ArchiveManager;
+
+struct ProgramInfo {
+    u64 program_id;
+    MediaType media_type;
+    INSERT_PADDING_BYTES(4);
+};
+static_assert(sizeof(ProgramInfo) == 0x10, "ProgramInfo struct has incorrect size");
 
 struct ClientSlot : public Kernel::SessionRequestHandler::SessionDataBase {
     // We retrieves program ID for client process on FS::Initialize(WithSDKVersion)
@@ -39,11 +49,33 @@ class FS_USER final : public ServiceFramework<FS_USER, ClientSlot> {
 public:
     explicit FS_USER(Core::System& system);
 
-    // On real HW this is part of FS:Reg. But since that module is only used by loader and pm, which
-    // we HLEed, we can just directly use it here
-    void Register(u32 process_id, u64 program_id, const std::string& filepath);
+    // On real HW this is part of FSReg (FSReg:Register). But since that module is only used by
+    // loader and pm, which we HLEed, we can just directly use it here
+    void RegisterProgramInfo(u32 process_id, u64 program_id, const std::string& filepath);
 
     std::string GetCurrentGamecardPath() const;
+
+    struct ProductInfo {
+        std::array<u8, 0x10> product_code;
+        u16_le maker_code;
+        u16_le remaster_version;
+    };
+    static_assert(sizeof(ProductInfo) == 0x14);
+
+    void RegisterProductInfo(u32 process_id, const ProductInfo& product_info);
+
+    std::optional<ProductInfo> GetProductInfo(u32 process_id);
+
+    /// Gets the registered program info of a process.
+    ResultVal<ProgramInfo> GetProgramLaunchInfo(u32 process_id) const {
+        auto info = program_info_map.find(process_id);
+        if (info != program_info_map.end()) {
+            return info->second;
+        } else {
+            return ResultCode(FileSys::ErrCodes::ArchiveNotMounted, ErrorModule::FS,
+                              ErrorSummary::NotFound, ErrorLevel::Status);
+        }
+    }
 
 private:
     void Initialize(Kernel::HLERequestContext& ctx);
@@ -229,6 +261,22 @@ private:
      *      3 : Archive handle upper word (same as file handle)
      */
     void OpenArchive(Kernel::HLERequestContext& ctx);
+
+    /**
+     * FS_User::ControlArchive service function
+     *  Inputs:
+     *      1-2 : Archive Handle
+     *      3 : Action
+     *      4 : Input Size
+     *      5 : Output Size
+     *      6 : (Input Size << 4) | 0xA
+     *      7 : Input Pointer
+     *      8 : (Output Size << 4) | 0xC
+     *      9 : Output Pointer
+     *  Outputs:
+     *      1 : Result of function, 0 on success, otherwise error code
+     */
+    void ControlArchive(Kernel::HLERequestContext& ctx);
 
     /**
      * FS_User::CloseArchive service function
@@ -491,6 +539,17 @@ private:
     void GetFormatInfo(Kernel::HLERequestContext& ctx);
 
     /**
+     * FS_User::GetProductInfo service function.
+     *  Inputs:
+     *      0 : 0x082E0040
+     *      1 : Process ID
+     *  Outputs:
+     *      1 : Result of function, 0 on success, otherwise error code
+     *      2-6 : Product info
+     */
+    void GetProductInfo(Kernel::HLERequestContext& ctx);
+
+    /**
      * FS_User::GetProgramLaunchInfo service function.
      *  Inputs:
      *      0 : 0x082F0040
@@ -581,7 +640,7 @@ private:
      *      0 : 0x08650140
      *      1 : Result of function, 0 on success, otherwise error code
      */
-    void SetSaveDataSecureValue(Kernel::HLERequestContext& ctx);
+    void ObsoletedSetSaveDataSecureValue(Kernel::HLERequestContext& ctx);
 
     /**
      * FS_User::GetSaveDataSecureValue service function.
@@ -596,19 +655,67 @@ private:
      *      2 : If Secure Value doesn't exist, 0, if it exists, 1
      *      3-4 : Secure Value
      */
+    void ObsoletedGetSaveDataSecureValue(Kernel::HLERequestContext& ctx);
+
+    /**
+     * FS_User::SetThisSaveDataSecureValue service function.
+     *  Inputs:
+     *      1 : Secure Value Slot
+     *      2-3 : Secure Value
+     *  Outputs:
+     *      1 : Result of function, 0 on success, otherwise error code
+     */
+    void SetThisSaveDataSecureValue(Kernel::HLERequestContext& ctx);
+
+    /**
+     * FS_User::GetSaveDataSecureValue service function.
+     *  Inputs:
+     *      1 : Secure Value Slot
+     *  Outputs:
+     *      1 : Result of function, 0 on success, otherwise error code
+     *      2 : If Secure Value doesn't exist, 0, if it exists, 1
+     *      3 : Unknown
+     *      4-5 : Secure Value
+     */
+    void GetThisSaveDataSecureValue(Kernel::HLERequestContext& ctx);
+
+    /**
+     * FS_User::SetSaveDataSecureValue service function.
+     *  Inputs:
+     *      0 : 0x08750180
+     *      1-2 : Archive
+     *      3 : Secure Value Slot
+     *      4 : value
+     *      5 : flush
+     *  Outputs:
+     *      0 : header
+     *      1 : Result of function, 0 on success, otherwise error code
+     */
+    void SetSaveDataSecureValue(Kernel::HLERequestContext& ctx);
+
+    /**
+     * FS_User::GetSaveDataSecureValue service function.
+     *  Inputs:
+     *      0 : 0x087600C0
+     *      1-2 : Archive
+     *      2 : Secure Value slot
+     *  Outputs:
+     *      0 : Header
+     *      1 : Result of function, 0 on success, otherwise error code
+     *      2 : If Secure Value doesn't exist, 0, if it exists, 1
+     *      3 : unknown
+     *      4-5 : Secure Value
+     */
     void GetSaveDataSecureValue(Kernel::HLERequestContext& ctx);
 
     static ResultVal<u16> GetSpecialContentIndexFromGameCard(u64 title_id, SpecialContentType type);
     static ResultVal<u16> GetSpecialContentIndexFromTMD(MediaType media_type, u64 title_id,
                                                         SpecialContentType type);
 
-    struct ProgramInfo {
-        u64 program_id;
-        MediaType media_type;
-    };
-
     std::unordered_map<u32, ProgramInfo> program_info_map;
     std::string current_gamecard_path;
+
+    std::unordered_map<u32, ProductInfo> product_info_map;
 
     u32 priority = -1; ///< For SetPriority and GetPriority service functions
 

@@ -4,10 +4,14 @@
 
 #include <algorithm>
 #include <cctype>
-#include <codecvt>
 #include <cstdlib>
 #include <locale>
 #include <sstream>
+#include <string>
+#include <string_view>
+
+#include <boost/locale/encoding_utf.hpp>
+
 #include "common/common_paths.h"
 #include "common/logging/log.h"
 #include "common/string_util.h"
@@ -18,17 +22,27 @@
 
 namespace Common {
 
+/// Make a char lowercase
+char ToLower(char c) {
+    return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+}
+
+/// Make a char uppercase
+char ToUpper(char c) {
+    return static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+}
+
 /// Make a string lowercase
 std::string ToLower(std::string str) {
     std::transform(str.begin(), str.end(), str.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return str;
 }
 
 /// Make a string uppercase
 std::string ToUpper(std::string str) {
     std::transform(str.begin(), str.end(), str.begin(),
-                   [](unsigned char c) { return std::toupper(c); });
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
     return str;
 }
 
@@ -100,15 +114,16 @@ void BuildCompleteFilename(std::string& _CompleteFilename, const std::string& _P
     _CompleteFilename += _Filename;
 }
 
-void SplitString(const std::string& str, const char delim, std::vector<std::string>& output) {
+std::vector<std::string> SplitString(const std::string& str, const char delim) {
     std::istringstream iss(str);
-    output.resize(1);
+    std::vector<std::string> output(1);
 
     while (std::getline(iss, *output.rbegin(), delim)) {
         output.emplace_back();
     }
 
     output.pop_back();
+    return output;
 }
 
 std::string TabsToSpaces(int tab_size, std::string in) {
@@ -119,6 +134,12 @@ std::string TabsToSpaces(int tab_size, std::string in) {
     }
 
     return in;
+}
+
+bool EndsWith(const std::string& value, const std::string& ending) {
+    if (ending.size() > value.size())
+        return false;
+    return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
 }
 
 std::string ReplaceAll(std::string result, const std::string& src, const std::string& dest) {
@@ -135,14 +156,12 @@ std::string ReplaceAll(std::string result, const std::string& src, const std::st
     return result;
 }
 
-std::string UTF16ToUTF8(const std::u16string& input) {
-    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
-    return convert.to_bytes(input);
+std::string UTF16ToUTF8(std::u16string_view input) {
+    return boost::locale::conv::utf_to_utf<char>(input.data(), input.data() + input.size());
 }
 
-std::u16string UTF8ToUTF16(const std::string& input) {
-    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
-    return convert.from_bytes(input);
+std::u16string UTF8ToUTF16(std::string_view input) {
+    return boost::locale::conv::utf_to_utf<char16_t>(input.data(), input.data() + input.size());
 }
 
 #ifdef _WIN32
@@ -151,7 +170,7 @@ static std::wstring CPToUTF16(u32 code_page, const std::string& input) {
         MultiByteToWideChar(code_page, 0, input.data(), static_cast<int>(input.size()), nullptr, 0);
 
     if (size == 0) {
-        return L"";
+        return {};
     }
 
     std::wstring output(size, L'\0');

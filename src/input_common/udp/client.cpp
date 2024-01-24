@@ -9,7 +9,6 @@
 #include <functional>
 #include <thread>
 #include <boost/asio.hpp>
-#include <boost/bind.hpp>
 #include "common/logging/log.h"
 #include "input_common/udp/client.h"
 #include "input_common/udp/protocol.h"
@@ -234,9 +233,7 @@ CalibrationConfigurationJob::CalibrationConfigurationJob(
     std::function<void(Status)> status_callback,
     std::function<void(u16, u16, u16, u16)> data_callback) {
 
-    std::thread([=] {
-        constexpr u16 CALIBRATION_THRESHOLD = 100;
-
+    std::thread([=, this] {
         u16 min_x{UINT16_MAX};
         u16 min_y{UINT16_MAX};
         u16 max_x{};
@@ -245,6 +242,8 @@ CalibrationConfigurationJob::CalibrationConfigurationJob(
         Status current_status{Status::Initialized};
         SocketCallback callback{[](Response::Version version) {}, [](Response::PortInfo info) {},
                                 [&](Response::PadData data) {
+                                    constexpr u16 CALIBRATION_THRESHOLD = 100;
+
                                     if (current_status == Status::Initialized) {
                                         // Receiving data means the communication is ready now
                                         current_status = Status::Ready;

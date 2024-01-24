@@ -50,9 +50,8 @@ MicroProfileDialog::MicroProfileDialog(QWidget* parent) : QWidget(parent, Qt::Di
     setObjectName(QStringLiteral("MicroProfile"));
     setWindowTitle(tr("MicroProfile"));
     resize(1000, 600);
-    // Remove the "?" button from the titlebar and enable the maximize button
-    setWindowFlags((windowFlags() & ~Qt::WindowContextHelpButtonHint) |
-                   Qt::WindowMaximizeButtonHint);
+    // Enable the maximize button
+    setWindowFlags(windowFlags() | Qt::WindowMaximizeButtonHint);
 
 #if MICROPROFILE_ENABLED
 
@@ -143,24 +142,29 @@ void MicroProfileWidget::hideEvent(QHideEvent* event) {
 }
 
 void MicroProfileWidget::mouseMoveEvent(QMouseEvent* event) {
-    MicroProfileMousePosition(event->x() / x_scale, event->y() / y_scale, 0);
+    const auto point = event->position().toPoint();
+    MicroProfileMousePosition(point.x() / x_scale, point.y() / y_scale, 0);
     event->accept();
 }
 
 void MicroProfileWidget::mousePressEvent(QMouseEvent* event) {
-    MicroProfileMousePosition(event->x() / x_scale, event->y() / y_scale, 0);
+    const auto point = event->position().toPoint();
+    MicroProfileMousePosition(point.x() / x_scale, point.y() / y_scale, 0);
     MicroProfileMouseButton(event->buttons() & Qt::LeftButton, event->buttons() & Qt::RightButton);
     event->accept();
 }
 
 void MicroProfileWidget::mouseReleaseEvent(QMouseEvent* event) {
-    MicroProfileMousePosition(event->x() / x_scale, event->y() / y_scale, 0);
+    const auto point = event->position().toPoint();
+    MicroProfileMousePosition(point.x() / x_scale, point.y() / y_scale, 0);
     MicroProfileMouseButton(event->buttons() & Qt::LeftButton, event->buttons() & Qt::RightButton);
     event->accept();
 }
 
 void MicroProfileWidget::wheelEvent(QWheelEvent* event) {
-    MicroProfileMousePosition(event->x() / x_scale, event->y() / y_scale, event->delta() / 120);
+    const auto point = event->position().toPoint();
+    MicroProfileMousePosition(point.x() / x_scale, point.y() / y_scale,
+                              event->angleDelta().y() / 120);
     event->accept();
 }
 
@@ -214,6 +218,7 @@ void MicroProfileDrawLine2D(u32 vertices_length, float* vertices, u32 hex_color)
     // the allocation across calls.
     static std::vector<QPointF> point_buf;
 
+    point_buf.reserve(vertices_length);
     for (u32 i = 0; i < vertices_length; ++i) {
         point_buf.emplace_back(vertices[i * 2 + 0], vertices[i * 2 + 1]);
     }

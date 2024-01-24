@@ -12,13 +12,12 @@
 #endif
 
 #include "common/assert.h"
-#include "common/common_funcs.h"
-#include "common/logging/backend.h"
+#include "common/logging/filter.h"
 #include "common/logging/log.h"
+#include "common/logging/log_entry.h"
 #include "common/logging/text_formatter.h"
-#include "common/string_util.h"
 
-namespace Log {
+namespace Common::Log {
 
 std::string FormatLogMessage(const Entry& entry) {
     unsigned int time_seconds = static_cast<unsigned int>(entry.timestamp.count() / 1000000);
@@ -44,7 +43,7 @@ void PrintColoredMessage(const Entry& entry) {
         return;
     }
 
-    CONSOLE_SCREEN_BUFFER_INFO original_info = {0};
+    CONSOLE_SCREEN_BUFFER_INFO original_info{};
     GetConsoleScreenBufferInfo(console_handle, &original_info);
 
     WORD color = 0;
@@ -111,7 +110,7 @@ void PrintColoredMessage(const Entry& entry) {
 #endif
 }
 
-void PrintMessageToLogcat(const Entry& entry) {
+void PrintMessageToLogcat([[maybe_unused]] const Entry& entry) {
 #ifdef ANDROID
     const auto str = FormatLogMessage(entry);
 
@@ -141,4 +140,4 @@ void PrintMessageToLogcat(const Entry& entry) {
     __android_log_print(android_log_priority, "CitraNative", "%s", str.c_str());
 #endif
 }
-} // namespace Log
+} // namespace Common::Log

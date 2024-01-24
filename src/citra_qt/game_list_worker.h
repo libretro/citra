@@ -5,10 +5,8 @@
 #pragma once
 
 #include <atomic>
-#include <map>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <QList>
 #include <QObject>
 #include <QRunnable>
@@ -16,6 +14,10 @@
 #include <QVector>
 #include "citra_qt/compatibility_list.h"
 #include "common/common_types.h"
+
+namespace Service::FS {
+enum class MediaType : u32;
+}
 
 class QStandardItem;
 
@@ -54,7 +56,7 @@ signals:
 
 private:
     void AddFstEntriesToGameList(const std::string& dir_path, unsigned int recursion,
-                                 GameListDir* parent_dir);
+                                 GameListDir* parent_dir, Service::FS::MediaType media_type);
 
     QVector<UISettings::GameDir>& game_dirs;
     const CompatibilityList& compatibility_list;

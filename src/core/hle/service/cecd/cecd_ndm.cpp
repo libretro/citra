@@ -13,10 +13,10 @@ CECD_NDM::CECD_NDM(std::shared_ptr<Module> cecd)
     : Module::Interface(std::move(cecd), "cecd:ndm", DefaultMaxSessions) {
     static const FunctionInfo functions[] = {
         // clang-format off
-        {0x00010000, nullptr, "Initialize"},
-        {0x00020000, nullptr, "Deinitialize"},
-        {0x00030000, nullptr, "ResumeDaemon"},
-        {0x00040040, nullptr, "SuspendDaemon"},
+        {0x0001, nullptr, "Initialize"},
+        {0x0002, nullptr, "Deinitialize"},
+        {0x0003, nullptr, "ResumeDaemon"},
+        {0x0004, nullptr, "SuspendDaemon"},
         // clang-format on
     };
 

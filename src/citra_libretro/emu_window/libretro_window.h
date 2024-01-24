@@ -9,14 +9,14 @@
 #include <memory>
 #include <utility>
 #include "core/frontend/emu_window.h"
-
 #include "citra_libretro/input/mouse_tracker.h"
+#include "vulkan/vulkan_core.h"
 
 void ResetGLState();
 
 class EmuWindow_LibRetro : public Frontend::EmuWindow {
 public:
-    EmuWindow_LibRetro();
+    EmuWindow_LibRetro(bool useOpenGL);
     ~EmuWindow_LibRetro();
 
     /// Swap buffers to display the next frame
@@ -51,11 +51,13 @@ public:
     /// Destroys a currently running OpenGL context.
     void DestroyContext();
 
+public:
+    VkSurfaceKHR vkSurface;
+
 private:
     /// Called when a configuration change affects the minimal size of the window
     void OnMinimalClientAreaChangeRequest(std::pair<u32, u32> minimal_size) override;
 
-    float scale = 2;
     int width;
     int height;
 
@@ -70,7 +72,9 @@ private:
     // For tracking mouse cursor
     std::unique_ptr<LibRetro::Input::MouseTracker> tracker = nullptr;
 
-    bool enableEmulatedPointer = true;
+    bool enableEmulatedPointer = false;
 
     bool firstInit = true;
+
+    bool useOpenGL = false;
 };

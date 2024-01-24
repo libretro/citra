@@ -16,7 +16,7 @@ static const ResultCode ERROR_BUFFER_TOO_SMALL = // 0xE0E12C1F
     ResultCode(static_cast<ErrorDescription>(31), ErrorModule::RO, ErrorSummary::InvalidArgument,
                ErrorLevel::Usage);
 
-static ResultCode CROFormatError(u32 description) {
+static constexpr ResultCode CROFormatError(u32 description) {
     return ResultCode(static_cast<ErrorDescription>(description), ErrorModule::RO,
                       ErrorSummary::WrongArgument, ErrorLevel::Permanent);
 }
@@ -301,7 +301,7 @@ ResultVal<VAddr> CROHelper::RebaseSegmentTable(u32 cro_size, VAddr data_segment_
         }
         SetEntry(system.Memory(), i, segment);
     }
-    return MakeResult<u32>(prev_data_segment + module_address);
+    return prev_data_segment + module_address;
 }
 
 ResultCode CROHelper::RebaseExportNamedSymbolTable() {
@@ -776,10 +776,10 @@ ResultCode CROHelper::ApplyImportNamedSymbol(VAddr crs_address) {
                             return result;
                         }
 
-                        return MakeResult<bool>(false);
+                        return false;
                     }
 
-                    return MakeResult<bool>(true);
+                    return true;
                 });
             if (result.IsError()) {
                 return result;
@@ -897,9 +897,9 @@ ResultCode CROHelper::ApplyModuleImport(VAddr crs_address) {
                             return result;
                         }
                     }
-                    return MakeResult<bool>(false);
+                    return false;
                 }
-                return MakeResult<bool>(true);
+                return true;
             });
         if (result.IsError()) {
             return result;
@@ -1090,10 +1090,10 @@ ResultCode CROHelper::ApplyExitRelocations(VAddr crs_address) {
                             return result;
                         }
 
-                        return MakeResult<bool>(false);
+                        return false;
                     }
 
-                    return MakeResult<bool>(true);
+                    return true;
                 });
             if (result.IsError()) {
                 LOG_ERROR(Service_LDR, "Error applying exit relocation {:08X}", result.raw);
@@ -1317,7 +1317,7 @@ ResultCode CROHelper::Link(VAddr crs_address, bool link_on_load_bug_fix) {
                                     if (result.IsError())
                                         return result;
 
-                                    return MakeResult<bool>(true);
+                                    return true;
                                 });
     if (result.IsError()) {
         LOG_ERROR(Service_LDR, "Error applying export {:08X}", result.raw);
@@ -1362,7 +1362,7 @@ ResultCode CROHelper::Unlink(VAddr crs_address) {
                                     if (result.IsError())
                                         return result;
 
-                                    return MakeResult<bool>(true);
+                                    return true;
                                 });
     if (result.IsError()) {
         LOG_ERROR(Service_LDR, "Error resetting export {:08X}", result.raw);
@@ -1502,7 +1502,7 @@ u32 CROHelper::Fix(u32 fix_level) {
         }
     }
 
-    fix_end = Common::AlignUp(fix_end, Memory::PAGE_SIZE);
+    fix_end = Common::AlignUp(fix_end, Memory::CITRA_PAGE_SIZE);
 
     u32 fixed_size = fix_end - module_address;
     SetField(FixedSize, fixed_size);
@@ -1525,8 +1525,8 @@ std::tuple<VAddr, u32> CROHelper::GetExecutablePages() const {
         SegmentEntry entry;
         GetEntry(system.Memory(), i, entry);
         if (entry.type == SegmentType::Code && entry.size != 0) {
-            VAddr begin = Common::AlignDown(entry.offset, Memory::PAGE_SIZE);
-            VAddr end = Common::AlignUp(entry.offset + entry.size, Memory::PAGE_SIZE);
+            VAddr begin = Common::AlignDown(entry.offset, Memory::CITRA_PAGE_SIZE);
+            VAddr end = Common::AlignUp(entry.offset + entry.size, Memory::CITRA_PAGE_SIZE);
             return std::make_tuple(begin, end - begin);
         }
     }

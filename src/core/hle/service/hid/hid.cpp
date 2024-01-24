@@ -46,9 +46,9 @@ void Module::serialize(Archive& ar, const unsigned int file_version) {
     if (Archive::is_loading::value) {
         LoadInputDevices();
     }
-    if (file_version >= 1) {
-        ar& state.hex;
-    }
+    ar& state.hex;
+    ar& circle_pad_old_x;
+    ar& circle_pad_old_y;
     // Update events are set in the constructor
     // Devices are set from the implementation (and are stateless afaik)
 }
@@ -105,7 +105,7 @@ void Module::LoadInputDevices() {
     }
 }
 
-void Module::UpdatePadCallback(u64 userdata, s64 cycles_late) {
+void Module::UpdatePadCallback(std::uintptr_t user_data, s64 cycles_late) {
     SharedMem* mem = reinterpret_cast<SharedMem*>(shared_mem->GetPointer());
 
     if (is_device_reload_pending.exchange(false))
@@ -150,7 +150,7 @@ void Module::UpdatePadCallback(u64 userdata, s64 cycles_late) {
     circle_pad_old_y.erase(circle_pad_old_y.begin());
     circle_pad_old_y.push_back(circle_pad_new_y);
 
-    Core::Movie::GetInstance().HandlePadAndCircleStatus(state, circle_pad_x, circle_pad_y);
+    system.Movie().HandlePadAndCircleStatus(state, circle_pad_x, circle_pad_y);
 
     const DirectionState direction = GetStickDirectionState(circle_pad_x, circle_pad_y);
     state.circle_up.Assign(direction.up);
@@ -200,7 +200,7 @@ void Module::UpdatePadCallback(u64 userdata, s64 cycles_late) {
     touch_entry.y = static_cast<u16>(y * Core::kScreenBottomHeight);
     touch_entry.valid.Assign(pressed ? 1 : 0);
 
-    Core::Movie::GetInstance().HandleTouchStatus(touch_entry);
+    system.Movie().HandleTouchStatus(touch_entry);
 
     // TODO(bunnei): We're not doing anything with offset 0xA8 + 0x18 of HID SharedMemory, which
     // supposedly is "Touch-screen entry, which contains the raw coordinate data prior to being
@@ -218,14 +218,15 @@ void Module::UpdatePadCallback(u64 userdata, s64 cycles_late) {
 
     // TODO(xperia64): How the 3D Slider is updated by the HID module needs to be RE'd
     // and possibly moved to its own Core::Timing event.
-    mem->pad.sliderstate_3d = (Settings::values.factor_3d / 100.0f);
-    system.Kernel().GetSharedPageHandler().Set3DSlider(Settings::values.factor_3d / 100.0f);
+    mem->pad.sliderstate_3d = (Settings::values.factor_3d.GetValue() / 100.0f);
+    system.Kernel().GetSharedPageHandler().Set3DSlider(Settings::values.factor_3d.GetValue() /
+                                                       100.0f);
 
     // Reschedule recurrent event
     system.CoreTiming().ScheduleEvent(pad_update_ticks - cycles_late, pad_update_event);
 }
 
-void Module::UpdateAccelerometerCallback(u64 userdata, s64 cycles_late) {
+void Module::UpdateAccelerometerCallback(std::uintptr_t user_data, s64 cycles_late) {
     SharedMem* mem = reinterpret_cast<SharedMem*>(shared_mem->GetPointer());
 
     mem->accelerometer.index = next_accelerometer_index;
@@ -245,7 +246,7 @@ void Module::UpdateAccelerometerCallback(u64 userdata, s64 cycles_late) {
     accelerometer_entry.y = static_cast<s16>(accel.y);
     accelerometer_entry.z = static_cast<s16>(accel.z);
 
-    Core::Movie::GetInstance().HandleAccelerometerStatus(accelerometer_entry);
+    system.Movie().HandleAccelerometerStatus(accelerometer_entry);
 
     // Make up "raw" entry
     // TODO(wwylele):
@@ -270,7 +271,7 @@ void Module::UpdateAccelerometerCallback(u64 userdata, s64 cycles_late) {
                                       accelerometer_update_event);
 }
 
-void Module::UpdateGyroscopeCallback(u64 userdata, s64 cycles_late) {
+void Module::UpdateGyroscopeCallback(std::uintptr_t user_data, s64 cycles_late) {
     SharedMem* mem = reinterpret_cast<SharedMem*>(shared_mem->GetPointer());
 
     mem->gyroscope.index = next_gyroscope_index;
@@ -286,7 +287,7 @@ void Module::UpdateGyroscopeCallback(u64 userdata, s64 cycles_late) {
     gyroscope_entry.y = static_cast<s16>(gyro.y);
     gyroscope_entry.z = static_cast<s16>(gyro.z);
 
-    Core::Movie::GetInstance().HandleGyroscopeStatus(gyroscope_entry);
+    system.Movie().HandleGyroscopeStatus(gyroscope_entry);
 
     // Make up "raw" entry
     mem->gyroscope.raw_entry.x = gyroscope_entry.x;
@@ -306,7 +307,7 @@ void Module::UpdateGyroscopeCallback(u64 userdata, s64 cycles_late) {
 }
 
 void Module::Interface::GetIPCHandles(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp{ctx, 0xA, 0, 0};
+    IPC::RequestParser rp(ctx);
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 7);
     rb.Push(RESULT_SUCCESS);
     rb.PushCopyObjects(hid->shared_mem, hid->event_pad_or_touch_1, hid->event_pad_or_touch_2,
@@ -314,7 +315,7 @@ void Module::Interface::GetIPCHandles(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::EnableAccelerometer(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp{ctx, 0x11, 0, 0};
+    IPC::RequestParser rp(ctx);
 
     ++hid->enable_accelerometer_count;
 
@@ -331,7 +332,7 @@ void Module::Interface::EnableAccelerometer(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::DisableAccelerometer(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp{ctx, 0x12, 0, 0};
+    IPC::RequestParser rp(ctx);
 
     --hid->enable_accelerometer_count;
 
@@ -347,7 +348,7 @@ void Module::Interface::DisableAccelerometer(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::EnableGyroscopeLow(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp{ctx, 0x13, 0, 0};
+    IPC::RequestParser rp(ctx);
 
     ++hid->enable_gyroscope_count;
 
@@ -363,7 +364,7 @@ void Module::Interface::EnableGyroscopeLow(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::DisableGyroscopeLow(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp{ctx, 0x14, 0, 0};
+    IPC::RequestParser rp(ctx);
 
     --hid->enable_gyroscope_count;
 
@@ -379,7 +380,7 @@ void Module::Interface::DisableGyroscopeLow(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::GetGyroscopeLowRawToDpsCoefficient(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp{ctx, 0x15, 0, 0};
+    IPC::RequestParser rp(ctx);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
     rb.Push(RESULT_SUCCESS);
@@ -387,7 +388,7 @@ void Module::Interface::GetGyroscopeLowRawToDpsCoefficient(Kernel::HLERequestCon
 }
 
 void Module::Interface::GetGyroscopeLowCalibrateParam(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp{ctx, 0x16, 0, 0};
+    IPC::RequestParser rp(ctx);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(6, 0);
     rb.Push(RESULT_SUCCESS);
@@ -404,9 +405,9 @@ void Module::Interface::GetGyroscopeLowCalibrateParam(Kernel::HLERequestContext&
 }
 
 void Module::Interface::GetSoundVolume(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp{ctx, 0x17, 0, 0};
+    IPC::RequestParser rp(ctx);
 
-    const u8 volume = static_cast<u8>(0x3F * Settings::values.volume);
+    const u8 volume = static_cast<u8>(0x3F * Settings::values.volume.GetValue());
 
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
     rb.Push(RESULT_SUCCESS);
@@ -438,17 +439,17 @@ Module::Module(Core::System& system) : system(system) {
 
     // Register update callbacks
     Core::Timing& timing = system.CoreTiming();
-    pad_update_event =
-        timing.RegisterEvent("HID::UpdatePadCallback", [this](u64 userdata, s64 cycles_late) {
-            UpdatePadCallback(userdata, cycles_late);
-        });
+    pad_update_event = timing.RegisterEvent("HID::UpdatePadCallback",
+                                            [this](std::uintptr_t user_data, s64 cycles_late) {
+                                                UpdatePadCallback(user_data, cycles_late);
+                                            });
     accelerometer_update_event = timing.RegisterEvent(
-        "HID::UpdateAccelerometerCallback", [this](u64 userdata, s64 cycles_late) {
-            UpdateAccelerometerCallback(userdata, cycles_late);
+        "HID::UpdateAccelerometerCallback", [this](std::uintptr_t user_data, s64 cycles_late) {
+            UpdateAccelerometerCallback(user_data, cycles_late);
         });
-    gyroscope_update_event =
-        timing.RegisterEvent("HID::UpdateGyroscopeCallback", [this](u64 userdata, s64 cycles_late) {
-            UpdateGyroscopeCallback(userdata, cycles_late);
+    gyroscope_update_event = timing.RegisterEvent(
+        "HID::UpdateGyroscopeCallback", [this](std::uintptr_t user_data, s64 cycles_late) {
+            UpdateGyroscopeCallback(user_data, cycles_late);
         });
 
     timing.ScheduleEvent(pad_update_ticks, pad_update_event);

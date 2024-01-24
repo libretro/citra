@@ -10,9 +10,6 @@
 #include "core/file_sys/ncch_container.h"
 #include "core/loader/loader.h"
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Loader namespace
-
 namespace Loader {
 
 /// Loads an NCCH file (e.g. from a CCI, or the first NCCH in a CXI)
@@ -33,15 +30,22 @@ public:
         return IdentifyType(file);
     }
 
+    [[nodiscard]] std::span<const u32> GetPreferredRegions() const override {
+        return preferred_regions;
+    }
+
     ResultStatus Load(std::shared_ptr<Kernel::Process>& process) override;
+
+    std::pair<std::optional<u32>, ResultStatus> LoadCoreVersion() override;
 
     /**
      * Loads the Exheader and returns the system mode for this application.
      * @returns A pair with the optional system mode, and and the status.
      */
-    std::pair<std::optional<u32>, ResultStatus> LoadKernelSystemMode() override;
+    std::pair<std::optional<Kernel::MemoryMode>, ResultStatus> LoadKernelMemoryMode() override;
 
-    std::pair<std::optional<u8>, ResultStatus> LoadKernelN3dsMode() override;
+    std::pair<std::optional<Kernel::New3dsHwCapabilities>, ResultStatus> LoadNew3dsHwCapabilities()
+        override;
 
     ResultStatus IsExecutable(bool& out_executable) override;
 
@@ -76,11 +80,18 @@ private:
     ResultStatus LoadExec(std::shared_ptr<Kernel::Process>& process);
 
     /// Reads the region lockout info in the SMDH and send it to CFG service
-    void ParseRegionLockoutInfo();
+    /// If an SMDH is not present, the program ID is compared against a list
+    /// of known system titles to determine the region.
+    void ParseRegionLockoutInfo(u64 program_id);
+
+    /// Detects whether the NCCH contains GBA Virtual Console.
+    bool IsGbaVirtualConsole(std::span<const u8> code);
 
     FileSys::NCCHContainer base_ncch;
     FileSys::NCCHContainer update_ncch;
     FileSys::NCCHContainer* overlay_ncch;
+
+    std::vector<u32> preferred_regions;
 
     std::string filepath;
 };

@@ -17,9 +17,6 @@
 #include "core/file_sys/savedata_archive.h"
 #include "core/hle/service/fs/archive.h"
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// FileSys namespace
-
 SERIALIZE_EXPORT_IMPL(FileSys::ArchiveFactory_ExtSaveData)
 
 namespace FileSys {
@@ -45,7 +42,7 @@ public:
         if (offset > size) {
             return ERR_WRITE_BEYOND_END;
         } else if (offset == size) {
-            return MakeResult<std::size_t>(0);
+            return 0ULL;
         }
 
         if (offset + length > size) {
@@ -153,11 +150,9 @@ public:
         Mode rwmode;
         rwmode.write_flag.Assign(1);
         rwmode.read_flag.Assign(1);
-        std::unique_ptr<DelayGenerator> delay_generator =
-            std::make_unique<ExtSaveDataDelayGenerator>();
-        auto disk_file =
-            std::make_unique<FixSizeDiskFile>(std::move(file), rwmode, std::move(delay_generator));
-        return MakeResult<std::unique_ptr<FileBackend>>(std::move(disk_file));
+        auto delay_generator = std::make_unique<ExtSaveDataDelayGenerator>();
+        return std::make_unique<FixSizeDiskFile>(std::move(file), rwmode,
+                                                 std::move(delay_generator));
     }
 
     ResultCode CreateFile(const Path& path, u64 size) const override {
@@ -221,14 +216,16 @@ Path ConstructExtDataBinaryPath(u32 media_type, u32 high, u32 low) {
 }
 
 ArchiveFactory_ExtSaveData::ArchiveFactory_ExtSaveData(const std::string& mount_location,
-                                                       bool shared)
-    : shared(shared), mount_point(GetExtDataContainerPath(mount_location, shared)) {
+                                                       ExtSaveDataType type_)
+    : type(type_),
+      mount_point(GetExtDataContainerPath(mount_location, type_ == ExtSaveDataType::Shared)) {
     LOG_DEBUG(Service_FS, "Directory {} set as base for ExtSaveData.", mount_point);
 }
 
 Path ArchiveFactory_ExtSaveData::GetCorrectedPath(const Path& path) {
-    if (!shared)
+    if (type != ExtSaveDataType::Shared) {
         return path;
+    }
 
     static constexpr u32 SharedExtDataHigh = 0x48000;
 
@@ -247,19 +244,19 @@ Path ArchiveFactory_ExtSaveData::GetCorrectedPath(const Path& path) {
 
 ResultVal<std::unique_ptr<ArchiveBackend>> ArchiveFactory_ExtSaveData::Open(const Path& path,
                                                                             u64 program_id) {
-    std::string fullpath = GetExtSaveDataPath(mount_point, GetCorrectedPath(path)) + "user/";
+    const auto directory = type == ExtSaveDataType::Boss ? "boss/" : "user/";
+    const auto fullpath = GetExtSaveDataPath(mount_point, GetCorrectedPath(path)) + directory;
     if (!FileUtil::Exists(fullpath)) {
         // TODO(Subv): Verify the archive behavior of SharedExtSaveData compared to ExtSaveData.
         // ExtSaveData seems to return FS_NotFound (120) when the archive doesn't exist.
-        if (!shared) {
+        if (type != ExtSaveDataType::Shared) {
             return ERR_NOT_FOUND_INVALID_STATE;
         } else {
             return ERR_NOT_FORMATTED;
         }
     }
     std::unique_ptr<DelayGenerator> delay_generator = std::make_unique<ExtSaveDataDelayGenerator>();
-    auto archive = std::make_unique<ExtSaveDataArchive>(fullpath, std::move(delay_generator));
-    return MakeResult<std::unique_ptr<ArchiveBackend>>(std::move(archive));
+    return std::make_unique<ExtSaveDataArchive>(fullpath, std::move(delay_generator));
 }
 
 ResultCode ArchiveFactory_ExtSaveData::Format(const Path& path,
@@ -279,7 +276,7 @@ ResultCode ArchiveFactory_ExtSaveData::Format(const Path& path,
 
     if (!file.IsOpen()) {
         // TODO(Subv): Find the correct error code
-        return ResultCode(-1);
+        return RESULT_UNKNOWN;
     }
 
     file.WriteBytes(&format_info, sizeof(format_info));
@@ -299,14 +296,13 @@ ResultVal<ArchiveFormatInfo> ArchiveFactory_ExtSaveData::GetFormatInfo(const Pat
 
     ArchiveFormatInfo info = {};
     file.ReadBytes(&info, sizeof(info));
-    return MakeResult<ArchiveFormatInfo>(info);
+    return info;
 }
 
-void ArchiveFactory_ExtSaveData::WriteIcon(const Path& path, const u8* icon_data,
-                                           std::size_t icon_size) {
+void ArchiveFactory_ExtSaveData::WriteIcon(const Path& path, std::span<const u8> icon) {
     std::string game_path = FileSys::GetExtSaveDataPath(GetMountPoint(), path);
     FileUtil::IOFile icon_file(game_path + "icon", "wb");
-    icon_file.WriteBytes(icon_data, icon_size);
+    icon_file.WriteBytes(icon.data(), icon.size());
 }
 
 } // namespace FileSys

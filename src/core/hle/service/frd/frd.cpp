@@ -5,11 +5,14 @@
 #include <array>
 #include <cstring>
 #include <vector>
+#include "common/archives.h"
 #include "common/assert.h"
 #include "common/logging/log.h"
-#include "common/string_util.h"
 #include "core/core.h"
+#include "core/hle/applets/mii_selector.h"
 #include "core/hle/ipc_helpers.h"
+#include "core/hle/kernel/event.h"
+#include "core/hle/mii.h"
 #include "core/hle/result.h"
 #include "core/hle/service/cfg/cfg.h"
 #include "core/hle/service/frd/frd.h"
@@ -26,7 +29,7 @@ Module::Interface::Interface(std::shared_ptr<Module> frd, const char* name, u32 
 Module::Interface::~Interface() = default;
 
 void Module::Interface::GetMyPresence(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x08, 0, 0);
+    IPC::RequestParser rp(ctx);
 
     std::vector<u8> buffer(sizeof(MyPresence));
     std::memcpy(buffer.data(), &frd->my_presence, buffer.size());
@@ -39,7 +42,7 @@ void Module::Interface::GetMyPresence(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::GetFriendKeyList(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x11, 2, 0);
+    IPC::RequestParser rp(ctx);
     const u32 unknown = rp.Pop<u32>();
     const u32 frd_count = rp.Pop<u32>();
 
@@ -54,7 +57,7 @@ void Module::Interface::GetFriendKeyList(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::GetFriendProfile(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x15, 1, 2);
+    IPC::RequestParser rp(ctx);
     const u32 count = rp.Pop<u32>();
     const std::vector<u8> frd_keys = rp.PopStaticBuffer();
     ASSERT(frd_keys.size() == count * sizeof(FriendKey));
@@ -69,7 +72,7 @@ void Module::Interface::GetFriendProfile(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::GetFriendAttributeFlags(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x17, 1, 2);
+    IPC::RequestParser rp(ctx);
     const u32 count = rp.Pop<u32>();
     const std::vector<u8> frd_keys = rp.PopStaticBuffer();
     ASSERT(frd_keys.size() == count * sizeof(FriendKey));
@@ -84,7 +87,7 @@ void Module::Interface::GetFriendAttributeFlags(Kernel::HLERequestContext& ctx) 
 }
 
 void Module::Interface::GetMyFriendKey(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x5, 0, 0);
+    IPC::RequestParser rp(ctx);
     IPC::RequestBuilder rb = rp.MakeBuilder(5, 0);
     rb.Push(RESULT_SUCCESS);
     rb.PushRaw(frd->my_friend_key);
@@ -93,16 +96,10 @@ void Module::Interface::GetMyFriendKey(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::GetMyScreenName(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x9, 0, 0);
+    IPC::RequestParser rp(ctx);
     IPC::RequestBuilder rb = rp.MakeBuilder(7, 0);
 
-    struct ScreenName {
-        // 20 bytes according to 3dbrew
-        std::array<char16_t, 10> name;
-    };
-
     auto cfg = Service::CFG::GetModule(frd->system);
-    ASSERT_MSG(cfg, "CFG Module missing!");
     auto username = cfg->GetUsername();
     ASSERT_MSG(username.length() <= 10, "Username longer than expected!");
     ScreenName screen_name{};
@@ -110,15 +107,95 @@ void Module::Interface::GetMyScreenName(Kernel::HLERequestContext& ctx) {
 
     rb.Push(RESULT_SUCCESS);
     rb.PushRaw(screen_name);
+    rb.Push(0);
 
-    LOG_INFO(Service_FRD, "returning the username defined in cfg");
+    LOG_DEBUG(Service_FRD, "called");
+}
+
+void Module::Interface::GetMyComment(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    IPC::RequestBuilder rb = rp.MakeBuilder(10, 0);
+
+    constexpr Comment comment{.name = {u'H', u'e', u'y', '!'}};
+
+    rb.Push(RESULT_SUCCESS);
+    rb.PushRaw<Comment>(comment);
+    rb.Push(0);
+
+    LOG_WARNING(Service_FRD, "(STUBBED) called");
+}
+
+void Module::Interface::GetMyMii(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    IPC::RequestBuilder rb = rp.MakeBuilder(0x19, 0);
+
+    const auto mii_data = HLE::Applets::MiiSelector::GetStandardMiiResult().selected_mii_data;
+    Mii::ChecksummedMiiData mii{};
+    mii.SetMiiData(mii_data);
+
+    rb.Push(RESULT_SUCCESS);
+    rb.PushRaw<Mii::ChecksummedMiiData>(mii);
+
+    LOG_WARNING(Service_FRD, "(STUBBED) called");
+}
+
+void Module::Interface::GetMyProfile(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    IPC::RequestBuilder rb = rp.MakeBuilder(3, 0);
+
+    constexpr Profile profile{.region = 1, .country = 1, .area = 1, .language = 1, .platform = 1};
+
+    rb.Push(RESULT_SUCCESS);
+    rb.PushRaw<Profile>(profile);
+
+    LOG_WARNING(Service_FRD, "(STUBBED) called");
+}
+
+void Module::Interface::GetMyFavoriteGame(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    IPC::RequestBuilder rb = rp.MakeBuilder(5, 0);
+
+    constexpr Game game{.title_id = 0x0004000E00030700, .version = 1};
+
+    rb.Push(RESULT_SUCCESS);
+    rb.PushRaw<Game>(game);
+
+    LOG_WARNING(Service_FRD, "(STUBBED) called");
+}
+
+void Module::Interface::GetMyPlayingGame(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    IPC::RequestBuilder rb = rp.MakeBuilder(5, 0);
+
+    constexpr Game game{.title_id = 0x0004000E00030700, .version = 1};
+
+    rb.Push(RESULT_SUCCESS);
+    rb.PushRaw<Game>(game);
+
+    LOG_WARNING(Service_FRD, "(STUBBED) called");
+}
+
+void Module::Interface::GetMyPreference(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    IPC::RequestBuilder rb = rp.MakeBuilder(4, 0);
+
+    constexpr u32 is_public = 1;
+    constexpr u32 show_game = 1;
+    constexpr u32 show_history = 0;
+
+    rb.Push(RESULT_SUCCESS);
+    rb.Push<u32>(is_public);
+    rb.Push<u32>(show_game);
+    rb.Push<u32>(show_history);
+
+    LOG_WARNING(Service_FRD, "(STUBBED) called");
 }
 
 void Module::Interface::UnscrambleLocalFriendCode(Kernel::HLERequestContext& ctx) {
     const std::size_t scrambled_friend_code_size = 12;
     const std::size_t friend_code_size = 8;
 
-    IPC::RequestParser rp(ctx, 0x1C, 1, 2);
+    IPC::RequestParser rp(ctx);
     const u32 friend_code_count = rp.Pop<u32>();
     const std::vector<u8> scrambled_friend_codes = rp.PopStaticBuffer();
     ASSERT_MSG(scrambled_friend_codes.size() == (friend_code_count * scrambled_friend_code_size),
@@ -146,7 +223,7 @@ void Module::Interface::UnscrambleLocalFriendCode(Kernel::HLERequestContext& ctx
 }
 
 void Module::Interface::SetClientSdkVersion(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x32, 1, 2);
+    IPC::RequestParser rp(ctx);
     u32 version = rp.Pop<u32>();
     rp.PopPID();
 
@@ -154,6 +231,54 @@ void Module::Interface::SetClientSdkVersion(Kernel::HLERequestContext& ctx) {
     rb.Push(RESULT_SUCCESS);
 
     LOG_WARNING(Service_FRD, "(STUBBED) called, version: 0x{:08X}", version);
+}
+
+void Module::Interface::IsOnline(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
+
+    rb.Push(RESULT_SUCCESS);
+    rb.Push(frd->logged_in);
+
+    LOG_WARNING(Service_FRD, "(STUBBED) called");
+}
+
+void Module::Interface::HasLoggedIn(Kernel::HLERequestContext& ctx) {
+    LOG_WARNING(Service_FRD, "(STUBBED) called");
+
+    IPC::RequestParser rp(ctx);
+    IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
+    rb.Push(RESULT_SUCCESS);
+    rb.Push(frd->logged_in);
+}
+
+void Module::Interface::Login(Kernel::HLERequestContext& ctx) {
+    LOG_WARNING(Service_FRD, "(STUBBED) called");
+
+    IPC::RequestParser rp(ctx);
+    frd->login_event = rp.PopObject<Kernel::Event>();
+
+    constexpr auto login_delay_ms = 500;
+    frd->login_delay_event = frd->system.CoreTiming().RegisterEvent(
+        "frd::login_event",
+        // Simulate a small login delay
+        [this](u64 thread_id, s64 cycle_late) {
+            frd->logged_in = true;
+            frd->login_event->Signal();
+            frd->system.CoreTiming().RemoveEvent(frd->login_delay_event);
+        });
+    frd->system.CoreTiming().ScheduleEvent(msToCycles(login_delay_ms), frd->login_delay_event);
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(RESULT_SUCCESS);
+}
+
+void Module::Interface::GetLastResponseResult(Kernel::HLERequestContext& ctx) {
+    LOG_WARNING(Service_FRD, "(STUBBED) called");
+
+    IPC::RequestParser rp(ctx);
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(RESULT_SUCCESS);
 }
 
 Module::Module(Core::System& system) : system(system){};

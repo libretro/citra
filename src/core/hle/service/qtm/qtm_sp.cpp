@@ -12,10 +12,10 @@ namespace Service::QTM {
 
 QTM_SP::QTM_SP() : ServiceFramework("qtm:sp", 2) {
     static const FunctionInfo functions[] = {
-        // clang-format off
         // qtm common commands
-        {0x00010080, nullptr, "GetHeadtrackingInfoRaw"},
-        {0x00020080, nullptr, "GetHeadtrackingInfo"},
+        // clang-format off
+        {0x0001, nullptr, "GetHeadtrackingInfoRaw"},
+        {0x0002, nullptr, "GetHeadtrackingInfo"},
         // clang-format on
     };
 

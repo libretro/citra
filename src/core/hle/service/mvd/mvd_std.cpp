@@ -13,18 +13,18 @@ namespace Service::MVD {
 MVD_STD::MVD_STD() : ServiceFramework("mvd:std", 1) {
     static const FunctionInfo functions[] = {
         // clang-format off
-        {0x00010082, nullptr, "Initialize"},
-        {0x00020000, nullptr, "Shutdown"},
-        {0x00030300, nullptr, "CalculateWorkBufSize"},
-        {0x000400C0, nullptr, "CalculateImageSize"},
-        {0x00080142, nullptr, "ProcessNALUnit"},
-        {0x00090042, nullptr, "ControlFrameRendering"},
-        {0x000A0000, nullptr, "GetStatus"},
-        {0x000B0000, nullptr, "GetStatusOther"},
-        {0x001D0042, nullptr, "GetConfig"},
-        {0x001E0044, nullptr, "SetConfig"},
-        {0x001F0902, nullptr, "SetOutputBuffer"},
-        {0x00210100, nullptr, "OverrideOutputBuffers"}
+        {0x0001, nullptr, "Initialize"},
+        {0x0002, nullptr, "Shutdown"},
+        {0x0003, nullptr, "CalculateWorkBufSize"},
+        {0x0004, nullptr, "CalculateImageSize"},
+        {0x0008, nullptr, "ProcessNALUnit"},
+        {0x0009, nullptr, "ControlFrameRendering"},
+        {0x000A, nullptr, "GetStatus"},
+        {0x000B, nullptr, "GetStatusOther"},
+        {0x001D, nullptr, "GetConfig"},
+        {0x001E, nullptr, "SetConfig"},
+        {0x001F, nullptr, "SetOutputBuffer"},
+        {0x0021, nullptr, "OverrideOutputBuffers"}
         // clang-format on
     };
 

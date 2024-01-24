@@ -31,6 +31,7 @@
 #pragma once
 
 #include <cmath>
+#include <cstring>
 #include <type_traits>
 #include <boost/serialization/access.hpp>
 
@@ -57,6 +58,10 @@ public:
     T y;
 
     T* AsArray() {
+        return &x;
+    }
+
+    const T* AsArray() const {
         return &x;
     }
 
@@ -123,9 +128,17 @@ public:
         return x * x + y * y;
     }
 
+    [[nodiscard]] constexpr bool operator!=(const Vec2& other) const {
+        return std::memcmp(AsArray(), other.AsArray(), sizeof(Vec2)) != 0;
+    }
+
+    [[nodiscard]] constexpr bool operator==(const Vec2& other) const {
+        return std::memcmp(AsArray(), other.AsArray(), sizeof(Vec2)) == 0;
+    }
+
     // Only implemented for T=float
     [[nodiscard]] float Length() const;
-    [[nodiscard]] float Normalize(); // returns the previous length, which is often useful
+    float Normalize(); // returns the previous length, which is often useful
 
     [[nodiscard]] constexpr T& operator[](std::size_t i) {
         return *((&x) + i);
@@ -184,6 +197,8 @@ template <typename T, typename V>
 }
 
 using Vec2f = Vec2<float>;
+using Vec2i = Vec2<int>;
+using Vec2u = Vec2<unsigned int>;
 
 template <>
 inline float Vec2<float>::Length() const {
@@ -213,6 +228,10 @@ public:
     T z;
 
     T* AsArray() {
+        return &x;
+    }
+
+    const T* AsArray() const {
         return &x;
     }
 
@@ -280,6 +299,14 @@ public:
         return *this;
     }
 
+    [[nodiscard]] constexpr bool operator!=(const Vec3& other) const {
+        return std::memcmp(AsArray(), other.AsArray(), sizeof(Vec3)) != 0;
+    }
+
+    [[nodiscard]] constexpr bool operator==(const Vec3& other) const {
+        return std::memcmp(AsArray(), other.AsArray(), sizeof(Vec3)) == 0;
+    }
+
     [[nodiscard]] constexpr T Length2() const {
         return x * x + y * y + z * z;
     }
@@ -287,7 +314,7 @@ public:
     // Only implemented for T=float
     [[nodiscard]] float Length() const;
     [[nodiscard]] Vec3 Normalized() const;
-    [[nodiscard]] float Normalize(); // returns the previous length, which is often useful
+    float Normalize(); // returns the previous length, which is often useful
 
     [[nodiscard]] constexpr T& operator[](std::size_t i) {
         return *((&x) + i);
@@ -369,9 +396,7 @@ public:
 // _DEFINE_SWIZZLER2 defines a single such function, DEFINE_SWIZZLER2 defines all of them for all
 // component names (x<->r) and permutations (xy<->yx)
 #define _DEFINE_SWIZZLER2(a, b, name)                                                              \
-    [[nodiscard]] constexpr Vec2<T> name() const {                                                 \
-        return Vec2<T>(a, b);                                                                      \
-    }
+    [[nodiscard]] constexpr Vec2<T> name() const { return Vec2<T>(a, b); }
 #define DEFINE_SWIZZLER2(a, b, a2, b2, a3, b3, a4, b4)                                             \
     _DEFINE_SWIZZLER2(a, b, a##b);                                                                 \
     _DEFINE_SWIZZLER2(a, b, a2##b2);                                                               \
@@ -412,6 +437,8 @@ inline float Vec3<float>::Normalize() {
 }
 
 using Vec3f = Vec3<float>;
+using Vec3i = Vec3<int>;
+using Vec3u = Vec3<unsigned int>;
 
 template <typename T>
 class Vec4 {
@@ -431,6 +458,10 @@ public:
     T w;
 
     T* AsArray() {
+        return &x;
+    }
+
+    const T* AsArray() const {
         return &x;
     }
 
@@ -503,6 +534,14 @@ public:
         return *this;
     }
 
+    [[nodiscard]] constexpr bool operator!=(const Vec4& other) const {
+        return std::memcmp(AsArray(), other.AsArray(), sizeof(Vec4)) != 0;
+    }
+
+    [[nodiscard]] constexpr bool operator==(const Vec4& other) const {
+        return std::memcmp(AsArray(), other.AsArray(), sizeof(Vec4)) == 0;
+    }
+
     [[nodiscard]] constexpr T Length2() const {
         return x * x + y * y + z * z + w * w;
     }
@@ -557,9 +596,7 @@ public:
 // DEFINE_SWIZZLER2_COMP2 defines two component functions for all component names (x<->r) and
 // permutations (xy<->yx)
 #define _DEFINE_SWIZZLER2(a, b, name)                                                              \
-    [[nodiscard]] constexpr Vec2<T> name() const {                                                 \
-        return Vec2<T>(a, b);                                                                      \
-    }
+    [[nodiscard]] constexpr Vec2<T> name() const { return Vec2<T>(a, b); }
 #define DEFINE_SWIZZLER2_COMP1(a, a2)                                                              \
     _DEFINE_SWIZZLER2(a, a, a##a);                                                                 \
     _DEFINE_SWIZZLER2(a, a, a2##a2)
@@ -584,9 +621,7 @@ public:
 #undef _DEFINE_SWIZZLER2
 
 #define _DEFINE_SWIZZLER3(a, b, c, name)                                                           \
-    [[nodiscard]] constexpr Vec3<T> name() const {                                                 \
-        return Vec3<T>(a, b, c);                                                                   \
-    }
+    [[nodiscard]] constexpr Vec3<T> name() const { return Vec3<T>(a, b, c); }
 #define DEFINE_SWIZZLER3_COMP1(a, a2)                                                              \
     _DEFINE_SWIZZLER3(a, a, a, a##a##a);                                                           \
     _DEFINE_SWIZZLER3(a, a, a, a2##a2##a2)
@@ -623,6 +658,8 @@ template <typename T, typename V>
 }
 
 using Vec4f = Vec4<float>;
+using Vec4i = Vec4<int>;
+using Vec4u = Vec4<unsigned int>;
 
 template <typename T>
 constexpr decltype(T{} * T{} + T{} * T{}) Dot(const Vec2<T>& a, const Vec2<T>& b) {

@@ -2,11 +2,15 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include "common/arch.h"
+#if CITRA_ARCH(x86_64)
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <nihstro/shader_bytecode.h>
 #include <smmintrin.h>
+#include <xbyak/xbyak_util.h>
 #include <xmmintrin.h>
 #include "common/assert.h"
 #include "common/logging/log.h"
@@ -25,6 +29,11 @@ using Xbyak::Label;
 using Xbyak::Reg32;
 using Xbyak::Reg64;
 using Xbyak::Xmm;
+
+using nihstro::DestRegister;
+using nihstro::RegisterType;
+
+static const Xbyak::util::Cpu host_caps;
 
 namespace Pica::Shader {
 
@@ -164,8 +173,10 @@ static void LogCritical(const char* msg) {
 
 void JitShader::Compile_Assert(bool condition, const char* msg) {
     if (!condition) {
+        ABI_PushRegistersAndAdjustStack(*this, PersistentCallerSavedRegs(), 0);
         mov(ABI_PARAM1, reinterpret_cast<std::size_t>(msg));
         CallFarFunction(*this, LogCritical);
+        ABI_PopRegistersAndAdjustStack(*this, PersistentCallerSavedRegs(), 0);
     }
 }
 
@@ -176,29 +187,39 @@ void JitShader::Compile_Assert(bool condition, const char* msg) {
  * @param src_reg SourceRegister object corresponding to the source register to load
  * @param dest Destination XMM register to store the loaded, swizzled source register
  */
-void JitShader::Compile_SwizzleSrc(Instruction instr, unsigned src_num, SourceRegister src_reg,
+void JitShader::Compile_SwizzleSrc(Instruction instr, u32 src_num, SourceRegister src_reg,
                                    Xmm dest) {
     Reg64 src_ptr;
     std::size_t src_offset;
-
-    if (src_reg.GetRegisterType() == RegisterType::FloatUniform) {
+    switch (src_reg.GetRegisterType()) {
+    case RegisterType::FloatUniform:
         src_ptr = UNIFORMS;
         src_offset = Uniforms::GetFloatUniformOffset(src_reg.GetIndex());
-    } else {
+        break;
+    case RegisterType::Input:
         src_ptr = STATE;
-        src_offset = UnitState::InputOffset(src_reg);
+        src_offset = UnitState::InputOffset(src_reg.GetIndex());
+        break;
+    case RegisterType::Temporary:
+        src_ptr = STATE;
+        src_offset = UnitState::TemporaryOffset(src_reg.GetIndex());
+        break;
+    default:
+        UNREACHABLE_MSG("Encountered unknown source register type: {}", src_reg.GetRegisterType());
+        break;
     }
 
     int src_offset_disp = (int)src_offset;
-    ASSERT_MSG(src_offset == src_offset_disp, "Source register offset too large for int type");
+    ASSERT_MSG(src_offset == static_cast<std::size_t>(src_offset_disp),
+               "Source register offset too large for int type");
 
-    unsigned operand_desc_id;
+    u32 operand_desc_id;
 
     const bool is_inverted =
         (0 != (instr.opcode.Value().GetInfo().subtype & OpCode::Info::SrcInversed));
 
-    unsigned address_register_index;
-    unsigned offset_src;
+    u32 address_register_index;
+    u32 offset_src;
 
     if (instr.opcode.Value().EffectiveOpCode() == OpCode::Id::MAD ||
         instr.opcode.Value().EffectiveOpCode() == OpCode::Id::MADI) {
@@ -211,21 +232,45 @@ void JitShader::Compile_SwizzleSrc(Instruction instr, unsigned src_num, SourceRe
         address_register_index = instr.common.address_register_index;
     }
 
-    if (src_num == offset_src && address_register_index != 0) {
+    if (src_reg.GetRegisterType() == RegisterType::FloatUniform && src_num == offset_src &&
+        address_register_index != 0) {
+        Xbyak::Reg64 address_reg;
         switch (address_register_index) {
-        case 1: // address offset 1
-            movaps(dest, xword[src_ptr + ADDROFFS_REG_0 + src_offset_disp]);
+        case 1:
+            address_reg = ADDROFFS_REG_0;
             break;
-        case 2: // address offset 2
-            movaps(dest, xword[src_ptr + ADDROFFS_REG_1 + src_offset_disp]);
+        case 2:
+            address_reg = ADDROFFS_REG_1;
             break;
-        case 3: // address offset 3
-            movaps(dest, xword[src_ptr + LOOPCOUNT_REG.cvt64() + src_offset_disp]);
+        case 3:
+            address_reg = LOOPCOUNT_REG.cvt64();
             break;
         default:
             UNREACHABLE();
             break;
         }
+        // s32 offset = address_reg >= -128 && address_reg <= 127 ? address_reg : 0;
+        // u32 index = (src_reg.GetIndex() + offset) & 0x7f;
+
+        // First we add 128 to address_reg so the first comparison is turned to
+        // address_reg >= 0 && address_reg < 256 which can be performed with
+        // a single u32 comparison (cmovb)
+        lea(eax, ptr[address_reg + 128]);
+        mov(ebx, src_reg.GetIndex());
+        mov(ecx, address_reg.cvt32());
+        add(ecx, ebx);
+        cmp(eax, 256);
+        cmovb(ebx, ecx);
+        and_(ebx, 0x7f);
+
+        // index > 95 ? vec4(1.0) : uniforms.f[index];
+        movaps(dest, ONE);
+        cmp(ebx, 95);
+        Label load_end;
+        jg(load_end);
+        shl(rbx, 4);
+        movaps(dest, xword[src_ptr + rbx]);
+        L(load_end);
     } else {
         // Load the source
         movaps(dest, xword[src_ptr + src_offset_disp]);
@@ -252,7 +297,7 @@ void JitShader::Compile_SwizzleSrc(Instruction instr, unsigned src_num, SourceRe
 
 void JitShader::Compile_DestEnable(Instruction instr, Xmm src) {
     DestRegister dest;
-    unsigned operand_desc_id;
+    u32 operand_desc_id;
     if (instr.opcode.Value().EffectiveOpCode() == OpCode::Id::MAD ||
         instr.opcode.Value().EffectiveOpCode() == OpCode::Id::MADI) {
         operand_desc_id = instr.mad.operand_desc_id;
@@ -264,7 +309,19 @@ void JitShader::Compile_DestEnable(Instruction instr, Xmm src) {
 
     SwizzlePattern swiz = {(*swizzle_data)[operand_desc_id]};
 
-    std::size_t dest_offset_disp = UnitState::OutputOffset(dest);
+    std::size_t dest_offset_disp;
+    switch (dest.GetRegisterType()) {
+    case RegisterType::Output:
+        dest_offset_disp = UnitState::OutputOffset(dest.GetIndex());
+        break;
+    case RegisterType::Temporary:
+        dest_offset_disp = UnitState::TemporaryOffset(dest.GetIndex());
+        break;
+    default:
+        UNREACHABLE_MSG("Encountered unknown destination register type: {}",
+                        dest.GetRegisterType());
+        break;
+    }
 
     // If all components are enabled, write the result to the destination register
     if (swiz.dest_mask == NO_DEST_REG_MASK) {
@@ -276,7 +333,7 @@ void JitShader::Compile_DestEnable(Instruction instr, Xmm src) {
         // register...
         movaps(SCRATCH, xword[STATE + dest_offset_disp]);
 
-        if (Common::GetCPUCaps().sse4_1) {
+        if (host_caps.has(Cpu::tSSE41)) {
             u8 mask = ((swiz.dest_mask & 1) << 3) | ((swiz.dest_mask & 8) >> 3) |
                       ((swiz.dest_mask & 2) << 1) | ((swiz.dest_mask & 4) >> 1);
             blendps(SCRATCH, src, mask);
@@ -305,15 +362,39 @@ void JitShader::Compile_SanitizedMul(Xmm src1, Xmm src2, Xmm scratch) {
     // where neither source was, this NaN was generated by a 0 * inf multiplication, and so the
     // result should be transformed to 0 to match PICA fp rules.
 
+    if (host_caps.has(Cpu::tAVX512F | Cpu::tAVX512VL | Cpu::tAVX512DQ)) {
+        vmulps(scratch, src1, src2);
+
+        // Mask of any NaN values found in the result
+        const Xbyak::Opmask zero_mask = k1;
+        vcmpunordps(zero_mask, scratch, scratch);
+
+        // Mask of any non-NaN inputs producing NaN results
+        vcmpordps(zero_mask | zero_mask, src1, src2);
+
+        knotb(zero_mask, zero_mask);
+        vmovaps(src1 | zero_mask | T_z, scratch);
+
+        return;
+    }
+
     // Set scratch to mask of (src1 != NaN and src2 != NaN)
-    movaps(scratch, src1);
-    cmpordps(scratch, src2);
+    if (host_caps.has(Cpu::tAVX)) {
+        vcmpordps(scratch, src1, src2);
+    } else {
+        movaps(scratch, src1);
+        cmpordps(scratch, src2);
+    }
 
     mulps(src1, src2);
 
     // Set src2 to mask of (result == NaN)
-    movaps(src2, src1);
-    cmpunordps(src2, src2);
+    if (host_caps.has(Cpu::tAVX)) {
+        vcmpunordps(src2, src2, src1);
+    } else {
+        movaps(src2, src1);
+        cmpunordps(src2, src2);
+    }
 
     // Clear components where scratch != src2 (i.e. if result is NaN where neither source was NaN)
     xorps(scratch, src2);
@@ -373,13 +454,20 @@ void JitShader::Compile_DP3(Instruction instr) {
 
     Compile_SanitizedMul(SRC1, SRC2, SCRATCH);
 
-    movaps(SRC2, SRC1);
-    shufps(SRC2, SRC2, _MM_SHUFFLE(1, 1, 1, 1));
+    if (host_caps.has(Cpu::tAVX)) {
+        vshufps(SRC3, SRC1, SRC1, _MM_SHUFFLE(2, 2, 2, 2));
+        vshufps(SRC2, SRC1, SRC1, _MM_SHUFFLE(1, 1, 1, 1));
+        vshufps(SRC1, SRC1, SRC1, _MM_SHUFFLE(0, 0, 0, 0));
+    } else {
+        movaps(SRC2, SRC1);
+        shufps(SRC2, SRC2, _MM_SHUFFLE(1, 1, 1, 1));
 
-    movaps(SRC3, SRC1);
-    shufps(SRC3, SRC3, _MM_SHUFFLE(2, 2, 2, 2));
+        movaps(SRC3, SRC1);
+        shufps(SRC3, SRC3, _MM_SHUFFLE(2, 2, 2, 2));
 
-    shufps(SRC1, SRC1, _MM_SHUFFLE(0, 0, 0, 0));
+        shufps(SRC1, SRC1, _MM_SHUFFLE(0, 0, 0, 0));
+    }
+
     addps(SRC1, SRC2);
     addps(SRC1, SRC3);
 
@@ -407,7 +495,7 @@ void JitShader::Compile_DPH(Instruction instr) {
         Compile_SwizzleSrc(instr, 2, instr.common.src2, SRC2);
     }
 
-    if (Common::GetCPUCaps().sse4_1) {
+    if (host_caps.has(Cpu::tSSE41)) {
         // Set 4th component to 1.0
         blendps(SRC1, ONE, 0b1000);
     } else {
@@ -477,7 +565,7 @@ void JitShader::Compile_SLT(Instruction instr) {
 void JitShader::Compile_FLR(Instruction instr) {
     Compile_SwizzleSrc(instr, 1, instr.common.src1, SRC1);
 
-    if (Common::GetCPUCaps().sse4_1) {
+    if (host_caps.has(Cpu::tSSE41)) {
         roundps(SRC1, SRC1, _MM_FROUND_FLOOR);
     } else {
         cvttps2dq(SRC1, SRC1);
@@ -526,24 +614,14 @@ void JitShader::Compile_MOVA(Instruction instr) {
         // Move and sign-extend high 32 bits
         shr(rax, 32);
         movsxd(ADDROFFS_REG_1, eax);
-
-        // Multiply by 16 to be used as an offset later
-        shl(ADDROFFS_REG_0, 4);
-        shl(ADDROFFS_REG_1, 4);
     } else {
         if (swiz.DestComponentEnabled(0)) {
             // Move and sign-extend low 32 bits
             movsxd(ADDROFFS_REG_0, eax);
-
-            // Multiply by 16 to be used as an offset later
-            shl(ADDROFFS_REG_0, 4);
         } else if (swiz.DestComponentEnabled(1)) {
             // Move and sign-extend high 32 bits
             shr(rax, 32);
             movsxd(ADDROFFS_REG_1, eax);
-
-            // Multiply by 16 to be used as an offset later
-            shl(ADDROFFS_REG_1, 4);
         }
     }
 }
@@ -556,9 +634,15 @@ void JitShader::Compile_MOV(Instruction instr) {
 void JitShader::Compile_RCP(Instruction instr) {
     Compile_SwizzleSrc(instr, 1, instr.common.src1, SRC1);
 
-    // TODO(bunnei): RCPSS is a pretty rough approximation, this might cause problems if Pica
-    // performs this operation more accurately. This should be checked on hardware.
-    rcpss(SRC1, SRC1);
+    if (host_caps.has(Cpu::tAVX512F | Cpu::tAVX512VL)) {
+        // Accurate to 14 bits of precisions rather than 12 bits of rcpss
+        vrcp14ss(SRC1, SRC1, SRC1);
+    } else {
+        // TODO(bunnei): RCPSS is a pretty rough approximation, this might cause problems if Pica
+        // performs this operation more accurately. This should be checked on hardware.
+        rcpss(SRC1, SRC1);
+    }
+
     shufps(SRC1, SRC1, _MM_SHUFFLE(0, 0, 0, 0)); // XYWZ -> XXXX
 
     Compile_DestEnable(instr, SRC1);
@@ -567,9 +651,15 @@ void JitShader::Compile_RCP(Instruction instr) {
 void JitShader::Compile_RSQ(Instruction instr) {
     Compile_SwizzleSrc(instr, 1, instr.common.src1, SRC1);
 
-    // TODO(bunnei): RSQRTSS is a pretty rough approximation, this might cause problems if Pica
-    // performs this operation more accurately. This should be checked on hardware.
-    rsqrtss(SRC1, SRC1);
+    if (host_caps.has(Cpu::tAVX512F | Cpu::tAVX512VL)) {
+        // Accurate to 14 bits of precisions rather than 12 bits of rsqrtss
+        vrsqrt14ss(SRC1, SRC1, SRC1);
+    } else {
+        // TODO(bunnei): RSQRTSS is a pretty rough approximation, this might cause problems if Pica
+        // performs this operation more accurately. This should be checked on hardware.
+        rsqrtss(SRC1, SRC1);
+    }
+
     shufps(SRC1, SRC1, _MM_SHUFFLE(0, 0, 0, 0)); // XYWZ -> XXXX
 
     Compile_DestEnable(instr, SRC1);
@@ -583,9 +673,6 @@ void JitShader::Compile_END(Instruction instr) {
     mov(byte[STATE + offsetof(UnitState, conditional_code[1])], COND1.cvt8());
 
     // Save address/loop registers
-    sar(ADDROFFS_REG_0, 4);
-    sar(ADDROFFS_REG_1, 4);
-    sar(LOOPCOUNT_REG, 4);
     mov(dword[STATE + offsetof(UnitState, address_registers[0])], ADDROFFS_REG_0.cvt32());
     mov(dword[STATE + offsetof(UnitState, address_registers[1])], ADDROFFS_REG_1.cvt32());
     mov(dword[STATE + offsetof(UnitState, address_registers[2])], LOOPCOUNT_REG);
@@ -595,11 +682,11 @@ void JitShader::Compile_END(Instruction instr) {
 }
 
 void JitShader::Compile_BREAKC(Instruction instr) {
-    Compile_Assert(looping, "BREAKC must be inside a LOOP");
-    if (looping) {
+    Compile_Assert(loop_depth, "BREAKC must be inside a LOOP");
+    if (loop_depth) {
         Compile_EvaluateCondition(instr);
-        ASSERT(loop_break_label);
-        jnz(*loop_break_label);
+        ASSERT(!loop_break_labels.empty());
+        jnz(loop_break_labels.back(), T_NEAR);
     }
 }
 
@@ -725,9 +812,11 @@ void JitShader::Compile_IF(Instruction instr) {
 void JitShader::Compile_LOOP(Instruction instr) {
     Compile_Assert(instr.flow_control.dest_offset >= program_counter,
                    "Backwards loops not supported");
-    Compile_Assert(!looping, "Nested loops not supported");
-
-    looping = true;
+    Compile_Assert(loop_depth < 1, "Nested loops may not be supported");
+    if (loop_depth++) {
+        const auto loop_save_regs = BuildRegSet({LOOPCOUNT_REG, LOOPINC, LOOPCOUNT});
+        ABI_PushRegistersAndAdjustStack(*this, loop_save_regs, 0);
+    }
 
     // This decodes the fields from the integer uniform at index instr.flow_control.int_uniform_id.
     // The Y (LOOPCOUNT_REG) and Z (LOOPINC) component are kept multiplied by 16 (Left shifted by
@@ -735,27 +824,31 @@ void JitShader::Compile_LOOP(Instruction instr) {
     std::size_t offset = Uniforms::GetIntUniformOffset(instr.flow_control.int_uniform_id);
     mov(LOOPCOUNT, dword[UNIFORMS + offset]);
     mov(LOOPCOUNT_REG, LOOPCOUNT);
-    shr(LOOPCOUNT_REG, 4);
-    and_(LOOPCOUNT_REG, 0xFF0); // Y-component is the start
+    shr(LOOPCOUNT_REG, 8);
+    and_(LOOPCOUNT_REG, 0xFF); // Y-component is the start
     mov(LOOPINC, LOOPCOUNT);
-    shr(LOOPINC, 12);
-    and_(LOOPINC, 0xFF0);               // Z-component is the incrementer
+    shr(LOOPINC, 16);
+    and_(LOOPINC, 0xFF);                // Z-component is the incrementer
     movzx(LOOPCOUNT, LOOPCOUNT.cvt8()); // X-component is iteration count
     add(LOOPCOUNT, 1);                  // Iteration count is X-component + 1
 
     Label l_loop_start;
     L(l_loop_start);
 
-    loop_break_label = Xbyak::Label();
+    loop_break_labels.emplace_back(Xbyak::Label());
     Compile_Block(instr.flow_control.dest_offset + 1);
 
     add(LOOPCOUNT_REG, LOOPINC); // Increment LOOPCOUNT_REG by Z-component
     sub(LOOPCOUNT, 1);           // Increment loop count by 1
     jnz(l_loop_start);           // Loop if not equal
-    L(*loop_break_label);
-    loop_break_label.reset();
 
-    looping = false;
+    L(loop_break_labels.back());
+    loop_break_labels.pop_back();
+
+    if (--loop_depth) {
+        const auto loop_save_regs = BuildRegSet({LOOPCOUNT_REG, LOOPINC, LOOPCOUNT});
+        ABI_PopRegistersAndAdjustStack(*this, loop_save_regs, 0);
+    }
 }
 
 void JitShader::Compile_JMP(Instruction instr) {
@@ -777,7 +870,7 @@ void JitShader::Compile_JMP(Instruction instr) {
     }
 }
 
-static void Emit(GSEmitter* emitter, Common::Vec4<float24> (*output)[16]) {
+static void Emit(GSEmitter* emitter, Common::Vec4<f24> (*output)[16]) {
     emitter->Emit(*output);
 }
 
@@ -822,7 +915,7 @@ void JitShader::Compile_SETE(Instruction instr) {
     L(end);
 }
 
-void JitShader::Compile_Block(unsigned end) {
+void JitShader::Compile_Block(u32 end) {
     while (program_counter < end) {
         Compile_NextInstr();
     }
@@ -850,7 +943,7 @@ void JitShader::Compile_NextInstr() {
     Instruction instr = {(*program_code)[program_counter++]};
 
     OpCode::Id opcode = instr.opcode.Value();
-    auto instr_func = instr_table[static_cast<unsigned>(opcode)];
+    auto instr_func = instr_table[static_cast<u32>(opcode)];
 
     if (instr_func) {
         // JIT the instruction!
@@ -892,7 +985,7 @@ void JitShader::Compile(const std::array<u32, MAX_PROGRAM_CODE_LENGTH>* program_
     // Reset flow control state
     program = (CompiledShader*)getCurr();
     program_counter = 0;
-    looping = false;
+    loop_depth = 0;
     instruction_labels.fill(Xbyak::Label());
 
     // Find all `CALL` instructions and identify return locations
@@ -911,9 +1004,6 @@ void JitShader::Compile(const std::array<u32, MAX_PROGRAM_CODE_LENGTH>* program_
     movsxd(ADDROFFS_REG_0, dword[STATE + offsetof(UnitState, address_registers[0])]);
     movsxd(ADDROFFS_REG_1, dword[STATE + offsetof(UnitState, address_registers[1])]);
     mov(LOOPCOUNT_REG, dword[STATE + offsetof(UnitState, address_registers[2])]);
-    shl(ADDROFFS_REG_0, 4);
-    shl(ADDROFFS_REG_1, 4);
-    shl(LOOPCOUNT_REG, 4);
 
     // Load conditional code
     mov(COND0, byte[STATE + offsetof(UnitState, conditional_code[0])]);
@@ -933,7 +1023,7 @@ void JitShader::Compile(const std::array<u32, MAX_PROGRAM_CODE_LENGTH>* program_
     jmp(ABI_PARAM3);
 
     // Compile entire program
-    Compile_Block(static_cast<unsigned>(program_code->size()));
+    Compile_Block(static_cast<u32>(program_code->size()));
 
     // Free memory that's no longer needed
     program_code = nullptr;
@@ -1011,32 +1101,47 @@ Xbyak::Label JitShader::CompilePrelude_Log2() {
     jp(input_is_nan);
     jae(input_out_of_range);
 
-    // Split input
-    movd(eax, SRC1);
-    mov(edx, eax);
-    and_(eax, 0x7f800000);
-    and_(edx, 0x007fffff);
-    movss(SCRATCH, xword[rip + c0]); // Preload c0.
-    or_(edx, 0x3f800000);
-    movd(SRC1, edx);
-    // SRC1 now contains the mantissa of the input.
-    mulss(SCRATCH, SRC1);
-    shr(eax, 23);
-    sub(eax, 0x7f);
-    cvtsi2ss(SCRATCH2, eax);
-    // SCRATCH2 now contains the exponent of the input.
+    // Split input: SRC1=MANT[1,2) SCRATCH2=Exponent
+    if (host_caps.has(Cpu::tAVX512F | Cpu::tAVX512VL)) {
+        vgetexpss(SCRATCH2, SRC1, SRC1);
+        vgetmantss(SRC1, SRC1, SRC1, 0x0'0);
+    } else {
+        movd(eax, SRC1);
+        mov(edx, eax);
+        and_(eax, 0x7f800000);
+        and_(edx, 0x007fffff);
+        or_(edx, 0x3f800000);
+        movd(SRC1, edx);
+        // SRC1 now contains the mantissa of the input.
+        shr(eax, 23);
+        sub(eax, 0x7f);
+        cvtsi2ss(SCRATCH2, eax);
+        // SCRATCH2 now contains the exponent of the input.
+    }
+
+    movss(SCRATCH, xword[rip + c0]);
 
     // Complete computation of polynomial
-    addss(SCRATCH, xword[rip + c1]);
-    mulss(SCRATCH, SRC1);
-    addss(SCRATCH, xword[rip + c2]);
-    mulss(SCRATCH, SRC1);
-    addss(SCRATCH, xword[rip + c3]);
-    mulss(SCRATCH, SRC1);
-    subss(SRC1, ONE);
-    addss(SCRATCH, xword[rip + c4]);
-    mulss(SCRATCH, SRC1);
-    addss(SCRATCH2, SCRATCH);
+    if (host_caps.has(Cpu::tFMA)) {
+        vfmadd213ss(SCRATCH, SRC1, xword[rip + c1]);
+        vfmadd213ss(SCRATCH, SRC1, xword[rip + c2]);
+        vfmadd213ss(SCRATCH, SRC1, xword[rip + c3]);
+        vfmadd213ss(SCRATCH, SRC1, xword[rip + c4]);
+        subss(SRC1, ONE);
+        vfmadd231ss(SCRATCH2, SCRATCH, SRC1);
+    } else {
+        mulss(SCRATCH, SRC1);
+        addss(SCRATCH, xword[rip + c1]);
+        mulss(SCRATCH, SRC1);
+        addss(SCRATCH, xword[rip + c2]);
+        mulss(SCRATCH, SRC1);
+        addss(SCRATCH, xword[rip + c3]);
+        mulss(SCRATCH, SRC1);
+        subss(SRC1, ONE);
+        addss(SCRATCH, xword[rip + c4]);
+        mulss(SCRATCH, SRC1);
+        addss(SCRATCH2, SCRATCH);
+    }
 
     // Duplicate result across vector
     xorps(SRC1, SRC1); // break dependency chain
@@ -1083,33 +1188,69 @@ Xbyak::Label JitShader::CompilePrelude_Exp2() {
     // Handle edge cases
     ucomiss(SRC1, SRC1);
     jp(ret_label);
-    // Clamp to maximum range since we shift the value directly into the exponent.
-    minss(SRC1, xword[rip + input_max]);
-    maxss(SRC1, xword[rip + input_min]);
 
-    // Decompose input
-    movss(SCRATCH, SRC1);
-    movss(SCRATCH2, xword[rip + c0]); // Preload c0.
-    subss(SCRATCH, xword[rip + half]);
-    cvtss2si(eax, SCRATCH);
-    cvtsi2ss(SCRATCH, eax);
-    // SCRATCH now contains input rounded to the nearest integer.
-    add(eax, 0x7f);
-    subss(SRC1, SCRATCH);
-    // SRC1 contains input - round(input), which is in [-0.5, 0.5).
-    mulss(SCRATCH2, SRC1);
-    shl(eax, 23);
-    movd(SCRATCH, eax);
-    // SCRATCH contains 2^(round(input)).
+    // Decompose input:
+    // SCRATCH=2^round(input)
+    // SRC1=input-round(input) [-0.5, 0.5)
+    if (host_caps.has(Cpu::tAVX512F | Cpu::tAVX512VL)) {
+        // input - 0.5
+        vsubss(SCRATCH, SRC1, xword[rip + half]);
+
+        // trunc(input - 0.5)
+        vrndscaless(SCRATCH2, SCRATCH, SCRATCH, _MM_FROUND_TRUNC);
+
+        // SCRATCH = 1 * 2^(trunc(input - 0.5))
+        vscalefss(SCRATCH, ONE, SCRATCH2);
+
+        // SRC1 = input-trunc(input - 0.5)
+        vsubss(SRC1, SRC1, SCRATCH2);
+    } else {
+        // Clamp to maximum range since we shift the value directly into the exponent.
+        minss(SRC1, xword[rip + input_max]);
+        maxss(SRC1, xword[rip + input_min]);
+
+        if (host_caps.has(Cpu::tAVX)) {
+            vsubss(SCRATCH, SRC1, xword[rip + half]);
+        } else {
+            movss(SCRATCH, SRC1);
+            subss(SCRATCH, xword[rip + half]);
+        }
+
+        if (host_caps.has(Cpu::tSSE41)) {
+            roundss(SCRATCH, SCRATCH, _MM_FROUND_TRUNC);
+            cvtss2si(eax, SCRATCH);
+        } else {
+            cvtss2si(eax, SCRATCH);
+            cvtsi2ss(SCRATCH, eax);
+        }
+        // SCRATCH now contains input rounded to the nearest integer.
+        add(eax, 0x7f);
+        subss(SRC1, SCRATCH);
+        // SRC1 contains input - round(input), which is in [-0.5, 0.5).
+        shl(eax, 23);
+        movd(SCRATCH, eax);
+        // SCRATCH contains 2^(round(input)).
+    }
 
     // Complete computation of polynomial.
-    addss(SCRATCH2, xword[rip + c1]);
-    mulss(SCRATCH2, SRC1);
-    addss(SCRATCH2, xword[rip + c2]);
-    mulss(SCRATCH2, SRC1);
-    addss(SCRATCH2, xword[rip + c3]);
-    mulss(SRC1, SCRATCH2);
-    addss(SRC1, xword[rip + c4]);
+    movss(SCRATCH2, xword[rip + c0]);
+
+    if (host_caps.has(Cpu::tFMA)) {
+        vfmadd213ss(SCRATCH2, SRC1, xword[rip + c1]);
+        vfmadd213ss(SCRATCH2, SRC1, xword[rip + c2]);
+        vfmadd213ss(SCRATCH2, SRC1, xword[rip + c3]);
+        vfmadd213ss(SRC1, SCRATCH2, xword[rip + c4]);
+    } else {
+        mulss(SCRATCH2, SRC1);
+        addss(SCRATCH2, xword[rip + c1]);
+        mulss(SCRATCH2, SRC1);
+        addss(SCRATCH2, xword[rip + c2]);
+        mulss(SCRATCH2, SRC1);
+        addss(SCRATCH2, xword[rip + c3]);
+        mulss(SRC1, SCRATCH2);
+        addss(SRC1, xword[rip + c4]);
+    }
+
     mulss(SRC1, SCRATCH);
 
     // Duplicate result across vector
@@ -1122,3 +1263,5 @@ Xbyak::Label JitShader::CompilePrelude_Exp2() {
 }
 
 } // namespace Pica::Shader
+
+#endif // CITRA_ARCH(x86_64)

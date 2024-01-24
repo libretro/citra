@@ -14,7 +14,7 @@ SERIALIZE_EXPORT_IMPL(Service::DLP::DLP_SRVR)
 namespace Service::DLP {
 
 void DLP_SRVR::IsChild(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x0E, 1, 0);
+    IPC::RequestParser rp(ctx);
     rp.Skip(1, false);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
@@ -27,22 +27,22 @@ void DLP_SRVR::IsChild(Kernel::HLERequestContext& ctx) {
 DLP_SRVR::DLP_SRVR() : ServiceFramework("dlp:SRVR", 1) {
     static const FunctionInfo functions[] = {
         // clang-format off
-        {0x00010183, nullptr, "Initialize"},
-        {0x00020000, nullptr, "Finalize"},
-        {0x00030000, nullptr, "GetServerState"},
-        {0x00040000, nullptr, "GetEventDescription"},
-        {0x00050080, nullptr, "StartAccepting"},
-        {0x00060000, nullptr, "EndAccepting"},
-        {0x00070000, nullptr, "StartDistribution"},
-        {0x000800C0, nullptr, "SendWirelessRebootPassphrase"},
-        {0x00090040, nullptr, "AcceptClient"},
-        {0x000A0040, nullptr, "DisconnectClient"},
-        {0x000B0042, nullptr, "GetConnectingClients"},
-        {0x000C0040, nullptr, "GetClientInfo"},
-        {0x000D0040, nullptr, "GetClientState"},
-        {0x000E0040, &DLP_SRVR::IsChild, "IsChild"},
-        {0x000F0303, nullptr, "InitializeWithName"},
-        {0x00100000, nullptr, "GetDupNoticeNeed"},
+        {0x0001, nullptr, "Initialize"},
+        {0x0002, nullptr, "Finalize"},
+        {0x0003, nullptr, "GetServerState"},
+        {0x0004, nullptr, "GetEventDescription"},
+        {0x0005, nullptr, "StartAccepting"},
+        {0x0006, nullptr, "EndAccepting"},
+        {0x0007, nullptr, "StartDistribution"},
+        {0x0008, nullptr, "SendWirelessRebootPassphrase"},
+        {0x0009, nullptr, "AcceptClient"},
+        {0x000A, nullptr, "DisconnectClient"},
+        {0x000B, nullptr, "GetConnectingClients"},
+        {0x000C, nullptr, "GetClientInfo"},
+        {0x000D, nullptr, "GetClientState"},
+        {0x000E, &DLP_SRVR::IsChild, "IsChild"},
+        {0x000F, nullptr, "InitializeWithName"},
+        {0x0010, nullptr, "GetDupNoticeNeed"},
         // clang-format on
     };
 

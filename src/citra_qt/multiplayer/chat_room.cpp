@@ -20,7 +20,7 @@
 #include "citra_qt/multiplayer/chat_room.h"
 #include "citra_qt/multiplayer/message.h"
 #include "common/logging/log.h"
-#include "core/announce_multiplayer_session.h"
+#include "network/announce_multiplayer_session.h"
 #include "ui_chat_room.h"
 #ifdef ENABLE_WEB_SERVICE
 #include "web_service/web_backend.h"
@@ -390,7 +390,7 @@ void ChatRoom::SetPlayerList(const Network::RoomMember::MemberList& member_list)
                             return;
                         QPixmap pixmap;
                         if (!pixmap.loadFromData(reinterpret_cast<const u8*>(result.data()),
-                                                 result.size()))
+                                                 static_cast<u32>(result.size())))
                             return;
                         icon_cache[avatar_url] =
                             pixmap.scaled(48, 48, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);

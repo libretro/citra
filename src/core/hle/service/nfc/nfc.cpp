@@ -5,8 +5,6 @@
 #include "common/archives.h"
 #include "core/core.h"
 #include "core/hle/ipc_helpers.h"
-#include "core/hle/kernel/event.h"
-#include "core/hle/lock.h"
 #include "core/hle/service/nfc/nfc.h"
 #include "core/hle/service/nfc/nfc_m.h"
 #include "core/hle/service/nfc/nfc_u.h"
@@ -18,334 +16,684 @@ namespace Service::NFC {
 
 template <class Archive>
 void Module::serialize(Archive& ar, const unsigned int) {
-    ar& tag_in_range_event;
-    ar& tag_out_of_range_event;
-    ar& nfc_tag_state;
-    ar& nfc_status;
-    ar& amiibo_data;
-    ar& amiibo_in_range;
+    ar& nfc_mode;
+    ar& device;
 }
 SERIALIZE_IMPL(Module)
 
-struct TagInfo {
-    u16_le id_offset_size;
-    u8 unk1;
-    u8 unk2;
-    std::array<u8, 7> uuid;
-    INSERT_PADDING_BYTES(0x20);
-};
-static_assert(sizeof(TagInfo) == 0x2C, "TagInfo is an invalid size");
-
-struct AmiiboConfig {
-    u16_le lastwritedate_year;
-    u8 lastwritedate_month;
-    u8 lastwritedate_day;
-    u16_le write_counter;
-    std::array<u8, 3> characterID;
-    u8 series;
-    u16_le amiiboID;
-    u8 type;
-    u8 pagex4_byte3;
-    u16_le appdata_size;
-    INSERT_PADDING_BYTES(0x30);
-};
-static_assert(sizeof(AmiiboConfig) == 0x40, "AmiiboConfig is an invalid size");
-
-struct IdentificationBlockReply {
-    u16_le char_id;
-    u8 char_variant;
-    u8 series;
-    u16_le model_number;
-    u8 figure_type;
-    INSERT_PADDING_BYTES(0x2F);
-};
-static_assert(sizeof(IdentificationBlockReply) == 0x36,
-              "IdentificationBlockReply is an invalid size");
-
 void Module::Interface::Initialize(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x01, 1, 0);
-    u8 param = rp.Pop<u8>();
+    IPC::RequestParser rp(ctx);
+    const auto communication_mode = rp.PopEnum<CommunicationMode>();
+
+    LOG_INFO(Service_NFC, "called, communication_mode={}", communication_mode);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-    if (nfc->nfc_tag_state != TagState::NotInitialized) {
-        LOG_ERROR(Service_NFC, "Invalid TagState {}", nfc->nfc_tag_state);
-        rb.Push(ResultCode(ErrCodes::CommandInvalidForState, ErrorModule::NFC,
-                           ErrorSummary::InvalidState, ErrorLevel::Status));
+
+    if (nfc->nfc_mode != CommunicationMode::NotInitialized) {
+        rb.Push(ResultInvalidOperation);
         return;
     }
 
-    nfc->nfc_tag_state = TagState::NotScanning;
+    ResultCode result = RESULT_SUCCESS;
+    switch (communication_mode) {
+    case CommunicationMode::Ntag:
+    case CommunicationMode::Amiibo:
+        nfc->device->Initialize();
+        break;
+    case CommunicationMode::TrainTag:
+        LOG_ERROR(Service_NFC, "CommunicationMode  {} not implemented", communication_mode);
+        break;
+    default:
+        result = ResultInvalidArgumentValue;
+        break;
+    }
 
-    rb.Push(RESULT_SUCCESS);
-    LOG_WARNING(Service_NFC, "(STUBBED) called, param={}", param);
+    if (result.IsSuccess()) {
+        nfc->nfc_mode = communication_mode;
+    }
+
+    rb.Push(result);
 }
 
-void Module::Interface::Shutdown(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x02, 1, 0);
-    u8 param = rp.Pop<u8>();
+void Module::Interface::Finalize(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    const auto communication_mode = rp.PopEnum<CommunicationMode>();
 
-    nfc->nfc_tag_state = TagState::NotInitialized;
+    LOG_INFO(Service_NFC, "called, communication_mode={}", communication_mode);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-    rb.Push(RESULT_SUCCESS);
-    LOG_WARNING(Service_NFC, "(STUBBED) called, param={}", param);
+
+    if (nfc->nfc_mode != communication_mode) {
+        rb.Push(ResultInvalidOperation);
+        return;
+    }
+
+    ResultCode result = RESULT_SUCCESS;
+    switch (communication_mode) {
+    case CommunicationMode::Ntag:
+    case CommunicationMode::Amiibo:
+        nfc->device->Finalize();
+        break;
+    case CommunicationMode::TrainTag:
+        LOG_ERROR(Service_NFC, "CommunicationMode  {} not implemented", communication_mode);
+        break;
+    default:
+        result = ResultInvalidArgumentValue;
+        break;
+    }
+
+    if (result.IsSuccess()) {
+        nfc->nfc_mode = CommunicationMode::NotInitialized;
+    }
+
+    rb.Push(result);
 }
 
-void Module::Interface::StartCommunication(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x03, 0, 0);
+void Module::Interface::Connect(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
 
-    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-    rb.Push(RESULT_SUCCESS);
     LOG_WARNING(Service_NFC, "(STUBBED) called");
-}
-
-void Module::Interface::StopCommunication(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x04, 0, 0);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-    rb.Push(RESULT_SUCCESS);
-    LOG_WARNING(Service_NFC, "(STUBBED) called");
+    if (nfc->nfc_mode == CommunicationMode::TrainTag) {
+        LOG_ERROR(Service_NFC, "CommunicationMode  {} not implemented", nfc->nfc_mode);
+        rb.Push(RESULT_SUCCESS);
+        return;
+    }
+
+    // TODO: call start communication instead
+    const auto result = nfc->device->StartCommunication();
+    rb.Push(result);
 }
 
-void Module::Interface::StartTagScanning(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x05, 1, 0); // 0x00050040
+void Module::Interface::Disconnect(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_WARNING(Service_NFC, "(STUBBED) called");
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    if (nfc->nfc_mode == CommunicationMode::TrainTag) {
+        LOG_ERROR(Service_NFC, "CommunicationMode  {} not implemented", nfc->nfc_mode);
+        rb.Push(RESULT_SUCCESS);
+        return;
+    }
+
+    // TODO: call stop communication instead
+    const auto result = nfc->device->StopCommunication();
+    rb.Push(result);
+}
+
+void Module::Interface::StartDetection(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
     u16 in_val = rp.Pop<u16>();
 
+    LOG_INFO(Service_NFC, "called, in_val={:04x}", in_val);
+
+    ResultCode result = RESULT_SUCCESS;
+    switch (nfc->nfc_mode) {
+    case CommunicationMode::Ntag:
+    case CommunicationMode::Amiibo:
+        // in_val probably correlates to the tag protocol to be detected
+        result = nfc->device->StartDetection(TagProtocol::All);
+        break;
+    default:
+        result = ResultInvalidArgumentValue;
+        break;
+    }
+
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-    if (nfc->nfc_tag_state != TagState::NotScanning &&
-        nfc->nfc_tag_state != TagState::TagOutOfRange) {
-        LOG_ERROR(Service_NFC, "Invalid TagState {}", nfc->nfc_tag_state);
-        rb.Push(ResultCode(ErrCodes::CommandInvalidForState, ErrorModule::NFC,
-                           ErrorSummary::InvalidState, ErrorLevel::Status));
+    rb.Push(result);
+}
+
+void Module::Interface::StopDetection(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_INFO(Service_NFC, "called");
+
+    ResultCode result = RESULT_SUCCESS;
+    switch (nfc->nfc_mode) {
+    case CommunicationMode::Ntag:
+    case CommunicationMode::Amiibo:
+        result = nfc->device->StopDetection();
+        break;
+    case CommunicationMode::TrainTag:
+        LOG_ERROR(Service_NFC, "CommunicationMode  {} not implemented", nfc->nfc_mode);
+        break;
+    default:
+        result = ResultInvalidOperation;
+        break;
+    }
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(result);
+}
+
+void Module::Interface::Mount(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_INFO(Service_NFC, "called");
+
+    nfc->device->RescheduleTagRemoveEvent();
+
+    ResultCode result = RESULT_SUCCESS;
+    switch (nfc->nfc_mode) {
+    case CommunicationMode::Ntag:
+        result = nfc->device->Mount();
+        break;
+    case CommunicationMode::Amiibo:
+        result = nfc->device->MountAmiibo();
+        break;
+    default:
+        result = ResultInvalidOperation;
+        break;
+    }
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(result);
+}
+
+void Module::Interface::Unmount(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_INFO(Service_NFC, "called");
+
+    ResultCode result = RESULT_SUCCESS;
+    switch (nfc->nfc_mode) {
+    case CommunicationMode::Ntag:
+    case CommunicationMode::Amiibo:
+        result = nfc->device->ResetTagScanState();
+        break;
+    default:
+        result = ResultInvalidOperation;
+        break;
+    }
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(result);
+}
+
+void Module::Interface::Flush(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_INFO(Service_NFC, "called");
+
+    ResultCode result = RESULT_SUCCESS;
+    switch (nfc->nfc_mode) {
+    case CommunicationMode::Ntag:
+        LOG_ERROR(Service_NFC, "CommunicationMode  {} not implemented", nfc->nfc_mode);
+        break;
+    case CommunicationMode::Amiibo:
+        result = nfc->device->Flush();
+        break;
+    default:
+        result = ResultInvalidOperation;
+        break;
+    }
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(result);
+}
+
+void Module::Interface::GetActivateEvent(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_INFO(Service_NFC, "called");
+
+    if (nfc->nfc_mode == CommunicationMode::TrainTag) {
+        LOG_ERROR(Service_NFC, "CommunicationMode  {} not implemented", nfc->nfc_mode);
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(ResultInvalidOperation);
         return;
     }
 
-    nfc->nfc_tag_state = TagState::Scanning;
-    nfc->SyncTagState();
-
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
     rb.Push(RESULT_SUCCESS);
-    LOG_WARNING(Service_NFC, "(STUBBED) called, in_val={:04x}", in_val);
+    rb.PushCopyObjects(nfc->device->GetActivateEvent());
+}
+
+void Module::Interface::GetDeactivateEvent(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_INFO(Service_NFC, "called");
+
+    if (nfc->nfc_mode == CommunicationMode::TrainTag) {
+        LOG_ERROR(Service_NFC, "CommunicationMode  {} not implemented", nfc->nfc_mode);
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(ResultInvalidOperation);
+        return;
+    }
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
+    rb.Push(RESULT_SUCCESS);
+    rb.PushCopyObjects(nfc->device->GetDeactivateEvent());
+}
+
+void Module::Interface::GetStatus(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    DeviceState state = DeviceState::NotInitialized;
+
+    LOG_DEBUG(Service_NFC, "called");
+
+    if (nfc->nfc_mode == CommunicationMode::TrainTag) {
+        LOG_ERROR(Service_NFC, "CommunicationMode  {} not implemented", nfc->nfc_mode);
+    } else {
+        state = nfc->device->GetCurrentState();
+    }
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
+    rb.Push(RESULT_SUCCESS);
+    rb.PushEnum(state);
+}
+
+void Module::Interface::GetTargetConnectionStatus(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_DEBUG(Service_NFC, "called");
+
+    if (nfc->nfc_mode == CommunicationMode::TrainTag) {
+        LOG_ERROR(Service_NFC, "CommunicationMode  {} not implemented", nfc->nfc_mode);
+        IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
+        rb.Push(RESULT_SUCCESS);
+        rb.PushEnum(CommunicationState::Idle);
+        return;
+    }
+
+    CommunicationState status{};
+    const auto result = nfc->device->GetCommunicationStatus(status);
+    IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
+    rb.Push(result);
+    rb.PushEnum(status);
+}
+
+void Module::Interface::GetTagInfo2(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_INFO(Service_NFC, "called");
+
+    nfc->device->RescheduleTagRemoveEvent();
+
+    if (nfc->nfc_mode == CommunicationMode::TrainTag) {
+        LOG_ERROR(Service_NFC, "CommunicationMode  {} not implemented", nfc->nfc_mode);
+        IPC::RequestBuilder rb = rp.MakeBuilder(25, 0);
+        rb.Push(RESULT_SUCCESS);
+        rb.PushRaw<TagInfo2>({});
+        return;
+    }
+
+    TagInfo2 tag_info{};
+    const auto result = nfc->device->GetTagInfo2(tag_info);
+    IPC::RequestBuilder rb = rp.MakeBuilder(25, 0);
+    rb.Push(result);
+    rb.PushRaw<TagInfo2>(tag_info);
 }
 
 void Module::Interface::GetTagInfo(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x11, 0, 0);
+    IPC::RequestParser rp(ctx);
 
-    if (nfc->nfc_tag_state != TagState::TagInRange &&
-        nfc->nfc_tag_state != TagState::TagDataLoaded && nfc->nfc_tag_state != TagState::Unknown6) {
-        LOG_ERROR(Service_NFC, "Invalid TagState {}", nfc->nfc_tag_state);
-        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-        rb.Push(ResultCode(ErrCodes::CommandInvalidForState, ErrorModule::NFC,
-                           ErrorSummary::InvalidState, ErrorLevel::Status));
+    LOG_INFO(Service_NFC, "called");
+
+    nfc->device->RescheduleTagRemoveEvent();
+
+    if (nfc->nfc_mode == CommunicationMode::TrainTag) {
+        LOG_ERROR(Service_NFC, "CommunicationMode  {} not implemented", nfc->nfc_mode);
+        IPC::RequestBuilder rb = rp.MakeBuilder(12, 0);
+        rb.Push(RESULT_SUCCESS);
+        rb.PushRaw<TagInfo>({});
         return;
     }
 
     TagInfo tag_info{};
-    tag_info.uuid = nfc->amiibo_data.uuid;
-    tag_info.id_offset_size = tag_info.uuid.size();
-    tag_info.unk1 = 0x0;
-    tag_info.unk2 = 0x2;
-
+    const auto result = nfc->device->GetTagInfo(tag_info);
     IPC::RequestBuilder rb = rp.MakeBuilder(12, 0);
-    rb.Push(RESULT_SUCCESS);
+    rb.Push(result);
     rb.PushRaw<TagInfo>(tag_info);
+}
+
+void Module::Interface::GetConnectResult(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
+    rb.Push(RESULT_SUCCESS);
+    rb.Push(0);
     LOG_WARNING(Service_NFC, "(STUBBED) called");
 }
 
-void Module::Interface::GetAmiiboConfig(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x18, 0, 0);
+void Module::Interface::OpenApplicationArea(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    u32 access_id = rp.Pop<u32>();
 
-    AmiiboConfig amiibo_config{};
-    amiibo_config.lastwritedate_year = 2017;
-    amiibo_config.lastwritedate_month = 10;
-    amiibo_config.lastwritedate_day = 10;
-    amiibo_config.write_counter = 0x0;
-    std::memcpy(amiibo_config.characterID.data(), &nfc->amiibo_data.char_id,
-                sizeof(nfc->amiibo_data.char_id));
-    amiibo_config.series = nfc->amiibo_data.series;
-    amiibo_config.amiiboID = nfc->amiibo_data.model_number;
-    amiibo_config.type = nfc->amiibo_data.figure_type;
-    amiibo_config.pagex4_byte3 = 0x0;
-    amiibo_config.appdata_size = 0xD8;
+    LOG_INFO(Service_NFC, "called, access_id={}", access_id);
+
+    nfc->device->RescheduleTagRemoveEvent();
+
+    if (nfc->nfc_mode != CommunicationMode::Amiibo) {
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(ResultInvalidOperation);
+        return;
+    }
+
+    const auto result = nfc->device->OpenApplicationArea(access_id);
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(result);
+}
+
+void Module::Interface::CreateApplicationArea(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    u32 access_id = rp.Pop<u32>();
+    u32 size = rp.Pop<u32>();
+    std::vector<u8> buffer = rp.PopStaticBuffer();
+
+    LOG_INFO(Service_NFC, "called, size={}", size);
+
+    if (buffer.size() > size) {
+        buffer.resize(size);
+    }
+
+    if (nfc->nfc_mode != CommunicationMode::Amiibo) {
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(ResultInvalidOperation);
+        return;
+    }
+
+    const auto result = nfc->device->CreateApplicationArea(access_id, buffer);
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(result);
+}
+
+void Module::Interface::ReadApplicationArea(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    u32 size = rp.Pop<u32>();
+
+    LOG_INFO(Service_NFC, "called, size={}", size);
+
+    nfc->device->RescheduleTagRemoveEvent();
+
+    if (nfc->nfc_mode != CommunicationMode::Amiibo) {
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(ResultInvalidOperation);
+        return;
+    }
+
+    std::vector<u8> buffer(size);
+    const auto result = nfc->device->GetApplicationArea(buffer);
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
+    rb.Push(result);
+    rb.PushStaticBuffer(buffer, 0);
+}
+
+void Module::Interface::WriteApplicationArea(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    u32 size = rp.Pop<u32>();
+    std::vector<u8> tag_uuid_info = rp.PopStaticBuffer();
+    std::vector<u8> buffer = rp.PopStaticBuffer();
+
+    LOG_INFO(Service_NFC, "called, size={}", size);
+
+    if (buffer.size() > size) {
+        buffer.resize(size);
+    }
+
+    if (nfc->nfc_mode != CommunicationMode::Amiibo) {
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(ResultInvalidOperation);
+        return;
+    }
+
+    const auto result = nfc->device->SetApplicationArea(buffer);
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(result);
+}
+
+void Module::Interface::GetNfpRegisterInfo(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_INFO(Service_NFC, "called");
+
+    nfc->device->RescheduleTagRemoveEvent();
+
+    if (nfc->nfc_mode != CommunicationMode::Amiibo) {
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(ResultInvalidOperation);
+        return;
+    }
+
+    RegisterInfo settings_info{};
+    const auto result = nfc->device->GetRegisterInfo(settings_info);
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(43, 0);
+    rb.Push(result);
+    rb.PushRaw<RegisterInfo>(settings_info);
+}
+
+void Module::Interface::GetNfpCommonInfo(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_INFO(Service_NFC, "called");
+
+    nfc->device->RescheduleTagRemoveEvent();
+
+    if (nfc->nfc_mode != CommunicationMode::Amiibo) {
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(ResultInvalidOperation);
+        return;
+    }
+
+    CommonInfo amiibo_config{};
+    const auto result = nfc->device->GetCommonInfo(amiibo_config);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(17, 0);
-    rb.Push(RESULT_SUCCESS);
-    rb.PushRaw<AmiiboConfig>(amiibo_config);
-    LOG_WARNING(Service_NFC, "(STUBBED) called");
+    rb.Push(result);
+    rb.PushRaw<CommonInfo>(amiibo_config);
 }
 
-void Module::Interface::StopTagScanning(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x06, 0, 0);
+void Module::Interface::InitializeCreateInfo(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
 
-    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-    if (nfc->nfc_tag_state == TagState::NotInitialized ||
-        nfc->nfc_tag_state == TagState::NotScanning) {
-        LOG_ERROR(Service_NFC, "Invalid TagState {}", nfc->nfc_tag_state);
-        rb.Push(ResultCode(ErrCodes::CommandInvalidForState, ErrorModule::NFC,
-                           ErrorSummary::InvalidState, ErrorLevel::Status));
-        return;
-    }
+    LOG_INFO(Service_NFC, "called");
 
-    nfc->nfc_tag_state = TagState::NotScanning;
-
-    rb.Push(RESULT_SUCCESS);
-    LOG_DEBUG(Service_NFC, "called");
-}
-
-void Module::Interface::LoadAmiiboData(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x07, 0, 0);
-
-    // TODO(FearlessTobi): Add state checking when this function gets properly implemented
-
-    nfc->nfc_tag_state = TagState::TagDataLoaded;
-
-    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-    rb.Push(RESULT_SUCCESS);
-    LOG_WARNING(Service_NFC, "(STUBBED) called");
-}
-
-void Module::Interface::ResetTagScanState(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x08, 0, 0);
-
-    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-    if (nfc->nfc_tag_state != TagState::TagDataLoaded && nfc->nfc_tag_state != TagState::Unknown6) {
-        LOG_ERROR(Service_NFC, "Invalid TagState {}", nfc->nfc_tag_state);
-        rb.Push(ResultCode(ErrCodes::CommandInvalidForState, ErrorModule::NFC,
-                           ErrorSummary::InvalidState, ErrorLevel::Status));
-        return;
-    }
-
-    nfc->nfc_tag_state = TagState::TagInRange;
-    nfc->SyncTagState();
-
-    rb.Push(RESULT_SUCCESS);
-    LOG_DEBUG(Service_NFC, "called");
-}
-
-void Module::Interface::GetTagInRangeEvent(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x0B, 0, 0);
-
-    if (nfc->nfc_tag_state != TagState::NotScanning) {
-        LOG_ERROR(Service_NFC, "Invalid TagState {}", nfc->nfc_tag_state);
+    if (nfc->nfc_mode != CommunicationMode::Amiibo) {
         IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-        rb.Push(ResultCode(ErrCodes::CommandInvalidForState, ErrorModule::NFC,
-                           ErrorSummary::InvalidState, ErrorLevel::Status));
+        rb.Push(ResultInvalidOperation);
         return;
     }
 
-    IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
+    using InitialStruct = std::array<u8, 0x3c>;
+    InitialStruct empty{};
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(16, 0);
     rb.Push(RESULT_SUCCESS);
-    rb.PushCopyObjects(nfc->tag_in_range_event);
-    LOG_DEBUG(Service_NFC, "called");
+    rb.PushRaw<InitialStruct>(empty);
 }
 
-void Module::Interface::GetTagOutOfRangeEvent(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x0C, 0, 0);
+void Module::Interface::MountRom(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
 
-    if (nfc->nfc_tag_state != TagState::NotScanning) {
-        LOG_ERROR(Service_NFC, "Invalid TagState {}", nfc->nfc_tag_state);
-        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-        rb.Push(ResultCode(ErrCodes::CommandInvalidForState, ErrorModule::NFC,
-                           ErrorSummary::InvalidState, ErrorLevel::Status));
-        return;
+    LOG_INFO(Service_NFC, "called");
+
+    ResultCode result = RESULT_SUCCESS;
+    switch (nfc->nfc_mode) {
+    case CommunicationMode::Ntag:
+        result = nfc->device->PartiallyMount();
+        break;
+    case CommunicationMode::Amiibo:
+        result = nfc->device->PartiallyMountAmiibo();
+        break;
+    default:
+        result = ResultInvalidOperation;
+        break;
     }
-
-    IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
-    rb.Push(RESULT_SUCCESS);
-    rb.PushCopyObjects(nfc->tag_out_of_range_event);
-    LOG_DEBUG(Service_NFC, "called");
-}
-
-void Module::Interface::GetTagState(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x0D, 0, 0);
-
-    IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
-    rb.Push(RESULT_SUCCESS);
-    rb.PushEnum(nfc->nfc_tag_state);
-    LOG_DEBUG(Service_NFC, "called");
-}
-
-void Module::Interface::CommunicationGetStatus(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x0F, 0, 0);
-
-    IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
-    rb.Push(RESULT_SUCCESS);
-    rb.PushEnum(nfc->nfc_status);
-    LOG_DEBUG(Service_NFC, "(STUBBED) called");
-}
-
-void Module::Interface::Unknown0x1A(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x1A, 0, 0);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-    if (nfc->nfc_tag_state != TagState::TagInRange) {
-        LOG_ERROR(Service_NFC, "Invalid TagState {}", nfc->nfc_tag_state);
-        rb.Push(ResultCode(ErrCodes::CommandInvalidForState, ErrorModule::NFC,
-                           ErrorSummary::InvalidState, ErrorLevel::Status));
-        return;
-    }
-
-    nfc->nfc_tag_state = TagState::Unknown6;
-
-    rb.Push(RESULT_SUCCESS);
-    LOG_DEBUG(Service_NFC, "called");
+    rb.Push(result);
 }
 
 void Module::Interface::GetIdentificationBlock(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x1B, 0, 0);
+    IPC::RequestParser rp(ctx);
 
-    if (nfc->nfc_tag_state != TagState::TagDataLoaded && nfc->nfc_tag_state != TagState::Unknown6) {
-        LOG_ERROR(Service_NFC, "Invalid TagState {}", nfc->nfc_tag_state);
+    LOG_INFO(Service_NFC, "called");
+
+    nfc->device->RescheduleTagRemoveEvent();
+
+    if (nfc->nfc_mode != CommunicationMode::Amiibo) {
         IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
-        rb.Push(ResultCode(ErrCodes::CommandInvalidForState, ErrorModule::NFC,
-                           ErrorSummary::InvalidState, ErrorLevel::Status));
+        rb.Push(ResultInvalidOperation);
         return;
     }
 
-    IdentificationBlockReply identification_block_reply{};
-    identification_block_reply.char_id = nfc->amiibo_data.char_id;
-    identification_block_reply.char_variant = nfc->amiibo_data.char_variant;
-    identification_block_reply.series = nfc->amiibo_data.series;
-    identification_block_reply.model_number = nfc->amiibo_data.model_number;
-    identification_block_reply.figure_type = nfc->amiibo_data.figure_type;
+    ModelInfo model_info{};
+    const auto result = nfc->device->GetModelInfo(model_info);
 
-    IPC::RequestBuilder rb = rp.MakeBuilder(0x1F, 0);
+    IPC::RequestBuilder rb = rp.MakeBuilder(14, 0);
+    rb.Push(result);
+    rb.PushRaw<ModelInfo>(model_info);
+}
+
+void Module::Interface::Format(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    [[maybe_unused]] u32 unknown1 = rp.Pop<u32>();
+    [[maybe_unused]] u32 unknown2 = rp.Pop<u32>();
+    [[maybe_unused]] u32 unknown3 = rp.Pop<u32>();
+    [[maybe_unused]] std::vector<u8> buffer = rp.PopStaticBuffer();
+
+    const auto result = nfc->device->Format();
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(result);
+    LOG_WARNING(Service_NFC, "(STUBBED) called");
+}
+
+void Module::Interface::GetAdminInfo(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_INFO(Service_NFC, "called");
+
+    nfc->device->RescheduleTagRemoveEvent();
+
+    if (nfc->nfc_mode != CommunicationMode::Amiibo) {
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(ResultInvalidOperation);
+        return;
+    }
+
+    AdminInfo admin_info{};
+    const auto result = nfc->device->GetAdminInfo(admin_info);
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(17, 0);
+    rb.Push(result);
+    rb.PushRaw<AdminInfo>(admin_info);
+}
+
+void Module::Interface::GetEmptyRegisterInfo(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_INFO(Service_NFC, "called");
+
+    if (nfc->nfc_mode != CommunicationMode::Amiibo) {
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(ResultInvalidOperation);
+        return;
+    }
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(43, 0);
     rb.Push(RESULT_SUCCESS);
-    rb.PushRaw<IdentificationBlockReply>(identification_block_reply);
-    LOG_DEBUG(Service_NFC, "called");
+    rb.PushRaw<RegisterInfo>({});
+}
+
+void Module::Interface::SetRegisterInfo(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+    const auto register_info = rp.PopRaw<RegisterInfoPrivate>();
+
+    LOG_INFO(Service_NFC, "called");
+
+    if (nfc->nfc_mode != CommunicationMode::Amiibo) {
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(ResultInvalidOperation);
+        return;
+    }
+
+    const auto result = nfc->device->SetRegisterInfoPrivate(register_info);
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(result);
+}
+
+void Module::Interface::DeleteRegisterInfo(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_INFO(Service_NFC, "called");
+
+    if (nfc->nfc_mode != CommunicationMode::Amiibo) {
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(ResultInvalidOperation);
+        return;
+    }
+
+    const auto result = nfc->device->DeleteRegisterInfo();
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(result);
+}
+
+void Module::Interface::DeleteApplicationArea(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_INFO(Service_NFC, "called");
+
+    if (nfc->nfc_mode != CommunicationMode::Amiibo) {
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(ResultInvalidOperation);
+        return;
+    }
+
+    const auto result = nfc->device->DeleteApplicationArea();
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(result);
+}
+
+void Module::Interface::ExistsApplicationArea(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    if (nfc->nfc_mode != CommunicationMode::Amiibo) {
+        IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+        rb.Push(ResultInvalidOperation);
+        return;
+    }
+
+    bool has_application_area = false;
+    const auto result = nfc->device->ApplicationAreaExist(has_application_area);
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(0x2, 0);
+    rb.Push(result);
+    rb.Push(has_application_area);
+    LOG_INFO(Service_NFC, "called");
 }
 
 std::shared_ptr<Module> Module::Interface::GetModule() const {
     return nfc;
 }
 
-void Module::Interface::LoadAmiibo(const AmiiboData& amiibo_data) {
-    std::lock_guard lock(HLE::g_hle_lock);
-    nfc->amiibo_data = amiibo_data;
-    nfc->amiibo_in_range = true;
-    nfc->SyncTagState();
+bool Module::Interface::IsSearchingForAmiibos() {
+    const auto state = nfc->device->GetCurrentState();
+    return state == DeviceState::SearchingForTag;
+}
+
+bool Module::Interface::IsTagActive() {
+    const auto state = nfc->device->GetCurrentState();
+    return state == DeviceState::TagFound || state == DeviceState::TagMounted ||
+           state == DeviceState::TagPartiallyMounted;
+}
+
+bool Module::Interface::LoadAmiibo(const std::string& fullpath) {
+    return nfc->device->LoadAmiibo(fullpath);
 }
 
 void Module::Interface::RemoveAmiibo() {
-    std::lock_guard lock(HLE::g_hle_lock);
-    nfc->amiibo_in_range = false;
-    nfc->SyncTagState();
-}
-
-void Module::SyncTagState() {
-    if (amiibo_in_range &&
-        (nfc_tag_state == TagState::TagOutOfRange || nfc_tag_state == TagState::Scanning)) {
-        // TODO (wwylele): Should TagOutOfRange->TagInRange transition only happen on the same tag
-        // detected on Scanning->TagInRange?
-        nfc_tag_state = TagState::TagInRange;
-        tag_in_range_event->Signal();
-    } else if (!amiibo_in_range &&
-               (nfc_tag_state == TagState::TagInRange || nfc_tag_state == TagState::TagDataLoaded ||
-                nfc_tag_state == TagState::Unknown6)) {
-        // TODO (wwylele): If a tag is removed during TagDataLoaded/Unknown6, should this event
-        // signals early?
-        nfc_tag_state = TagState::TagOutOfRange;
-        tag_out_of_range_event->Signal();
-    }
+    nfc->device->UnloadAmiibo();
 }
 
 Module::Interface::Interface(std::shared_ptr<Module> nfc, const char* name, u32 max_session)
@@ -354,10 +702,7 @@ Module::Interface::Interface(std::shared_ptr<Module> nfc, const char* name, u32 
 Module::Interface::~Interface() = default;
 
 Module::Module(Core::System& system) {
-    tag_in_range_event =
-        system.Kernel().CreateEvent(Kernel::ResetType::OneShot, "NFC::tag_in_range_event");
-    tag_out_of_range_event =
-        system.Kernel().CreateEvent(Kernel::ResetType::OneShot, "NFC::tag_out_range_event");
+    device = std::make_shared<NfcDevice>(system);
 }
 
 Module::~Module() = default;

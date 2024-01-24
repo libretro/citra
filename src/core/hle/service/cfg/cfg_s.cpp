@@ -12,28 +12,31 @@ namespace Service::CFG {
 CFG_S::CFG_S(std::shared_ptr<Module> cfg) : Module::Interface(std::move(cfg), "cfg:s", 23) {
     static const FunctionInfo functions[] = {
         // cfg common
-        {0x00010082, &CFG_S::GetConfigInfoBlk2, "GetConfigInfoBlk2"},
-        {0x00020000, &CFG_S::D<&CFG_S::SecureInfoGetRegion, 0x0002>, "SecureInfoGetRegion"},
-        {0x00030040, &CFG_S::GenHashConsoleUnique, "GenHashConsoleUnique"},
-        {0x00040000, &CFG_S::GetRegionCanadaUSA, "GetRegionCanadaUSA"},
-        {0x00050000, &CFG_S::GetSystemModel, "GetSystemModel"},
-        {0x00060000, &CFG_S::GetModelNintendo2DS, "GetModelNintendo2DS"},
-        {0x00070040, nullptr, "WriteToFirstByteCfgSavegame"},
-        {0x00080080, nullptr, "GoThroughTable"},
-        {0x00090040, &CFG_S::GetCountryCodeString, "GetCountryCodeString"},
-        {0x000A0040, &CFG_S::GetCountryCodeID, "GetCountryCodeID"},
-        {0x000B0000, nullptr, "IsFangateSupported"},
+        // clang-format off
+        {0x0001, &CFG_S::GetConfig, "GetConfig"},
+        {0x0002, &CFG_S::GetRegion, "GetRegion"},
+        {0x0003, &CFG_S::GetTransferableId, "GetTransferableId"},
+        {0x0004, &CFG_S::IsCoppacsSupported, "IsCoppacsSupported"},
+        {0x0005, &CFG_S::GetSystemModel, "GetSystemModel"},
+        {0x0006, &CFG_S::GetModelNintendo2DS, "GetModelNintendo2DS"},
+        {0x0007, nullptr, "WriteToFirstByteCfgSavegame"},
+        {0x0008, nullptr, "TranslateCountryInfo"},
+        {0x0009, &CFG_S::GetCountryCodeString, "GetCountryCodeString"},
+        {0x000A, &CFG_S::GetCountryCodeID, "GetCountryCodeID"},
+        {0x000B, nullptr, "IsFangateSupported"},
         // cfg:s
-        {0x04010082, &CFG_S::D<&CFG_S::GetConfigInfoBlk8, 0x0401>, "GetConfigInfoBlk8"},
-        {0x04020082, &CFG_S::D<&CFG_S::SetConfigInfoBlk4, 0x0402>, "SetConfigInfoBlk4"},
-        {0x04030000, &CFG_S::D<&CFG_S::UpdateConfigNANDSavegame, 0x0403>,
-         "UpdateConfigNANDSavegame"},
-        {0x04040042, nullptr, "GetLocalFriendCodeSeedData"},
-        {0x04050000, nullptr, "GetLocalFriendCodeSeed"},
-        {0x04060000, &CFG_S::D<&CFG_S::SecureInfoGetRegion, 0x0406>, "SecureInfoGetRegion"},
-        {0x04070000, nullptr, "SecureInfoGetByte101"},
-        {0x04080042, nullptr, "SecureInfoGetSerialNo"},
-        {0x04090000, nullptr, "UpdateConfigBlk00040003"},
+        {0x0401, &CFG_S::GetSystemConfig, "GetSystemConfig"},
+        {0x0402, &CFG_S::SetSystemConfig, "SetSystemConfig"},
+        {0x0403, &CFG_S::UpdateConfigNANDSavegame, "UpdateConfigNANDSavegame"},
+        {0x0404, nullptr, "GetLocalFriendCodeSeedData"},
+        {0x0405, nullptr, "GetLocalFriendCodeSeed"},
+        {0x0406, &CFG_S::GetRegion, "GetRegion"},
+        {0x0407, &CFG_S::SecureInfoGetByte101, "SecureInfoGetByte101"},
+        {0x0408, nullptr, "SecureInfoGetSerialNo"},
+        {0x0409, nullptr, "UpdateConfigBlk00040003"},
+        {0x040D, &CFG_S::SetUUIDClockSequence, "SetUUIDClockSequence"},
+        {0x040E, &CFG_S::GetUUIDClockSequence, "GetUUIDClockSequence"},
+        // clang-format on
     };
     RegisterHandlers(functions);
 }

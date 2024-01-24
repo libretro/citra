@@ -13,6 +13,7 @@
 #include <QString>
 #include <QStyleOption>
 #include <QTime>
+#include <fmt/format.h>
 #include "citra_qt/loading_screen.h"
 #include "common/logging/log.h"
 #include "core/loader/loader.h"
@@ -62,6 +63,8 @@ QProgressBar::chunk {
 // Definitions for the differences in text and styling for each stage
 const static std::unordered_map<VideoCore::LoadCallbackStage, const char*> stage_translations{
     {VideoCore::LoadCallbackStage::Prepare, QT_TRANSLATE_NOOP("LoadingScreen", "Loading...")},
+    {VideoCore::LoadCallbackStage::Preload,
+     QT_TRANSLATE_NOOP("LoadingScreen", "Preloading Textures %1 / %2")},
     {VideoCore::LoadCallbackStage::Decompile,
      QT_TRANSLATE_NOOP("LoadingScreen", "Preparing Shaders %1 / %2")},
     {VideoCore::LoadCallbackStage::Build,
@@ -70,6 +73,7 @@ const static std::unordered_map<VideoCore::LoadCallbackStage, const char*> stage
 };
 const static std::unordered_map<VideoCore::LoadCallbackStage, const char*> progressbar_style{
     {VideoCore::LoadCallbackStage::Prepare, PROGRESSBAR_STYLE_PREPARE},
+    {VideoCore::LoadCallbackStage::Preload, PROGRESSBAR_STYLE_BUILD},
     {VideoCore::LoadCallbackStage::Decompile, PROGRESSBAR_STYLE_DECOMPILE},
     {VideoCore::LoadCallbackStage::Build, PROGRESSBAR_STYLE_BUILD},
     {VideoCore::LoadCallbackStage::Complete, PROGRESSBAR_STYLE_COMPLETE},
@@ -77,7 +81,7 @@ const static std::unordered_map<VideoCore::LoadCallbackStage, const char*> progr
 
 static QPixmap GetQPixmapFromSMDH(std::vector<u8>& smdh_data) {
     Loader::SMDH smdh;
-    memcpy(&smdh, smdh_data.data(), sizeof(Loader::SMDH));
+    std::memcpy(&smdh, smdh_data.data(), sizeof(Loader::SMDH));
 
     bool large = true;
     std::vector<u16> icon_data = smdh.GetIcon(large);
@@ -126,11 +130,17 @@ void LoadingScreen::Prepare(Loader::AppLoader& loader) {
     if (loader.ReadIcon(buffer) == Loader::ResultStatus::Success) {
         QPixmap icon = GetQPixmapFromSMDH(buffer);
         ui->icon->setPixmap(icon);
+    } else {
+        ui->icon->clear();
     }
     std::string title;
-    if (loader.ReadTitle(title) == Loader::ResultStatus::Success) {
-        ui->title->setText(tr("Now Loading\n%1").arg(QString::fromStdString(title)));
+    if (loader.ReadTitle(title) != Loader::ResultStatus::Success) {
+        u64 program_id;
+        if (loader.ReadProgramId(program_id) == Loader::ResultStatus::Success) {
+            title = fmt::format("{:016x}", program_id);
+        }
     }
+    ui->title->setText(tr("Now Loading\n%1").arg(QString::fromStdString(title)));
     eta_shown = false;
     OnLoadProgress(VideoCore::LoadCallbackStage::Prepare, 0, 0);
 }
@@ -177,16 +187,18 @@ void LoadingScreen::OnLoadProgress(VideoCore::LoadCallbackStage stage, std::size
         }
         const auto eta_mseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
             rolling_average * (total - value));
+        const auto limited_mseconds = std::max<long>(eta_mseconds.count(), 1000);
         estimate = tr("Estimated Time %1")
                        .arg(QTime(0, 0, 0, 0)
-                                .addMSecs(std::max<long>(eta_mseconds.count(), 1000))
+                                .addMSecs(static_cast<int>(limited_mseconds))
                                 .toString(QStringLiteral("mm:ss")));
     }
 
     // update labels and progress bar
     const auto& stg = tr(stage_translations.at(stage));
     if (stage == VideoCore::LoadCallbackStage::Decompile ||
-        stage == VideoCore::LoadCallbackStage::Build) {
+        stage == VideoCore::LoadCallbackStage::Build ||
+        stage == VideoCore::LoadCallbackStage::Preload) {
         ui->stage->setText(stg.arg(value).arg(total));
     } else {
         ui->stage->setText(stg);
@@ -198,7 +210,7 @@ void LoadingScreen::OnLoadProgress(VideoCore::LoadCallbackStage stage, std::size
 
 void LoadingScreen::paintEvent(QPaintEvent* event) {
     QStyleOption opt;
-    opt.init(this);
+    opt.initFrom(this);
     QPainter p(this);
     style()->drawPrimitive(QStyle::PE_Widget, &opt, &p, this);
     QWidget::paintEvent(event);

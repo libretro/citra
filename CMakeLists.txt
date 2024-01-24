@@ -1,9 +1,15 @@
-# CMake 3.8 required for 17 to be a valid value for CXX_STANDARD
-cmake_minimum_required(VERSION 3.8)
-if (${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.15)
-    # Don't override the warning flags in MSVC:
-    cmake_policy(SET CMP0092 NEW)
-endif ()
+# CMake 3.12 required for 20 to be a valid value for CXX_STANDARD
+cmake_minimum_required(VERSION 3.15)
+
+# Don't override the warning flags in MSVC:
+cmake_policy(SET CMP0092 NEW)
+# Enforce new LTO setting
+cmake_policy(SET CMP0069 NEW)
+# Honor visibility properties for all targets
+# Set the default so subdirectory cmake_minimum_required calls won't unset the policy.
+cmake_policy(SET CMP0063 NEW)
+set(CMAKE_POLICY_DEFAULT_CMP0063 NEW)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/externals/cmake-modules")
 include(DownloadExternals)
@@ -11,44 +17,121 @@ include(CMakeDependentOption)
 
 project(citra LANGUAGES C CXX ASM)
 
-# Set bundled sdl2/qt as dependent options.
-# OFF by default, but if ENABLE_SDL2 and MSVC are true then ON
-option(ENABLE_SDL2 "Enable the SDL2 frontend" ON)
-CMAKE_DEPENDENT_OPTION(CITRA_USE_BUNDLED_SDL2 "Download bundled SDL2 binaries" ON "ENABLE_SDL2;MSVC" OFF)
+option(ENABLE_LIBRETRO "Enable the LibRetro frontend" ON)
 
-option(ENABLE_QT "Enable the Qt frontend" ON)
-option(ENABLE_QT_TRANSLATION "Enable translations for the Qt frontend" OFF)
-CMAKE_DEPENDENT_OPTION(CITRA_USE_BUNDLED_QT "Download bundled Qt binaries" ON "ENABLE_QT;MSVC" OFF)
-
-option(ENABLE_LIBRETRO "Enable the LibRetro frontend" OFF)
-
-option(ENABLE_WEB_SERVICE "Enable web services (telemetry, etc.)" ON)
-
-option(ENABLE_CUBEB "Enables the cubeb audio backend" OFF)
-
-option(ENABLE_FFMPEG_AUDIO_DECODER "Enable FFmpeg audio (AAC) decoder" OFF)
-option(ENABLE_FFMPEG_VIDEO_DUMPER "Enable FFmpeg video dumper" OFF)
-
-if (ENABLE_FFMPEG_AUDIO_DECODER OR ENABLE_FFMPEG_VIDEO_DUMPER)
-    set(ENABLE_FFMPEG ON)
+# Some submodules like to pick their own default build type if not specified.
+# Make sure we default to Release build type always, unless the generator has custom types.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build." FORCE)
 endif()
 
-CMAKE_DEPENDENT_OPTION(CITRA_USE_BUNDLED_FFMPEG "Download bundled FFmpeg binaries" ON "ENABLE_FFMPEG;MSVC" OFF)
+if (APPLE)
+    # Silence warnings on empty objects, for example when platform-specific code is #ifdef'd out.
+    set(CMAKE_C_ARCHIVE_CREATE "<CMAKE_AR> Scr <TARGET> <LINK_FLAGS> <OBJECTS>")
+    set(CMAKE_CXX_ARCHIVE_CREATE "<CMAKE_AR> Scr <TARGET> <LINK_FLAGS> <OBJECTS>")
+    set(CMAKE_C_ARCHIVE_FINISH "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
+    set(CMAKE_CXX_ARCHIVE_FINISH "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
+
+    if (IOS)
+        # Minimum iOS 14
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0")
+
+        # Enable searching CMAKE_PREFIX_PATH for bundled dependencies.
+        set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY BOTH)
+        set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH)
+        set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
+    else()
+        # Minimum macOS 11
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0")
+    endif()
+endif()
+
+if (CMAKE_BUILD_TYPE STREQUAL Debug)
+    set(IS_DEBUG_BUILD ON)
+    set(IS_RELEASE_BUILD OFF)
+else()
+    set(IS_DEBUG_BUILD OFF)
+    set(IS_RELEASE_BUILD ON)
+endif()
+
+# LTO takes too much memory and time using MSVC.
+if (NOT MSVC AND IS_RELEASE_BUILD)
+    set(DEFAULT_ENABLE_LTO ON)
+else()
+    set(DEFAULT_ENABLE_LTO OFF)
+endif()
+
+option(ENABLE_SDL2 "Enable using SDL2" OFF)
+CMAKE_DEPENDENT_OPTION(ENABLE_SDL2_FRONTEND "Enable the SDL2 frontend" ON "ENABLE_SDL2;NOT ANDROID AND NOT IOS" OFF)
+option(USE_SYSTEM_SDL2 "Use the system SDL2 lib (instead of the bundled one)" OFF)
+
+# Set bundled qt as dependent options.
+option(ENABLE_QT "Enable the Qt frontend" ON)
+option(ENABLE_QT_TRANSLATION "Enable translations for the Qt frontend" OFF)
+CMAKE_DEPENDENT_OPTION(ENABLE_QT_UPDATER "Enable built-in updater for the Qt frontend" ON "NOT IOS" OFF)
+
+CMAKE_DEPENDENT_OPTION(ENABLE_TESTS "Enable generating tests executable" ON "NOT IOS" OFF)
+CMAKE_DEPENDENT_OPTION(ENABLE_DEDICATED_ROOM "Enable generating dedicated room executable" ON "NOT ANDROID AND NOT IOS" OFF)
+
+option(ENABLE_WEB_SERVICE "Enable web services (telemetry, etc.)" ON)
+option(ENABLE_SCRIPTING "Enable RPC server for scripting" ON)
+
+# TODO: cubeb currently causes issues on macOS, see: https://github.com/mozilla/cubeb/issues/771
+CMAKE_DEPENDENT_OPTION(ENABLE_CUBEB "Enables the cubeb audio backend" ON "NOT APPLE" OFF)
+option(ENABLE_OPENAL "Enables the OpenAL audio backend" ON)
+
+CMAKE_DEPENDENT_OPTION(ENABLE_LIBUSB "Enable libusb for GameCube Adapter support" ON "NOT IOS" OFF)
 
 option(USE_DISCORD_PRESENCE "Enables Discord Rich Presence" OFF)
 
-CMAKE_DEPENDENT_OPTION(ENABLE_MF "Use Media Foundation decoder (preferred over FFmpeg)" ON "WIN32" OFF)
+CMAKE_DEPENDENT_OPTION(CITRA_ENABLE_BUNDLE_TARGET "Enable the distribution bundling target." ON "NOT ANDROID AND NOT IOS" OFF)
 
-CMAKE_DEPENDENT_OPTION(COMPILE_WITH_DWARF "Add DWARF debugging information" ON "MINGW" OFF)
+# Compile options
+CMAKE_DEPENDENT_OPTION(COMPILE_WITH_DWARF "Add DWARF debugging information" ${IS_DEBUG_BUILD} "MINGW" OFF)
+option(ENABLE_LTO "Enable link time optimization" ${DEFAULT_ENABLE_LTO})
+option(CITRA_USE_PRECOMPILED_HEADERS "Use precompiled headers" ON)
+option(CITRA_WARNINGS_AS_ERRORS "Enable warnings as errors" ON)
 
-option(USE_SYSTEM_BOOST "Use the system Boost libs (instead of the bundled ones)" OFF)
+include(CitraHandleSystemLibs)
 
-CMAKE_DEPENDENT_OPTION(ENABLE_FDK "Use FDK AAC decoder" OFF "NOT ENABLE_FFMPEG_AUDIO_DECODER;NOT ENABLE_MF" OFF)
+if (CITRA_USE_PRECOMPILED_HEADERS)
+    message(STATUS "Using Precompiled Headers.")
+    set(CMAKE_PCH_INSTANTIATE_TEMPLATES ON)
+
+    # This ensures that pre-compiled headers won't invalidate build caches for every fresh checkout.
+    if(NOT MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        list(APPEND CMAKE_CXX_COMPILE_OPTIONS_CREATE_PCH -Xclang -fno-pch-timestamp)
+    endif()
+endif()
 
 if(NOT EXISTS ${PROJECT_SOURCE_DIR}/.git/hooks/pre-commit)
     message(STATUS "Copying pre-commit hook")
     file(COPY hooks/pre-commit
         DESTINATION ${PROJECT_SOURCE_DIR}/.git/hooks)
+endif()
+
+# Use ccache for android if available
+# =======================================================================
+if (NOT $ENV{NDK_CCACHE} EQUAL "")
+    set(CCACHE_EXE $ENV{NDK_CCACHE})
+    set(CMAKE_C_COMPILER_LAUNCHER ${CCACHE_EXE})
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_EXE})
+endif()
+
+# Check for LTO support
+# =======================================================================
+if (ENABLE_LTO)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT supported OUTPUT error_msg)
+
+    if (supported)
+        message(STATUS "LTO enabled")
+    else()
+        message(STATUS "LTO enabled but is unavailable, disabling: ${error_msg}")
+        set(ENABLE_LTO OFF)
+    endif()
+else()
+    message(STATUS "LTO disabled")
 endif()
 
 # Sanity check : Check that all submodules are present
@@ -65,7 +148,10 @@ function(check_submodules_present)
         endif()
     endforeach()
 endfunction()
-check_submodules_present()
+if (EXISTS "${PROJECT_SOURCE_DIR}/.git/objects")
+    # only check submodules when source is obtained via Git
+    check_submodules_present()
+endif()
 
 configure_file(${PROJECT_SOURCE_DIR}/dist/compatibility_list/compatibility_list.qrc
                ${PROJECT_BINARY_DIR}/dist/compatibility_list/compatibility_list.qrc
@@ -98,29 +184,27 @@ function(detect_architecture symbol arch)
         # CMake's crazy scope rules will keep it defined
         if (ARCHITECTURE_${arch})
             set(ARCHITECTURE "${arch}" PARENT_SCOPE)
-            set(ARCHITECTURE_${arch} 1 PARENT_SCOPE)
-            add_definitions(-DARCHITECTURE_${arch}=1)
         endif()
     endif()
 endfunction()
 
 if (NOT ENABLE_GENERIC)
-    if (MSVC)
+    if (CMAKE_OSX_ARCHITECTURES)
+        set(ARCHITECTURE "${CMAKE_OSX_ARCHITECTURES}")
+    elseif (MSVC)
         detect_architecture("_M_AMD64" x86_64)
         detect_architecture("_M_IX86" x86)
-        detect_architecture("_M_ARM" ARM)
-        detect_architecture("_M_ARM64" ARM64)
+        detect_architecture("_M_ARM" arm)
+        detect_architecture("_M_ARM64" arm64)
     else()
         detect_architecture("__x86_64__" x86_64)
         detect_architecture("__i386__" x86)
-        detect_architecture("__arm__" ARM)
-        detect_architecture("__aarch64__" ARM64)
+        detect_architecture("__arm__" arm)
+        detect_architecture("__aarch64__" arm64)
     endif()
 endif()
 if (NOT DEFINED ARCHITECTURE)
     set(ARCHITECTURE "GENERIC")
-    set(ARCHITECTURE_GENERIC 1)
-    add_definitions(-DARCHITECTURE_GENERIC=1)
 endif()
 message(STATUS "Target architecture: ${ARCHITECTURE}")
 
@@ -128,8 +212,16 @@ message(STATUS "Target architecture: ${ARCHITECTURE}")
 # Configure C++ standard
 # ===========================
 
-set(CMAKE_CXX_STANDARD 17)
+# boost asio's concept usage doesn't play nicely with some compilers yet.
+add_definitions(-DBOOST_ASIO_DISABLE_CONCEPTS)
+# boost can have issues compiling with C++17 and up on newer versions of Clang.
+add_definitions(-DBOOST_NO_CXX98_FUNCTION_BASE)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Apply consistent visibility settings.
+set(CMAKE_CXX_VISIBILITY_PRESET default)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN NO)
 
 # set up output paths for executable binaries
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin/$<CONFIG>)
@@ -215,123 +307,48 @@ add_definitions(-DEMU_ARCH_BITS=${EMU_ARCH_BITS})
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-if (ENABLE_SDL2)
-    if (CITRA_USE_BUNDLED_SDL2)
-        # Detect toolchain and platform
-        if ((MSVC_VERSION GREATER_EQUAL 1910 AND MSVC_VERSION LESS 1930) AND ARCHITECTURE_x86_64)
-            set(SDL2_VER "SDL2-2.0.16")
-        else()
-            message(FATAL_ERROR "No bundled SDL2 binaries for your toolchain. Disable CITRA_USE_BUNDLED_SDL2 and provide your own.")
-        endif()
-
-        if (DEFINED SDL2_VER)
-            download_bundled_external("sdl2/" ${SDL2_VER} SDL2_PREFIX)
-        endif()
-
-        set(SDL2_FOUND YES)
-        set(SDL2_INCLUDE_DIR "${SDL2_PREFIX}/include" CACHE PATH "Path to SDL2 headers")
-        set(SDL2_LIBRARY "${SDL2_PREFIX}/lib/x64/SDL2.lib" CACHE PATH "Path to SDL2 library")
-        set(SDL2_DLL_DIR "${SDL2_PREFIX}/lib/x64/" CACHE PATH "Path to SDL2.dll")
-    else()
-        find_package(SDL2 REQUIRED)
-    endif()
-
-    if (SDL2_FOUND)
-        # TODO(yuriks): Make FindSDL2.cmake export an IMPORTED library instead
-        add_library(SDL2 INTERFACE)
-        target_link_libraries(SDL2 INTERFACE "${SDL2_LIBRARY}")
-        target_include_directories(SDL2 INTERFACE "${SDL2_INCLUDE_DIR}")
-    endif()
-else()
-    set(SDL2_FOUND NO)
-endif()
-
 if (ENABLE_QT)
-    if (CITRA_USE_BUNDLED_QT)
-        if ((MSVC_VERSION GREATER_EQUAL 1910 AND MSVC_VERSION LESS 1930) AND ARCHITECTURE_x86_64)
-            set(QT_VER qt-5.10.0-msvc2017_64)
-        else()
-            message(FATAL_ERROR "No bundled Qt binaries for your toolchain. Disable CITRA_USE_BUNDLED_QT and provide your own.")
-        endif()
-
-        if (DEFINED QT_VER)
-            download_bundled_external("qt/" ${QT_VER} QT_PREFIX)
-        endif()
-
-        set(QT_PREFIX_HINT HINTS "${QT_PREFIX}")
-    else()
-        # Passing an empty HINTS seems to cause default system paths to get ignored in CMake 2.8 so
-        # make sure to not pass anything if we don't have one.
-        set(QT_PREFIX_HINT)
+    if (NOT USE_SYSTEM_QT)
+        download_qt(6.6.0)
     endif()
 
-    find_package(Qt5 REQUIRED COMPONENTS Widgets Multimedia ${QT_PREFIX_HINT})
+    find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia Concurrent)
+
+    if (UNIX AND NOT APPLE)
+        find_package(Qt6 REQUIRED COMPONENTS DBus)
+    endif()
 
     if (ENABLE_QT_TRANSLATION)
-        find_package(Qt5 REQUIRED COMPONENTS LinguistTools ${QT_PREFIX_HINT})
+        find_package(Qt6 REQUIRED COMPONENTS LinguistTools)
     endif()
 endif()
 
-# Ensure libusb is properly configured (based on dolphin libusb include)
-if(NOT APPLE)
-    include(FindPkgConfig)
-    find_package(LibUSB)
-endif()
-if (NOT LIBUSB_FOUND)
-    add_subdirectory(externals/libusb)
-    set(LIBUSB_INCLUDE_DIR "")
-    set(LIBUSB_LIBRARIES usb)
-endif()
+# Use system tsl::robin_map if available (otherwise we fallback to version bundled with dynarmic)
+find_package(tsl-robin-map QUIET)
 
-if (ENABLE_FFMPEG)
-    if (CITRA_USE_BUNDLED_FFMPEG)
-        if ((MSVC_VERSION GREATER_EQUAL 1910 AND MSVC_VERSION LESS 1930) AND ARCHITECTURE_x86_64)
-            set(FFmpeg_VER "ffmpeg-4.1-win64")
-        else()
-            message(FATAL_ERROR "No bundled FFmpeg binaries for your toolchain. Disable CITRA_USE_BUNDLED_FFMPEG and provide your own.")
-        endif()
-
-        if (DEFINED FFmpeg_VER)
-            download_bundled_external("ffmpeg/" ${FFmpeg_VER} FFmpeg_PREFIX)
-            set(FFMPEG_DIR "${FFmpeg_PREFIX}")
-        endif()
-    endif()
-
-    if (ENABLE_FFMPEG_VIDEO_DUMPER)
-        find_package(FFmpeg REQUIRED COMPONENTS avcodec avformat avutil swscale swresample)
-    else()
-        find_package(FFmpeg REQUIRED COMPONENTS avcodec)
-    endif()
-    if ("${FFmpeg_avcodec_VERSION}" VERSION_LESS "57.48.101")
-        message(FATAL_ERROR "Found version for libavcodec is too low. The required version is at least 57.48.101 (included in FFmpeg 3.1 and later).")
-    endif()
-endif()
-
-if (ENABLE_FFMPEG_VIDEO_DUMPER)
-    add_definitions(-DENABLE_FFMPEG_VIDEO_DUMPER)
-endif()
-
-if (ENABLE_FDK)
-    find_library(FDK_AAC fdk-aac DOC "The path to fdk_aac library")
-    if(FDK_AAC STREQUAL "FDK_AAC-NOTFOUND")
-        message(FATAL_ERROR "fdk_aac library not found.")
-    endif()
-endif()
 # Platform-specific library requirements
 # ======================================
 
 if (APPLE)
-    # Umbrella framework for everything GUI-related
-    find_library(COCOA_LIBRARY Cocoa)
-    find_library(AVFOUNDATION_LIBRARY AVFoundation)
-    set(PLATFORM_LIBRARIES ${COCOA_LIBRARY} ${AVFOUNDATION_LIBRARY} ${IOKIT_LIBRARY} ${COREVIDEO_LIBRARY})
+    if (NOT USE_SYSTEM_MOLTENVK)
+        download_moltenvk()
+    endif()
+    find_library(MOLTENVK_LIBRARY MoltenVK REQUIRED)
+    message(STATUS "Using MoltenVK at ${MOLTENVK_LIBRARY}.")
+
+    if (NOT IOS)
+        # Umbrella framework for everything GUI-related
+        find_library(COCOA_LIBRARY Cocoa REQUIRED)
+    endif()
+
+    find_library(AVFOUNDATION_LIBRARY AVFoundation REQUIRED)
+    find_library(IOSURFACE_LIBRARY IOSurface REQUIRED)
+    set(PLATFORM_LIBRARIES ${COCOA_LIBRARY} ${AVFOUNDATION_LIBRARY} ${IOSURFACE_LIBRARY} ${MOLTENVK_LIBRARY})
 elseif (WIN32)
-    # WSAPoll and SHGetKnownFolderPath (AppData/Roaming) didn't exist before WinNT 6.x (Vista)
-    add_definitions(-D_WIN32_WINNT=0x0600 -DWINVER=0x0600)
     set(PLATFORM_LIBRARIES winmm ws2_32)
     if (MINGW)
         # PSAPI is the Process Status API
-        set(PLATFORM_LIBRARIES ${PLATFORM_LIBRARIES} psapi imm32 version)
+        set(PLATFORM_LIBRARIES ${PLATFORM_LIBRARIES} psapi imm32 version crypt32)
     endif()
 elseif (CMAKE_SYSTEM_NAME MATCHES "^(Linux|kFreeBSD|GNU|SunOS)$")
     set(PLATFORM_LIBRARIES rt)
@@ -341,7 +358,7 @@ endif()
 # against all the src files. This should be used before making a pull request.
 # =======================================================================
 
-set(CLANG_FORMAT_POSTFIX "-10")
+set(CLANG_FORMAT_POSTFIX "-15")
 find_program(CLANG_FORMAT
     NAMES clang-format${CLANG_FORMAT_POSTFIX}
           clang-format
@@ -369,13 +386,15 @@ if (CLANG_FORMAT)
     set(SRCS ${PROJECT_SOURCE_DIR}/src)
     set(CCOMMENT "Running clang format against all the .h and .cpp files in src/")
     if (WIN32)
-        add_custom_target(clang-format
-            COMMAND powershell.exe -Command "Get-ChildItem '${SRCS}/*' -Include *.cpp,*.h,*.mm -Recurse | Foreach {&'${CLANG_FORMAT}' -i $_.fullname}"
-            COMMENT ${CCOMMENT})
-    elseif(MINGW)
-        add_custom_target(clang-format
-            COMMAND find `cygpath -u ${SRCS}` -iname *.h -o -iname *.cpp -o -iname *.mm | xargs `cygpath -u ${CLANG_FORMAT}` -i
-            COMMENT ${CCOMMENT})
+        if(MINGW)
+            add_custom_target(clang-format
+                COMMAND find `cygpath -u ${SRCS}` -iname *.h -o -iname *.cpp -o -iname *.mm | xargs `cygpath -u ${CLANG_FORMAT}` -i
+                COMMENT ${CCOMMENT})
+        else()
+            add_custom_target(clang-format
+                COMMAND powershell.exe -Command "Get-ChildItem '${SRCS}/*' -Include *.cpp,*.h,*.mm -Recurse | Foreach {&'${CLANG_FORMAT}' -i $_.fullname}"
+                COMMENT ${CCOMMENT})
+        endif()
     else()
         add_custom_target(clang-format
             COMMAND find ${SRCS} -iname *.h -o -iname *.cpp -o -iname *.mm | xargs ${CLANG_FORMAT} -i
@@ -412,13 +431,6 @@ function(get_timestamp _var)
     set(${_var} "${timestamp}" PARENT_SCOPE)
 endfunction()
 
-# Prevent boost from linking against libs when building
-add_definitions(-DBOOST_ERROR_CODE_HEADER_ONLY
-    -DBOOST_SYSTEM_NO_LIB
-    -DBOOST_DATE_TIME_NO_LIB
-    -DBOOST_REGEX_NO_LIB
-)
-
 # generate git/build information
 include(GetGitRevisionDescription)
 get_git_head_revision(GIT_REF_SPEC GIT_REV)
@@ -426,19 +438,48 @@ git_describe(GIT_DESC --always --long --dirty)
 git_branch_name(GIT_BRANCH)
 get_timestamp(BUILD_DATE)
 
-if (NOT USE_SYSTEM_BOOST)
-    add_definitions( -DBOOST_ALL_NO_LIB )
+# Boost
+# Prevent boost from linking against libs when building
+add_definitions(-DBOOST_ERROR_CODE_HEADER_ONLY
+    -DBOOST_SYSTEM_NO_LIB
+    -DBOOST_DATE_TIME_NO_LIB
+    -DBOOST_REGEX_NO_LIB
+)
+if (USE_SYSTEM_BOOST)
+    find_package(Boost 1.70.0 COMPONENTS container locale serialization iostreams REQUIRED)
 endif()
 
 enable_testing()
 add_subdirectory(externals)
 
-# Boost
-if (USE_SYSTEM_BOOST)
-    find_package(Boost 1.70.0 COMPONENTS serialization REQUIRED)
-else()
+# Boost (bundled)
+if (NOT USE_SYSTEM_BOOST)
+    add_definitions( -DBOOST_ALL_NO_LIB )
     add_library(Boost::boost ALIAS boost)
     add_library(Boost::serialization ALIAS boost_serialization)
+    add_library(Boost::iostreams ALIAS boost_iostreams)
+endif()
+
+# SDL2
+if (ENABLE_SDL2 AND USE_SYSTEM_SDL2)
+    find_package(SDL2 REQUIRED)
+    add_library(SDL2 INTERFACE)
+    target_link_libraries(SDL2 INTERFACE "${SDL2_LIBRARY}")
+    target_include_directories(SDL2 INTERFACE "${SDL2_INCLUDE_DIR}")
+    add_library(SDL2::SDL2 ALIAS SDL2)
+endif()
+
+if (ENABLE_LIBUSB AND USE_SYSTEM_LIBUSB)
+    include(FindPkgConfig)
+    find_package(LibUSB)
+endif()
+
+if (USE_SYSTEM_SOUNDTOUCH)
+    include(FindPkgConfig)
+    find_package(SoundTouch REQUIRED)
+    add_library(SoundTouch INTERFACE)
+    target_link_libraries(SoundTouch INTERFACE "${SOUNDTOUCH_LIBRARIES}")
+    target_include_directories(SoundTouch INTERFACE "${SOUNDTOUCH_INCLUDE_DIRS}")
 endif()
 
 add_subdirectory(src)
@@ -452,6 +493,20 @@ else()
     set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT citra)
 endif()
 
+# Create target for outputting distributable bundles.
+if (CITRA_ENABLE_BUNDLE_TARGET)
+    include(BundleTarget)
+    if (ENABLE_SDL2_FRONTEND)
+        bundle_target(citra)
+    endif()
+    if (ENABLE_QT)
+        bundle_target(citra-qt)
+    endif()
+    if (ENABLE_DEDICATED_ROOM)
+        bundle_target(citra-room)
+    endif()
+endif()
+
 # Installation instructions
 # =========================
 
@@ -460,7 +515,7 @@ endif()
 # http://standards.freedesktop.org/icon-theme-spec/icon-theme-spec-latest.html
 # http://standards.freedesktop.org/shared-mime-info-spec/shared-mime-info-spec-latest.html
 if(ENABLE_QT AND UNIX AND NOT APPLE)
-    install(FILES "${PROJECT_SOURCE_DIR}/dist/citra.desktop"
+    install(FILES "${PROJECT_SOURCE_DIR}/dist/citra-qt.desktop"
             DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications")
     install(FILES "${PROJECT_SOURCE_DIR}/dist/citra.svg"
             DESTINATION "${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/scalable/apps")

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <array>
+#include <span>
 #include <vector>
 #include "common/common_funcs.h"
 #include "common/common_types.h"
@@ -17,7 +18,7 @@ namespace Loader {
  * @param smdh_data data buffer to test
  * @return bool test result
  */
-bool IsValidSMDH(const std::vector<u8>& smdh_data);
+bool IsValidSMDH(std::span<const u8> smdh_data);
 
 /// SMDH data structure that contains titles, icons etc. See https://www.3dbrew.org/wiki/SMDH
 struct SMDH {
@@ -26,9 +27,9 @@ struct SMDH {
     INSERT_PADDING_BYTES(2);
 
     struct Title {
-        std::array<u16, 0x40> short_title;
-        std::array<u16, 0x80> long_title;
-        std::array<u16, 0x40> publisher;
+        std::array<char16_t, 0x40> short_title;
+        std::array<char16_t, 0x80> long_title;
+        std::array<char16_t, 0x40> publisher;
     };
     std::array<Title, 16> titles;
 
@@ -72,6 +73,10 @@ struct SMDH {
         Taiwan = 6,
     };
 
+    enum Flags {
+        Visible = 1 << 0,
+    };
+
     /**
      * Gets game icon from SMDH
      * @param large If true, returns large icon (48x48), otherwise returns small icon (24x24)
@@ -84,14 +89,14 @@ struct SMDH {
      * @param language title language
      * @return UTF-16 array of the short title
      */
-    std::array<u16, 0x40> GetShortTitle(Loader::SMDH::TitleLanguage language) const;
+    std::array<char16_t, 0x40> GetShortTitle(Loader::SMDH::TitleLanguage language) const;
 
     /**
      * Gets the long game title from SMDH
      * @param language title language
      * @return UTF-16 array of the long title
      */
-    std::array<u16, 0x80> GetLongTitle(Loader::SMDH::TitleLanguage language) const;
+    std::array<char16_t, 0x80> GetLongTitle(Loader::SMDH::TitleLanguage language) const;
 
     std::vector<GameRegion> GetRegions() const;
 };

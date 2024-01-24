@@ -6,6 +6,7 @@
 
 #include <array>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 #include "common/common_funcs.h"
@@ -47,8 +48,11 @@ public:
     static_assert(sizeof(Body) == 0x210, "Ticket body structure size is wrong");
 #pragma pack(pop)
 
-    Loader::ResultStatus Load(const std::vector<u8> file_data, std::size_t offset = 0);
+    Loader::ResultStatus Load(std::span<const u8> file_data, std::size_t offset = 0);
     std::optional<std::array<u8, 16>> GetTitleKey() const;
+    u64 GetTitleID() const {
+        return ticket_body.title_id;
+    }
 
 private:
     Body ticket_body;

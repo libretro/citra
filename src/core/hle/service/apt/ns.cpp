@@ -2,7 +2,6 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
-#include <cinttypes>
 #include "core/core.h"
 #include "core/hle/service/am/am.h"
 #include "core/hle/service/apt/ns.h"
@@ -28,6 +27,19 @@ std::shared_ptr<Kernel::Process> LaunchTitle(FS::MediaType media_type, u64 title
     }
 
     return process;
+}
+
+void RebootToTitle(Core::System& system, FS::MediaType media_type, u64 title_id) {
+    auto new_path = AM::GetTitleContentPath(media_type, title_id);
+    if (new_path.empty() || !FileUtil::Exists(new_path)) {
+        // TODO: This can happen if the requested title is not installed. Need a way to find
+        // non-installed titles in the game list.
+        LOG_CRITICAL(Service_APT,
+                     "Failed to find title '{}' to jump to, resetting current title instead.",
+                     new_path);
+        new_path.clear();
+    }
+    system.RequestReset(new_path);
 }
 
 } // namespace Service::NS

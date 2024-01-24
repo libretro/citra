@@ -7,35 +7,33 @@
 #include <QtConcurrent/QtConcurrentRun>
 #include "citra_qt/game_list_p.h"
 #include "citra_qt/main.h"
-#include "citra_qt/multiplayer/client_room.h"
 #include "citra_qt/multiplayer/lobby.h"
 #include "citra_qt/multiplayer/lobby_p.h"
 #include "citra_qt/multiplayer/message.h"
-#include "citra_qt/multiplayer/state.h"
 #include "citra_qt/multiplayer/validation.h"
 #include "citra_qt/uisettings.h"
 #include "common/logging/log.h"
 #include "core/hle/service/cfg/cfg.h"
-#include "core/settings.h"
 #include "network/network.h"
+#include "network/network_settings.h"
 #include "ui_lobby.h"
 #ifdef ENABLE_WEB_SERVICE
 #include "web_service/web_backend.h"
 #endif
 
-Lobby::Lobby(QWidget* parent, QStandardItemModel* list,
-             std::shared_ptr<Core::AnnounceMultiplayerSession> session)
+Lobby::Lobby(Core::System& system_, QWidget* parent, QStandardItemModel* list,
+             std::shared_ptr<Network::AnnounceMultiplayerSession> session)
     : QDialog(parent, Qt::WindowTitleHint | Qt::WindowCloseButtonHint | Qt::WindowSystemMenuHint),
-      ui(std::make_unique<Ui::Lobby>()), announce_multiplayer_session(session) {
+      ui(std::make_unique<Ui::Lobby>()), system{system_}, announce_multiplayer_session(session) {
     ui->setupUi(this);
 
     // setup the watcher for background connections
-    watcher = new QFutureWatcher<void>;
+    watcher = new QFutureWatcher<void>(this);
 
     model = new QStandardItemModel(ui->room_list);
 
     // Create a proxy to the game list to get the list of games owned
-    game_list = new QStandardItemModel;
+    game_list = new QStandardItemModel(this);
     UpdateGameList(list);
 
     proxy = new LobbyFilterProxyModel(this, game_list);
@@ -58,14 +56,15 @@ Lobby::Lobby(QWidget* parent, QStandardItemModel* list,
 
     ui->nickname->setValidator(validation.GetNickname());
     ui->nickname->setText(UISettings::values.nickname);
-    if (ui->nickname->text().isEmpty() && !Settings::values.citra_username.empty()) {
+    if (ui->nickname->text().isEmpty() && !NetSettings::values.citra_username.empty()) {
         // Use Citra Web Service user name as nickname by default
-        ui->nickname->setText(QString::fromStdString(Settings::values.citra_username));
+        ui->nickname->setText(QString::fromStdString(NetSettings::values.citra_username));
     }
 
     // UI Buttons
     connect(ui->refresh_list, &QPushButton::clicked, this, &Lobby::RefreshLobby);
     connect(ui->games_owned, &QCheckBox::toggled, proxy, &LobbyFilterProxyModel::SetFilterOwned);
+    connect(ui->hide_empty, &QCheckBox::toggled, proxy, &LobbyFilterProxyModel::SetFilterEmpty);
     connect(ui->hide_full, &QCheckBox::toggled, proxy, &LobbyFilterProxyModel::SetFilterFull);
     connect(ui->search, &QLineEdit::textChanged, proxy, &LobbyFilterProxyModel::SetFilterSearch);
     connect(ui->room_list, &QTreeView::doubleClicked, this, &Lobby::OnJoinRoom);
@@ -151,13 +150,15 @@ void Lobby::OnJoinRoom(const QModelIndex& source) {
     const std::string verify_UID =
         proxy->data(connection_index, LobbyItemHost::HostVerifyUIDRole).toString().toStdString();
 
-    // attempt to connect in a different thread
-    QFuture<void> f = QtConcurrent::run([nickname, ip, port, password, verify_UID] {
+    // Attempt to connect in a different thread
+    QFuture<void> f = QtConcurrent::run([this, nickname, ip, port, password, verify_UID] {
         std::string token;
 #ifdef ENABLE_WEB_SERVICE
-        if (!Settings::values.citra_username.empty() && !Settings::values.citra_token.empty()) {
-            WebService::Client client(Settings::values.web_api_url, Settings::values.citra_username,
-                                      Settings::values.citra_token);
+        if (!NetSettings::values.citra_username.empty() &&
+            !NetSettings::values.citra_token.empty()) {
+            WebService::Client client(NetSettings::values.web_api_url,
+                                      NetSettings::values.citra_username,
+                                      NetSettings::values.citra_token);
             token = client.GetExternalJWT(verify_UID).returned_data;
             if (token.empty()) {
                 LOG_ERROR(WebService, "Could not get external JWT, verification may fail");
@@ -167,8 +168,8 @@ void Lobby::OnJoinRoom(const QModelIndex& source) {
         }
 #endif
         if (auto room_member = Network::GetRoomMember().lock()) {
-            room_member->Join(nickname, Service::CFG::GetConsoleIdHash(Core::System::GetInstance()),
-                              ip.c_str(), port, 0, Network::NoPreferredMac, password, token);
+            room_member->Join(nickname, Service::CFG::GetConsoleIdHash(system), ip.c_str(), port, 0,
+                              Network::NoPreferredMac, password, token);
         }
     });
     watcher->setFuture(f);
@@ -179,7 +180,6 @@ void Lobby::OnJoinRoom(const QModelIndex& source) {
     UISettings::values.nickname = ui->nickname->text();
     UISettings::values.ip = proxy->data(connection_index, LobbyItemHost::HostIPRole).toString();
     UISettings::values.port = proxy->data(connection_index, LobbyItemHost::HostPortRole).toString();
-    Settings::Apply();
 }
 
 void Lobby::ResetModel() {
@@ -281,12 +281,22 @@ bool LobbyFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex& s
         return true;
     }
 
+    // filter by empty rooms
+    if (filter_empty) {
+        QModelIndex member_list = sourceModel()->index(sourceRow, Column::MEMBER, sourceParent);
+        const qsizetype player_count =
+            sourceModel()->data(member_list, LobbyItemMemberList::MemberListRole).toList().size();
+        if (player_count == 0) {
+            return false;
+        }
+    }
+
     // filter by filled rooms
     if (filter_full) {
         QModelIndex member_list = sourceModel()->index(sourceRow, Column::MEMBER, sourceParent);
-        int player_count =
+        const qsizetype player_count =
             sourceModel()->data(member_list, LobbyItemMemberList::MemberListRole).toList().size();
-        int max_players =
+        const int max_players =
             sourceModel()->data(member_list, LobbyItemMemberList::MaxPlayerRole).toInt();
         if (player_count >= max_players) {
             return false;
@@ -348,6 +358,11 @@ void LobbyFilterProxyModel::sort(int column, Qt::SortOrder order) {
 
 void LobbyFilterProxyModel::SetFilterOwned(bool filter) {
     filter_owned = filter;
+    invalidate();
+}
+
+void LobbyFilterProxyModel::SetFilterEmpty(bool filter) {
+    filter_empty = filter;
     invalidate();
 }
 

@@ -13,10 +13,10 @@
 
 namespace OpenGL {
 
-GLuint LoadShader(const char* source, GLenum type) {
-    const std::string version = GLES ? R"(#version 320 es
-
-#define CITRA_GLES
+GLuint LoadShader(std::string_view source, GLenum type) {
+    std::string preamble;
+    if (GLES) {
+        preamble = R"(#version 320 es
 
 #if defined(GL_ANDROID_extension_pack_es31a)
 #extension GL_ANDROID_extension_pack_es31a : enable
@@ -25,10 +25,12 @@ GLuint LoadShader(const char* source, GLenum type) {
 #if defined(GL_EXT_clip_cull_distance)
 #extension GL_EXT_clip_cull_distance : enable
 #endif // defined(GL_EXT_clip_cull_distance)
-)"
-                                     : "#version 330\n";
+)";
+    } else {
+        preamble = "#version 430 core\n";
+    }
 
-    const char* debug_type;
+    std::string_view debug_type;
     switch (type) {
     case GL_VERTEX_SHADER:
         debug_type = "vertex";
@@ -43,9 +45,11 @@ GLuint LoadShader(const char* source, GLenum type) {
         UNREACHABLE();
     }
 
-    std::array<const char*, 2> src_arr{version.data(), source};
+    std::array<const GLchar*, 2> src_arr{preamble.data(), source.data()};
+    std::array<GLint, 2> lengths{static_cast<GLint>(preamble.size()),
+                                 static_cast<GLint>(source.size())};
     GLuint shader_id = glCreateShader(type);
-    glShaderSource(shader_id, static_cast<GLsizei>(src_arr.size()), src_arr.data(), nullptr);
+    glShaderSource(shader_id, static_cast<GLsizei>(src_arr.size()), src_arr.data(), lengths.data());
     LOG_DEBUG(Render_OpenGL, "Compiling {} shader...", debug_type);
     glCompileShader(shader_id);
 
@@ -68,7 +72,7 @@ GLuint LoadShader(const char* source, GLenum type) {
     return shader_id;
 }
 
-GLuint LoadProgram(bool separable_program, const std::vector<GLuint>& shaders) {
+GLuint LoadProgram(bool separable_program, std::span<const GLuint> shaders) {
     // Link the program
     LOG_DEBUG(Render_OpenGL, "Linking program...");
 
@@ -84,6 +88,7 @@ GLuint LoadProgram(bool separable_program, const std::vector<GLuint>& shaders) {
         glProgramParameteri(program_id, GL_PROGRAM_SEPARABLE, GL_TRUE);
     }
 
+    glProgramParameteri(program_id, GL_PROGRAM_BINARY_RETRIEVABLE_HINT, GL_TRUE);
     glLinkProgram(program_id);
 
     // Check the program

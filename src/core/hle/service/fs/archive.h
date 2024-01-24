@@ -5,9 +5,9 @@
 #pragma once
 
 #include <memory>
+#include <span>
 #include <string>
 #include <unordered_map>
-#include <vector>
 #include <boost/serialization/unique_ptr.hpp>
 #include <boost/serialization/unordered_map.hpp>
 #include "common/common_types.h"
@@ -40,6 +40,7 @@ enum class ArchiveIdCode : u32 {
     SystemSaveData = 0x00000008,
     SDMC = 0x00000009,
     SDMCWriteOnly = 0x0000000A,
+    BossExtSaveData = 0x12345678,
     NCCH = 0x2345678A,
     OtherSaveDataGeneral = 0x567890B2,
     OtherSaveDataPermitted = 0x567890B4,
@@ -219,7 +220,7 @@ public:
      * @return ResultCode 0 on success or the corresponding code on error
      */
     ResultCode CreateExtSaveData(MediaType media_type, u32 high, u32 low,
-                                 const std::vector<u8>& smdh_icon,
+                                 std::span<const u8> smdh_icon,
                                  const FileSys::ArchiveFormatInfo& format_info, u64 program_id);
 
     /**

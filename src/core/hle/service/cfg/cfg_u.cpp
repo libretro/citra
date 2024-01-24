@@ -12,17 +12,19 @@ namespace Service::CFG {
 CFG_U::CFG_U(std::shared_ptr<Module> cfg) : Module::Interface(std::move(cfg), "cfg:u", 23) {
     static const FunctionInfo functions[] = {
         // cfg common
-        {0x00010082, &CFG_U::GetConfigInfoBlk2, "GetConfigInfoBlk2"},
-        {0x00020000, &CFG_U::D<&CFG_U::SecureInfoGetRegion, 0x0002>, "SecureInfoGetRegion"},
-        {0x00030040, &CFG_U::GenHashConsoleUnique, "GenHashConsoleUnique"},
-        {0x00040000, &CFG_U::GetRegionCanadaUSA, "GetRegionCanadaUSA"},
-        {0x00050000, &CFG_U::GetSystemModel, "GetSystemModel"},
-        {0x00060000, &CFG_U::GetModelNintendo2DS, "GetModelNintendo2DS"},
-        {0x00070040, nullptr, "WriteToFirstByteCfgSavegame"},
-        {0x00080080, nullptr, "GoThroughTable"},
-        {0x00090040, &CFG_U::GetCountryCodeString, "GetCountryCodeString"},
-        {0x000A0040, &CFG_U::GetCountryCodeID, "GetCountryCodeID"},
-        {0x000B0000, nullptr, "IsFangateSupported"},
+        // clang-format off
+        {0x0001, &CFG_U::GetConfig, "GetConfig"},
+        {0x0002, &CFG_U::GetRegion, "GetRegion"},
+        {0x0003, &CFG_U::GetTransferableId, "GetTransferableId"},
+        {0x0004, &CFG_U::IsCoppacsSupported, "IsCoppacsSupported"},
+        {0x0005, &CFG_U::GetSystemModel, "GetSystemModel"},
+        {0x0006, &CFG_U::GetModelNintendo2DS, "GetModelNintendo2DS"},
+        {0x0007, nullptr, "WriteToFirstByteCfgSavegame"},
+        {0x0008, nullptr, "TranslateCountryInfo"},
+        {0x0009, &CFG_U::GetCountryCodeString, "GetCountryCodeString"},
+        {0x000A, &CFG_U::GetCountryCodeID, "GetCountryCodeID"},
+        {0x000B, nullptr, "IsFangateSupported"},
+        // clang-format on
     };
     RegisterHandlers(functions);
 }

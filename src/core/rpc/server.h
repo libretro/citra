@@ -5,24 +5,27 @@
 #pragma once
 
 #include <memory>
+#include "core/rpc/rpc_server.h"
 
-namespace RPC {
+namespace Core {
+class System;
+}
 
-class RPCServer;
+namespace Core::RPC {
+
 class UDPServer;
 class Packet;
 
 class Server {
 public:
-    Server(RPCServer& rpc_server);
+    explicit Server(Core::System& system_);
     ~Server();
-    void Start();
-    void Stop();
+
     void NewRequestCallback(std::unique_ptr<Packet> new_request);
 
 private:
-    RPCServer& rpc_server;
+    RPCServer rpc_server;
     std::unique_ptr<UDPServer> udp_server;
 };
 
-} // namespace RPC
+} // namespace Core::RPC

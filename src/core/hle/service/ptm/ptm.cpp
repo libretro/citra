@@ -2,22 +2,22 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
-#include <cinttypes>
 #include "common/archives.h"
 #include "common/common_paths.h"
 #include "common/file_util.h"
 #include "common/logging/log.h"
+#include "common/settings.h"
 #include "core/core.h"
 #include "core/file_sys/archive_extsavedata.h"
 #include "core/file_sys/errors.h"
 #include "core/file_sys/file_backend.h"
+#include "core/hle/kernel/shared_page.h"
 #include "core/hle/service/ptm/ptm.h"
 #include "core/hle/service/ptm/ptm_gets.h"
 #include "core/hle/service/ptm/ptm_play.h"
 #include "core/hle/service/ptm/ptm_sets.h"
 #include "core/hle/service/ptm/ptm_sysm.h"
 #include "core/hle/service/ptm/ptm_u.h"
-#include "core/settings.h"
 
 SERIALIZE_EXPORT_IMPL(Service::PTM::Module)
 
@@ -27,7 +27,7 @@ namespace Service::PTM {
 static const GameCoin default_game_coin = {0x4F00, 42, 0, 0, 0, 2014, 12, 29};
 
 void Module::Interface::GetAdapterState(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x5, 0, 0);
+    IPC::RequestParser rp(ctx);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
     rb.Push(RESULT_SUCCESS);
@@ -37,7 +37,7 @@ void Module::Interface::GetAdapterState(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::GetShellState(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x6, 0, 0);
+    IPC::RequestParser rp(ctx);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
     rb.Push(RESULT_SUCCESS);
@@ -45,7 +45,7 @@ void Module::Interface::GetShellState(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::GetBatteryLevel(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x7, 0, 0);
+    IPC::RequestParser rp(ctx);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
     rb.Push(RESULT_SUCCESS);
@@ -55,7 +55,7 @@ void Module::Interface::GetBatteryLevel(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::GetBatteryChargeState(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x8, 0, 0);
+    IPC::RequestParser rp(ctx);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
     rb.Push(RESULT_SUCCESS);
@@ -65,7 +65,7 @@ void Module::Interface::GetBatteryChargeState(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::GetPedometerState(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x9, 0, 0);
+    IPC::RequestParser rp(ctx);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
     rb.Push(RESULT_SUCCESS);
@@ -75,7 +75,7 @@ void Module::Interface::GetPedometerState(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::GetStepHistory(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0xB, 3, 2);
+    IPC::RequestParser rp(ctx);
 
     u32 hours = rp.Pop<u32>();
     u64 start_time = rp.Pop<u64>();
@@ -98,7 +98,7 @@ void Module::Interface::GetStepHistory(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::GetTotalStepCount(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0xC, 0, 0);
+    IPC::RequestParser rp(ctx);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
     rb.Push(RESULT_SUCCESS);
@@ -108,7 +108,7 @@ void Module::Interface::GetTotalStepCount(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::GetSoftwareClosedFlag(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x80F, 0, 0);
+    IPC::RequestParser rp(ctx);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
     rb.Push(RESULT_SUCCESS);
@@ -118,7 +118,7 @@ void Module::Interface::GetSoftwareClosedFlag(Kernel::HLERequestContext& ctx) {
 }
 
 void CheckNew3DS(IPC::RequestBuilder& rb) {
-    const bool is_new_3ds = Settings::values.is_new_3ds;
+    const bool is_new_3ds = Settings::values.is_new_3ds.GetValue();
 
     rb.Push(RESULT_SUCCESS);
     rb.Push(is_new_3ds);
@@ -127,15 +127,27 @@ void CheckNew3DS(IPC::RequestBuilder& rb) {
 }
 
 void Module::Interface::CheckNew3DS(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x40A, 0, 0);
+    IPC::RequestParser rp(ctx);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
     Service::PTM::CheckNew3DS(rb);
 }
 
+void Module::Interface::GetSystemTime(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    auto& share_page = Core::System::GetInstance().Kernel().GetSharedPageHandler();
+    const u64 console_time = share_page.GetSystemTimeSince2000();
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(3, 0);
+    rb.Push(RESULT_SUCCESS);
+    rb.Push(console_time);
+}
+
 static void WriteGameCoinData(GameCoin gamecoin_data) {
     const std::string& nand_directory = FileUtil::GetUserPath(FileUtil::UserPath::NANDDir);
-    FileSys::ArchiveFactory_ExtSaveData extdata_archive_factory(nand_directory, true);
+    FileSys::ArchiveFactory_ExtSaveData extdata_archive_factory(nand_directory,
+                                                                FileSys::ExtSaveDataType::Shared);
 
     FileSys::Path archive_path(ptm_shared_extdata_id);
     auto archive_result = extdata_archive_factory.Open(archive_path, 0);
@@ -168,7 +180,8 @@ static void WriteGameCoinData(GameCoin gamecoin_data) {
 
 static GameCoin ReadGameCoinData() {
     const std::string& nand_directory = FileUtil::GetUserPath(FileUtil::UserPath::NANDDir);
-    FileSys::ArchiveFactory_ExtSaveData extdata_archive_factory(nand_directory, true);
+    FileSys::ArchiveFactory_ExtSaveData extdata_archive_factory(nand_directory,
+                                                                FileSys::ExtSaveDataType::Shared);
 
     FileSys::Path archive_path(ptm_shared_extdata_id);
     auto archive_result = extdata_archive_factory.Open(archive_path, 0);
@@ -198,7 +211,8 @@ Module::Module() {
     // Open the SharedExtSaveData archive 0xF000000B and create the gamecoin.dat file if it doesn't
     // exist
     const std::string& nand_directory = FileUtil::GetUserPath(FileUtil::UserPath::NANDDir);
-    FileSys::ArchiveFactory_ExtSaveData extdata_archive_factory(nand_directory, true);
+    FileSys::ArchiveFactory_ExtSaveData extdata_archive_factory(nand_directory,
+                                                                FileSys::ExtSaveDataType::Shared);
     const FileSys::Path archive_path(ptm_shared_extdata_id);
     const auto archive_result = extdata_archive_factory.Open(archive_path, 0);
     // If the archive didn't exist, write the default game coin file

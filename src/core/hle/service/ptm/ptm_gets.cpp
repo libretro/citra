@@ -13,23 +13,25 @@ PTM_Gets::PTM_Gets(std::shared_ptr<Module> ptm)
     : Module::Interface(std::move(ptm), "ptm:gets", 26) {
     static const FunctionInfo functions[] = {
         // ptm:u common commands
-        {0x00010002, nullptr, "RegisterAlarmClient"},
-        {0x00020080, nullptr, "SetRtcAlarm"},
-        {0x00030000, nullptr, "GetRtcAlarm"},
-        {0x00040000, nullptr, "CancelRtcAlarm"},
-        {0x00050000, &PTM_Gets::GetAdapterState, "GetAdapterState"},
-        {0x00060000, &PTM_Gets::GetShellState, "GetShellState"},
-        {0x00070000, &PTM_Gets::GetBatteryLevel, "GetBatteryLevel"},
-        {0x00080000, &PTM_Gets::GetBatteryChargeState, "GetBatteryChargeState"},
-        {0x00090000, nullptr, "GetPedometerState"},
-        {0x000A0042, nullptr, "GetStepHistoryEntry"},
-        {0x000B00C2, &PTM_Gets::GetStepHistory, "GetStepHistory"},
-        {0x000C0000, &PTM_Gets::GetTotalStepCount, "GetTotalStepCount"},
-        {0x000D0040, nullptr, "SetPedometerRecordingMode"},
-        {0x000E0000, nullptr, "GetPedometerRecordingMode"},
-        {0x000F0084, nullptr, "GetStepHistoryAll"},
+        // clang-format off
+        {0x0001, nullptr, "RegisterAlarmClient"},
+        {0x0002, nullptr, "SetRtcAlarm"},
+        {0x0003, nullptr, "GetRtcAlarm"},
+        {0x0004, nullptr, "CancelRtcAlarm"},
+        {0x0005, &PTM_Gets::GetAdapterState, "GetAdapterState"},
+        {0x0006, &PTM_Gets::GetShellState, "GetShellState"},
+        {0x0007, &PTM_Gets::GetBatteryLevel, "GetBatteryLevel"},
+        {0x0008, &PTM_Gets::GetBatteryChargeState, "GetBatteryChargeState"},
+        {0x0009, nullptr, "GetPedometerState"},
+        {0x000A, nullptr, "GetStepHistoryEntry"},
+        {0x000B, &PTM_Gets::GetStepHistory, "GetStepHistory"},
+        {0x000C, &PTM_Gets::GetTotalStepCount, "GetTotalStepCount"},
+        {0x000D, nullptr, "SetPedometerRecordingMode"},
+        {0x000E, nullptr, "GetPedometerRecordingMode"},
+        {0x000F, nullptr, "GetStepHistoryAll"},
         // ptm:gets
-        {0x04010000, nullptr, "GetSystemTime"},
+        {0x0401, &PTM_Gets::GetSystemTime, "GetSystemTime"},
+        // clang-format on
     };
     RegisterHandlers(functions);
 }

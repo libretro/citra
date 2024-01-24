@@ -4,21 +4,44 @@
 
 #pragma once
 
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
+#include "common/common_types.h"
 
 namespace AudioCore {
 
 class Sink;
 
-/// Retrieves the IDs for all available audio sinks.
-std::vector<const char*> GetSinkIDs();
+enum class SinkType : u32 {
+    Auto = 0,
+    Null = 1,
+    Cubeb = 2,
+    OpenAL = 3,
+    SDL2 = 4,
 
-/// Gets the list of devices for a particular sink identified by the given ID.
-std::vector<std::string> GetDeviceListForSink(std::string_view sink_id);
+    LibRetro,
+};
 
-/// Creates an audio sink identified by the given device ID.
-std::unique_ptr<Sink> CreateSinkFromID(std::string_view sink_id, std::string_view device_id);
+struct SinkDetails {
+    using FactoryFn = std::unique_ptr<Sink> (*)(std::string_view);
+    using ListDevicesFn = std::vector<std::string> (*)();
+
+    /// Type of this sink.
+    SinkType type;
+    /// Name for this sink.
+    std::string_view name;
+    /// A method to call to construct an instance of this type of sink.
+    FactoryFn create_sink;
+    /// A method to call to list available devices.
+    ListDevicesFn list_devices;
+};
+
+/// Lists all available sink types.
+std::vector<SinkDetails> ListSinks();
+
+/// Gets the details of an sink type.
+const SinkDetails& GetSinkDetails(SinkType input_type);
 
 } // namespace AudioCore

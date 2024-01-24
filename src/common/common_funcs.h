@@ -4,11 +4,6 @@
 
 #pragma once
 
-#include <string>
-
-#if !defined(ARCHITECTURE_x86_64)
-#include <cstdlib> // for exit
-#endif
 #include "common/common_types.h"
 
 /// Textually concatenates two tokens. The double-expansion is required by the C preprocessor.
@@ -28,33 +23,82 @@
 #define FORCE_INLINE inline __attribute__((always_inline))
 #endif
 
-#ifndef _MSC_VER
-
-#ifdef ARCHITECTURE_x86_64
-#define Crash() __asm__ __volatile__("int $3")
+#ifdef _MSC_VER
+#define CITRA_NO_INLINE __declspec(noinline)
 #else
-#define Crash() exit(1)
+#define CITRA_NO_INLINE __attribute__((noinline))
 #endif
 
-#else // _MSC_VER
-
-#if (_MSC_VER < 1900)
-// Function Cross-Compatibility
-#define snprintf _snprintf
+#ifdef _MSC_VER
+#define CITRA_NO_RETURN __declspec(noreturn)
+#else
+#define CITRA_NO_RETURN __attribute__((noreturn))
 #endif
 
-// Locale Cross-Compatibility
-#define locale_t _locale_t
-
+#ifdef _MSC_VER
 extern "C" {
 __declspec(dllimport) void __stdcall DebugBreak(void);
 }
 #define Crash() DebugBreak()
+#else
+#define Crash() __builtin_trap()
+#endif
 
-#endif // _MSC_VER ndef
+#ifdef _MSC_VER
+// Locale Cross-Compatibility
+#define locale_t _locale_t
+#endif // _MSC_VER
 
-// Generic function to get last error message.
-// Call directly after the command or use the error num.
-// This function might change the error code.
-// Defined in Misc.cpp.
-[[nodiscard]] std::string GetLastErrorMsg();
+#define DECLARE_ENUM_FLAG_OPERATORS(type)                                                          \
+    [[nodiscard]] constexpr type operator|(type a, type b) noexcept {                              \
+        using T = std::underlying_type_t<type>;                                                    \
+        return static_cast<type>(static_cast<T>(a) | static_cast<T>(b));                           \
+    }                                                                                              \
+    [[nodiscard]] constexpr type operator&(type a, type b) noexcept {                              \
+        using T = std::underlying_type_t<type>;                                                    \
+        return static_cast<type>(static_cast<T>(a) & static_cast<T>(b));                           \
+    }                                                                                              \
+    [[nodiscard]] constexpr type operator^(type a, type b) noexcept {                              \
+        using T = std::underlying_type_t<type>;                                                    \
+        return static_cast<type>(static_cast<T>(a) ^ static_cast<T>(b));                           \
+    }                                                                                              \
+    [[nodiscard]] constexpr type operator<<(type a, type b) noexcept {                             \
+        using T = std::underlying_type_t<type>;                                                    \
+        return static_cast<type>(static_cast<T>(a) << static_cast<T>(b));                          \
+    }                                                                                              \
+    [[nodiscard]] constexpr type operator>>(type a, type b) noexcept {                             \
+        using T = std::underlying_type_t<type>;                                                    \
+        return static_cast<type>(static_cast<T>(a) >> static_cast<T>(b));                          \
+    }                                                                                              \
+    constexpr type& operator|=(type& a, type b) noexcept {                                         \
+        a = a | b;                                                                                 \
+        return a;                                                                                  \
+    }                                                                                              \
+    constexpr type& operator&=(type& a, type b) noexcept {                                         \
+        a = a & b;                                                                                 \
+        return a;                                                                                  \
+    }                                                                                              \
+    constexpr type& operator^=(type& a, type b) noexcept {                                         \
+        a = a ^ b;                                                                                 \
+        return a;                                                                                  \
+    }                                                                                              \
+    constexpr type& operator<<=(type& a, type b) noexcept {                                        \
+        a = a << b;                                                                                \
+        return a;                                                                                  \
+    }                                                                                              \
+    constexpr type& operator>>=(type& a, type b) noexcept {                                        \
+        a = a >> b;                                                                                \
+        return a;                                                                                  \
+    }                                                                                              \
+    [[nodiscard]] constexpr type operator~(type key) noexcept {                                    \
+        using T = std::underlying_type_t<type>;                                                    \
+        return static_cast<type>(~static_cast<T>(key));                                            \
+    }                                                                                              \
+    [[nodiscard]] constexpr bool True(type key) noexcept {                                         \
+        using T = std::underlying_type_t<type>;                                                    \
+        return static_cast<T>(key) != 0;                                                           \
+    }                                                                                              \
+    [[nodiscard]] constexpr bool False(type key) noexcept {                                        \
+        using T = std::underlying_type_t<type>;                                                    \
+        return static_cast<T>(key) == 0;                                                           \
+    }

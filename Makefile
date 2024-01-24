@@ -1,21 +1,8 @@
 HAVE_DYNARMIC = 0
-HAVE_FFMPEG = 0
-HAVE_FFMPEG_STATIC = 0
 HAVE_GLAD = 1
 HAVE_SSE = 0
 HAVE_RGLGEN = 0
 HAVE_RPC = 1
-FFMPEG_DISABLE_VDPAU ?= 0
-HAVE_FFMPEG_CROSSCOMPILE ?= 0
-FFMPEG_XC_CPU ?=
-FFMPEG_XC_ARCH ?=
-FFMPEG_XC_PREFIX ?=
-FFMPEG_XC_SYSROOT ?=
-FFMPEG_XC_NM ?=
-FFMPEG_XC_AR ?=
-FFMPEG_XC_AS ?=
-FFMPEG_XC_CC ?=
-FFMPEG_XC_LD ?=
 
 TARGET_NAME    := citra
 EXTERNALS_DIR  += ./externals
@@ -84,33 +71,12 @@ ifeq ($(STATIC_LINKING), 1)
 EXT := a
 endif
 
-GIT_REV := "$(shell git rev-parse HEAD || echo unknown)"
-GIT_BRANCH := "$(shell git rev-parse --abbrev-ref HEAD || echo unknown)"
-GIT_DESC := "$(shell git describe --always --long --dirty || echo unknown)"
-BUILD_DATE := "$(shell date +'%d/%m/%Y_%H:%M')"
-
-DEFINES += -DGIT_REV=\"$(GIT_REV)\" \
-		   -DGIT_BRANCH=\"$(GIT_BRANCH)\" \
-		   -DGIT_DESC=\"$(GIT_DESC)\" \
-		   -DBUILD_NAME=\"citra-libretro\" \
-		   -DBUILD_DATE=\"$(BUILD_DATE)\" \
-		   -DBUILD_VERSION=\"$(GIT_BRANCH)-$(GIT_DESC)\" \
-		   -DBUILD_FULLNAME=\"\" \
-		   -DSHADER_CACHE_VERSION=\"0\"
-
 ifeq ($(platform), unix)
 	EXT ?= so
    TARGET := $(TARGET_NAME)_libretro.$(EXT)
    fpic := -fPIC
    SHARED := -shared -Wl,--version-script=$(SRC_DIR)/citra_libretro/link.T -Wl,--no-undefined
    LIBS +=-lpthread -lGL -ldl
-   HAVE_FFMPEG = 1
-   HAVE_FFMPEG_STATIC = 1
-ifeq ($(HAVE_FFMPEG_STATIC), 1)
-   LIBS += $(EXTERNALS_DIR)/ffmpeg/libavcodec/libavcodec.a $(EXTERNALS_DIR)/ffmpeg/libavutil/libavutil.a
-else
-   LIBS += -lavcodec -lavutil
-endif
 
 #######################################
 # Nintendo Switch (libnx)
@@ -233,7 +199,7 @@ else ifneq (,$(findstring windows_msvc2019,$(platform)))
 	PATH := $(PATH):$(shell IFS=$$'\n'; cygpath "$(VsInstallRoot)/Common7/IDE")
 
 	export INCLUDE := $(INCLUDE);$(WindowsSDKSharedIncludeDir);$(WindowsSDKUCRTIncludeDir);$(WindowsSDKUMIncludeDir)
-	export LIB := $(LIB);$(WindowsSDKUCRTLibDir);$(WindowsSDKUMLibDir);$(FFMPEGDIR)/Windows/$(TARGET_ARCH)/lib
+	export LIB := $(LIB);$(WindowsSDKUCRTLibDir);$(WindowsSDKUMLibDir)
 	TARGET := $(TARGET_NAME)_libretro.dll
 	PSS_STYLE :=2
 	LDFLAGS += -DLL
@@ -279,64 +245,9 @@ else
 	endif
 endif
 
-# Set ffmpeg configure options
-ifeq ($(HAVE_FFMPEG_STATIC), 1)
-FFMPEG_CONF_OPTS =--disable-encoders --disable-decoders --enable-decoder=aac --enable-decoder=aac_fixed --enable-decoder=aac_latm --disable-programs
-ifeq ($(FFMPEG_DISABLE_VDPAU), 1)
-FFMPEG_CONF_OPTS += --disable-vdpau
-endif
-ifeq ($(HAVE_FFMPEG_CROSSCOMPILE), 1)
-FFMPEG_CONF_OPTS+= --enable-cross-compile --target-os="linux"
-ifeq ($(FFMPEG_XC_CPU),)
-$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_CPU provided)
-else
-FFMPEG_CONF_OPTS += --cpu="$(FFMPEG_XC_CPU)"
-endif
-ifeq ($(FFMPEG_XC_ARCH),)
-$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_ARCH provided)
-else
-FFMPEG_CONF_OPTS += --arch="$(FFMPEG_XC_ARCH)"
-endif
-ifeq ($(FFMPEG_XC_PREFIX),)
-$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_PREFIX provided)
-else
-FFMPEG_CONF_OPTS += --cross-prefix="$(FFMPEG_XC_PREFIX)"
-endif
-ifeq ($(FFMPEG_XC_SYSROOT),)
-$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_SYSROOT provided)
-else
-FFMPEG_CONF_OPTS += --sysroot="$(FFMPEG_XC_SYSROOT)" --sysinclude="$(FFMPEG_XC_SYSROOT)/usr/include"
-endif
-ifeq ($(FFMPEG_XC_NM),)
-$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_NM provided)
-else
-FFMPEG_CONF_OPTS += --nm="$(FFMPEG_XC_NM)"
-endif
-ifeq ($(FFMPEG_XC_AR),)
-$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_AR provided)
-else
-FFMPEG_CONF_OPTS += --ar="$(FFMPEG_XC_AR)"
-endif
-ifeq ($(FFMPEG_XC_AS),)
-$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_AS provided)
-else
-FFMPEG_CONF_OPTS += --as="$(FFMPEG_XC_AS)"
-endif
-ifeq ($(FFMPEG_XC_CC),)
-$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_CC provided)
-else
-FFMPEG_CONF_OPTS += --cc="$(FFMPEG_XC_CC)"
-endif
-ifeq ($(FFMPEG_XC_LD),)
-$(error HAVE_FFMPEG_CROSSCOMPILE set, but no FFMPEG_XC_LD provided)
-else
-FFMPEG_CONF_OPTS += --ld="$(FFMPEG_XC_LD)"
-endif
-endif
-endif
-
 include Makefile.common
 
+SOURCES_C += $(DYNARMICSOURCES_C) $(FAAD2SOURCES_C) $(LIBRESSLSOURCES_C)
 SOURCES_CXX += $(DYNARMICSOURCES_CXX)
 
 CPPFILES = $(filter %.cpp,$(SOURCES_CXX))
@@ -345,7 +256,7 @@ CCFILES = $(filter %.cc,$(SOURCES_CXX))
 OBJECTS := $(SOURCES_C:.c=.o) $(CPPFILES:.cpp=.o) $(CCFILES:.cc=.o)
 
 ifeq (,$(findstring msvc,$(platform)))
-	CXXFLAGS += -std=c++17
+	CXXFLAGS += -std=c++20
 else
 	CXXFLAGS += -std:c++latest
 endif
@@ -356,7 +267,7 @@ DYNARMICFLAGS += -D__LIBRETRO__ $(fpic) $(DEFINES) $(DYNARMICINCFLAGS) $(INCFLAG
 CXXFLAGS 	  += -D__LIBRETRO__ $(fpic) $(DEFINES) $(INCFLAGS) $(INCFLAGS_PLATFORM)
 
 OBJOUT   = -o
-LINKOUT  = -o 
+LINKOUT  = -o
 
 ifneq (,$(findstring msvc,$(platform)))
 	OBJOUT = -Fo
@@ -388,51 +299,93 @@ endif
 
 all: shaders $(TARGET)
 
-ffmpeg_configure:
-ifeq ($(HAVE_FFMPEG_STATIC), 1)
-	cd $(EXTERNALS_DIR)/ffmpeg && ./configure $(FFMPEG_CONF_OPTS)
-endif
-ffmpeg_static: ffmpeg_configure
-ifeq ($(HAVE_FFMPEG_STATIC), 1)
-	cd $(EXTERNALS_DIR)/ffmpeg && $(MAKE) -j$(NUMPROC)
-endif
-
-$(TARGET): ffmpeg_static $(OBJECTS)
+$(TARGET): $(OBJECTS)
 ifeq ($(STATIC_LINKING), 1)
 	$(AR) rcs $@ $(OBJECTS)
 else
 	$(LD) $(fpic) $(SHARED) $(INCLUDES) $(LINKOUT)$@ $(OBJECTS) $(LDFLAGS) $(LIBS)
 endif
 
-%.o: %.c
-	$(CC) $(CFLAGS) $(fpic) -c $(OBJOUT)$@ $<
-
 $(foreach p,$(OBJECTS),$(if $(findstring $(EXTERNALS_DIR)/dynarmic/src,$p),$p,)):
 	$(CXX) $(DYNARMICFLAGS) $(fpic) -c $(OBJOUT)$@ $(@:.o=.cpp)
+
+$(foreach p,$(OBJECTS),$(if $(findstring $(EXTERNALS_DIR)/dynarmic/externals/mcl,$p),$p,)):
+	$(CXX) $(DYNARMICFLAGS) $(fpic) -c $(OBJOUT)$@ $(@:.o=.cpp)
+
+$(foreach p,$(OBJECTS),$(if $(findstring $(EXTERNALS_DIR)/dynarmic/externals/zy,$p),$p,)):
+	$(CC) $(CFLAGS) $(DYNARMICINCFLAGS) $(fpic) -c $(OBJOUT)$@ $(@:.o=.c)
+
+$(foreach p,$(OBJECTS),$(if $(findstring $(EXTERNALS_DIR)/faad2,$p),$p,)):
+	$(CC) $(CFLAGS) $(FAAD2FLAGS) $(fpic) -c $(OBJOUT)$@ $(@:.o=.c)
+
+$(foreach p,$(OBJECTS),$(if $(findstring $(EXTERNALS_DIR)/libressl,$p),$p,)):
+	$(CC) $(LIBRESSLFLAGS) $(CFLAGS) $(fpic) -c $(OBJOUT)$@ $(@:.o=.c)
+
+%.o: %.c
+	$(CC) $(CFLAGS) $(fpic) -c $(OBJOUT)$@ $<
 
 %.o: %.cc
 	$(CXX) $(CXXFLAGS) $(fpic) -c $(OBJOUT)$@ $<
 
-%.o: %.cpp
+%.o: %.cpp $(EXTERNALS_DIR)/glslang/build/glslang/build_info.h
 	$(CXX) $(CXXFLAGS) $(fpic) -c $(OBJOUT)$@ $<
 
+GIT_REV := $(shell git rev-parse HEAD || echo unknown)
+GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD || echo unknown)
+GIT_DESC := $(shell git describe --always --long --dirty || echo unknown)
+GIT_COMMIT_DATE := $(shell git log -n1 --date=format-local:'%y%m%d' --format='%cd')
+BUILD_DATE := $(shell date +'%Y-%m-%d_%H:%M%z')
+
+$(SRC_DIR)/common/scm_rev.cpp: $(SHADER_CACHE_DEPENDS)
+	cat src/common/scm_rev.cpp.in | sed -e 's/@GIT_REV@/$(GIT_REV)/' \
+		-e 's/@GIT_BRANCH@/$(GIT_BRANCH)/' \
+		-e 's/@GIT_DESC@/$(GIT_COMMIT_DATE)+$(GIT_DESC)/' \
+		-e 's/@REPO_NAME@/citra-libretro/' \
+		-e 's/@BUILD_DATE@/$(BUILD_DATE)/' \
+		-e 's/@BUILD_VERSION@/$(GIT_BRANCH)-$(GIT_DESC)/' \
+		-e 's/@BUILD_FULLNAME@//' \
+		-e 's/@SHADER_CACHE_VERSION@/$(shell sha1sum $(SHADER_CACHE_DEPENDS) | sha1sum | cut -d" " -f1)/' > $@
+
+$(EXTERNALS_DIR)/glslang/build/glslang/build_info.h: $(EXTERNALS_DIR)/glslang/build_info.h.tmpl $(EXTERNALS_DIR)/glslang/CHANGES.md
+	python3 $(EXTERNALS_DIR)/glslang/build_info.py $(EXTERNALS_DIR)/glslang \
+		-i $(EXTERNALS_DIR)/glslang/build_info.h.tmpl \
+		-o $(EXTERNALS_DIR)/glslang/build/glslang/build_info.h
+
+genfiles: $(SRC_DIR)/common/scm_rev.cpp $(EXTERNALS_DIR)/glslang/build/glslang/build_info.h
+
 clean:
-	rm -f $(OBJECTS) $(TARGET)
-ifeq ($(HAVE_FFMPEG_STATIC), 1)
-	cd $(EXTERNALS_DIR)/ffmpeg && $(MAKE) clean
+	rm -f $(OBJECTS) $(TARGET) $(SRC_DIR)/common/scm_rev.cpp
+	rm -rf $(SRC_DIR)/video_core/shaders
+
+GLSLANG := glslang
+ifeq (, $(shell which $(GLSLANG)))
+GLSLANG := glslangValidator
+ifeq (, $(shell which $(GLSLANG)))
+$(error Required program `glslang` (or `glslangValidator`) not found.)
+endif
 endif
 
 shaders: $(SHADER_FILES)
-	mkdir -p $(SRC_DIR)/video_core/shaders
 	for SHADER_FILE in $^; do \
+		OUT_DIR=$$(dirname "$(SRC_DIR)/video_core/shaders/$$SHADER_FILE"); \
 		FILENAME=$$(basename "$$SHADER_FILE"); \
-		SHADER_NAME=$$(echo "$$FILENAME" | sed -e "s/\./_/g"); \
-		rm -f $(SRC_DIR)/video_core/shaders/$$FILENAME; \
-		echo "#pragma once" >> $(SRC_DIR)/video_core/shaders/$$FILENAME; \
-		echo "constexpr std::string_view $$SHADER_NAME = R\"(" >> $(SRC_DIR)/video_core/shaders/$$FILENAME; \
-		cat $$SHADER_FILE >> $(SRC_DIR)/video_core/shaders/$$FILENAME; \
-		echo ")\";" >> $(SRC_DIR)/video_core/shaders/$$FILENAME; \
+		SHADER_NAME=$$(echo "$$FILENAME" | sed -e 's/\./_/g'); \
+		OUT_FILE="$$OUT_DIR/$$SHADER_NAME"; \
+		if [ "$$FILENAME" = "$${FILENAME#vulkan}" ]; then \
+			SHADER_CONTENT=$$(cat $$SHADER_FILE | sed -e 's/"/'\''/g'); \
+			SHADER_CONTENT=$$(echo "$$SHADER_CONTENT" | sed -e 's/.*/"&'\\\\\\\\'n"/'); \
+			mkdir -p "$$OUT_DIR"; \
+			echo "$$SHADER_CONTENT" > $$OUT_FILE; \
+			cat $(SRC_DIR)/video_core/host_shaders/source_shader.h.in | sed -e "s/@CONTENTS_NAME@/$$(echo $$SHADER_NAME | tr '[a-z]' '[A-Z]')/" > $$OUT_FILE.h; \
+			sed -i -e "/@CONTENTS@/ { r $$OUT_FILE" -e "d }" $$OUT_FILE.h; \
+			rm -f $$OUT_FILE; \
+		fi; \
+		if [ "$$FILENAME" = "$${FILENAME#opengl}" ]; then \
+			SHADER_NAME=$${SHADER_NAME}_spv; \
+			$(GLSLANG) --target-env vulkan1.1 --glsl-version 450 -Dgl_VertexID=gl_VertexIndex \
+				--variable-name $$(echo $$SHADER_NAME | tr '[a-z]' '[A-Z]') -o $${OUT_FILE}_spv.h $$SHADER_FILE; \
+		fi; \
 	done
 
 
-.PHONY: clean ffmpeg_static
+.PHONY: clean shaders genfiles

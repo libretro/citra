@@ -2,9 +2,6 @@
 <ui version="4.0">
  <class>RecordDialog</class>
  <widget class="QDialog" name="RecordDialog">
-  <property name="windowTitle">
-   <string>View Record</string>
-  </property>
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -13,11 +10,14 @@
     <height>500</height>
    </rect>
   </property>
+  <property name="windowTitle">
+   <string>View Record</string>
+  </property>
   <layout class="QVBoxLayout">
    <item>
     <layout class="QHBoxLayout">
      <item>
-      <widget class="QGroupBox">
+      <widget class="QGroupBox" name="client_group">
        <property name="title">
         <string>Client</string>
        </property>
@@ -68,7 +68,7 @@
       </widget>
      </item>
      <item>
-      <widget class="QGroupBox">
+      <widget class="QGroupBox" name="server_group">
        <property name="title">
         <string>Server</string>
        </property>
@@ -121,7 +121,7 @@
     </layout>
    </item>
    <item>
-    <widget class="QGroupBox">
+    <widget class="QGroupBox" name="general_group">
      <property name="title">
       <string>General</string>
      </property>
@@ -172,7 +172,7 @@
     </widget>
    </item>
    <item>
-    <widget class="QGroupBox">
+    <widget class="QGroupBox" name="cmdbuffer_group">
      <property name="title">
       <string>Command Buffer</string>
      </property>
@@ -229,6 +229,12 @@
        <property name="orientation">
         <enum>Qt::Horizontal</enum>
        </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>0</width>
+         <height>0</height>
+        </size>
+       </property>
       </spacer>
      </item>
      <item>
@@ -242,4 +248,20 @@
    </item>
   </layout>
  </widget>
+ <tabstops>
+  <tabstop>clientProcess</tabstop>
+  <tabstop>clientThread</tabstop>
+  <tabstop>clientSession</tabstop>
+  <tabstop>serverProcess</tabstop>
+  <tabstop>serverThread</tabstop>
+  <tabstop>serverSession</tabstop>
+  <tabstop>clientPort</tabstop>
+  <tabstop>service</tabstop>
+  <tabstop>function</tabstop>
+  <tabstop>cmdbufSelection</tabstop>
+  <tabstop>cmdbuf</tabstop>
+  <tabstop>okButton</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
 </ui>

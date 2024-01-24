@@ -12,8 +12,8 @@
 #include "common/common_types.h"
 #include "common/file_util.h"
 #include "common/swap.h"
-#include "core/core.h"
 #include "core/file_sys/romfs_reader.h"
+#include "core/loader/loader.h"
 
 enum NCSDContentIndex { Main = 0, Manual = 1, DLP = 2, New3DSUpdate = 6, Update = 7 };
 
@@ -39,9 +39,6 @@ struct NCSD_Header {
 };
 
 static_assert(sizeof(NCSD_Header) == 0x200, "NCCH header structure size is wrong");
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-/// NCCH header (Note: "NCCH" appears to be a publicly unknown acronym)
 
 struct NCCH_Header {
     u8 signature[0x100];
@@ -98,9 +95,6 @@ struct NCCH_Header {
 
 static_assert(sizeof(NCCH_Header) == 0x200, "NCCH header structure size is wrong");
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// ExeFS (executable file system) headers
-
 struct ExeFs_SectionHeader {
     char name[8];
     u32 offset;
@@ -112,9 +106,6 @@ struct ExeFs_Header {
     u8 reserved[0x80];
     u8 hashes[8][0x20];
 };
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// ExHeader (executable file system header) headers
 
 struct ExHeader_SystemInfoFlags {
     u8 reserved[5];
@@ -174,7 +165,11 @@ struct ExHeader_StorageInfo {
 struct ExHeader_ARM11_SystemLocalCaps {
     u64_le program_id;
     u32_le core_version;
-    u8 reserved_flag;
+    union {
+        u8 n3ds_cpu_flags;
+        BitField<0, 1, u8> enable_l2_cache;
+        BitField<1, 1, u8> enable_804MHz_cpu;
+    };
     u8 n3ds_mode;
     union {
         u8 flags0;
@@ -222,9 +217,6 @@ struct ExHeader_Header {
 };
 
 static_assert(sizeof(ExHeader_Header) == 0x800, "ExHeader structure size is wrong");
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// FileSys namespace
 
 namespace FileSys {
 

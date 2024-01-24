@@ -128,7 +128,7 @@ constexpr u64 cyclesToMs(s64 cycles) {
 
 namespace Core {
 
-using TimedCallback = std::function<void(u64 userdata, int cycles_late)>;
+using TimedCallback = std::function<void(std::uintptr_t user_data, int cycles_late)>;
 
 struct TimingEventType {
     TimedCallback callback;
@@ -141,7 +141,7 @@ public:
     struct Event {
         s64 time;
         u64 fifo_order;
-        u64 userdata;
+        std::uintptr_t user_data;
         const TimingEventType* type;
 
         bool operator>(const Event& right) const;
@@ -152,7 +152,7 @@ public:
         void save(Archive& ar, const unsigned int) const {
             ar& time;
             ar& fifo_order;
-            ar& userdata;
+            ar& user_data;
             std::string name = *(type->name);
             ar << name;
         }
@@ -161,7 +161,7 @@ public:
         void load(Archive& ar, const unsigned int) {
             ar& time;
             ar& fifo_order;
-            ar& userdata;
+            ar& user_data;
             std::string name;
             ar >> name;
             type = Global<Timing>().RegisterEvent(name, nullptr);
@@ -227,6 +227,7 @@ public:
         s64 downcount = MAX_SLICE_LENGTH;
         s64 executed_ticks = 0;
         u64 idled_cycles = 0;
+
         // Stores a scaling for the internal clockspeed. Changing this number results in
         // under/overclocking the guest cpu
         double cpu_clock_scale = 1.0;
@@ -234,10 +235,6 @@ public:
         template <class Archive>
         void serialize(Archive& ar, const unsigned int) {
             MoveEvents();
-            // NOTE: ts_queue should be empty now
-            // TODO(SaveState): Remove the next two lines when we break compatibility
-            s64 x;
-            ar& x; // to keep compatibility with old save states that stored global_timer
             ar& event_queue;
             ar& event_fifo_id;
             ar& slice_length;
@@ -257,10 +254,14 @@ public:
      */
     TimingEventType* RegisterEvent(const std::string& name, TimedCallback callback);
 
-    void ScheduleEvent(s64 cycles_into_future, const TimingEventType* event_type, u64 userdata = 0,
-                       std::size_t core_id = std::numeric_limits<std::size_t>::max());
+    // Make sure to use thread_safe_mode = true if called from a different thread than the
+    // emulator thread, such as coroutines.
+    void ScheduleEvent(s64 cycles_into_future, const TimingEventType* event_type,
+                       std::uintptr_t user_data = 0,
+                       std::size_t core_id = std::numeric_limits<std::size_t>::max(),
+                       bool thread_safe_mode = false);
 
-    void UnscheduleEvent(const TimingEventType* event_type, u64 userdata);
+    void UnscheduleEvent(const TimingEventType* event_type, std::uintptr_t user_data);
 
     /// We only permit one event of each type in the queue at a time.
     void RemoveEvent(const TimingEventType* event_type);
@@ -293,10 +294,6 @@ private:
     std::vector<std::shared_ptr<Timer>> timers;
     Timer* current_timer = nullptr;
 
-    // Stores a scaling for the internal clockspeed. Changing this number results in
-    // under/overclocking the guest cpu
-    double cpu_clock_scale = 1.0;
-
     // When true, the event queue can't be modified. Used while deserializing to workaround
     // destructor side effects.
     bool event_queue_locked = false;
@@ -305,13 +302,7 @@ private:
     void serialize(Archive& ar, const unsigned int file_version) {
         // event_types set during initialization of other things
         ar& timers;
-        if (file_version == 0) {
-            std::shared_ptr<Timer> x;
-            ar& x;
-            current_timer = x.get();
-        } else {
-            ar& current_timer;
-        }
+        ar& current_timer;
         if (Archive::is_loading::value) {
             event_queue_locked = true;
         }

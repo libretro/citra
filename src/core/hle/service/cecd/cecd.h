@@ -5,6 +5,7 @@
 #pragma once
 
 #include <memory>
+#include <span>
 #include "common/bit_field.h"
 #include "common/common_funcs.h"
 #include "core/hle/kernel/event.h"
@@ -610,10 +611,11 @@ private:
                                                      0x26, 0x00, 0x01, 0x00};
 
     /// Encoding function used for the message id
-    std::string EncodeBase64(const std::vector<u8>& in) const;
+    std::string EncodeBase64(std::span<const u8> in) const;
 
-    std::string GetCecDataPathTypeAsString(const CecDataPathType type, const u32 program_id,
-                                           const std::vector<u8>& msg_id = std::vector<u8>()) const;
+    std::string GetCecDataPathTypeAsString(
+        const CecDataPathType type, const u32 program_id,
+        std::span<const u8> msg_id = std::span<const u8>{}) const;
 
     std::string GetCecCommandAsString(const CecCommand command) const;
 
@@ -623,6 +625,7 @@ private:
     std::unique_ptr<FileSys::ArchiveBackend> cecd_system_save_data_archive;
 
     std::shared_ptr<Kernel::Event> cecinfo_event;
+    std::shared_ptr<Kernel::Event> cecinfosys_event;
     std::shared_ptr<Kernel::Event> change_state_event;
 
     Core::System& system;

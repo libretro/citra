@@ -31,7 +31,7 @@ enum class LowPathType : u32 {
 };
 
 union Mode {
-    u32 hex;
+    u32 hex = 0;
     BitField<0, 1, u32> read_flag;
     BitField<1, 1, u32> write_flag;
     BitField<2, 1, u32> create_flag;
@@ -41,6 +41,7 @@ class Path {
 public:
     Path() : type(LowPathType::Invalid) {}
     Path(const char* path) : type(LowPathType::Char), string(path) {}
+    Path(std::string path) : type(LowPathType::Char), string(std::move(path)) {}
     Path(std::vector<u8> binary_data) : type(LowPathType::Binary), binary(std::move(binary_data)) {}
     template <std::size_t size>
     Path(const std::array<u8, size>& binary_data)
@@ -101,7 +102,7 @@ struct ArchiveFormatInfo {
     u32_le number_files;       ///< The pre-defined number of files in the archive.
     u8 duplicate_data;         ///< Whether the archive should duplicate the data.
 };
-static_assert(std::is_pod<ArchiveFormatInfo>::value, "ArchiveFormatInfo is not POD");
+static_assert(std::is_trivial_v<ArchiveFormatInfo>, "ArchiveFormatInfo is not POD");
 
 class ArchiveBackend : NonCopyable {
 public:

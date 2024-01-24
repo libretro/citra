@@ -3,7 +3,6 @@
 // Refer to the license.txt file included.
 
 #include <algorithm>
-#include <cstdio>
 #include <memory>
 #include "common/archives.h"
 #include "common/common_types.h"
@@ -11,9 +10,6 @@
 #include "common/logging/log.h"
 #include "core/file_sys/disk_archive.h"
 #include "core/file_sys/errors.h"
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// FileSys namespace
 
 SERIALIZE_EXPORT_IMPL(FileSys::DiskFile)
 SERIALIZE_EXPORT_IMPL(FileSys::DiskDirectory)
@@ -26,7 +22,7 @@ ResultVal<std::size_t> DiskFile::Read(const u64 offset, const std::size_t length
         return ERROR_INVALID_OPEN_FLAGS;
 
     file->Seek(offset, SEEK_SET);
-    return MakeResult<std::size_t>(file->ReadBytes(buffer, length));
+    return file->ReadBytes(buffer, length);
 }
 
 ResultVal<std::size_t> DiskFile::Write(const u64 offset, const std::size_t length, const bool flush,
@@ -38,7 +34,7 @@ ResultVal<std::size_t> DiskFile::Write(const u64 offset, const std::size_t lengt
     std::size_t written = file->WriteBytes(buffer, length);
     if (flush)
         file->Flush();
-    return MakeResult<std::size_t>(written);
+    return written;
 }
 
 u64 DiskFile::GetSize() const {
@@ -55,11 +51,8 @@ bool DiskFile::Close() const {
     return file->Close();
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
 DiskDirectory::DiskDirectory(const std::string& path) {
-    unsigned size = FileUtil::ScanDirectoryTree(path, directory);
-    directory.size = size;
+    directory.size = FileUtil::ScanDirectoryTree(path, directory);
     directory.isDirectory = true;
     children_iterator = directory.children.begin();
 }

@@ -6,15 +6,20 @@
 
 #include <array>
 #include <memory>
+#include <vector>
 #include <QMainWindow>
+#include <QPushButton>
+#include <QString>
 #include <QTimer>
 #include <QTranslator>
 #include "citra_qt/compatibility_list.h"
 #include "citra_qt/hotkeys.h"
-#include "common/announce_multiplayer_room.h"
 #include "core/core.h"
-#include "core/hle/service/am/am.h"
 #include "core/savestate.h"
+
+#ifdef __unix__
+#include <QDBusObjectPath>
+#endif
 
 class AboutDialog;
 class Config;
@@ -40,16 +45,36 @@ template <typename>
 class QFutureWatcher;
 class QLabel;
 class QProgressBar;
+class QPushButton;
+class QSlider;
 class RegistersWidget;
+#if ENABLE_QT_UPDATER
 class Updater;
+#endif
 class WaitTreeWidget;
+
+namespace Camera {
+class QtMultimediaCameraHandlerFactory;
+}
 
 namespace DiscordRPC {
 class DiscordInterface;
 }
 
+namespace Core {
+class Movie;
+}
+
 namespace Ui {
 class MainWindow;
+}
+
+namespace Service::AM {
+enum class InstallStatus : u32;
+}
+
+namespace Service::FS {
+enum class MediaType : u32;
 }
 
 class GMainWindow : public QMainWindow {
@@ -58,19 +83,11 @@ class GMainWindow : public QMainWindow {
     /// Max number of recently loaded items to keep track of
     static const int max_recent_files_item = 10;
 
-    // TODO: Make use of this!
-    enum {
-        UI_IDLE,
-        UI_EMU_BOOTING,
-        UI_EMU_RUNNING,
-        UI_EMU_STOPPING,
-    };
-
 public:
     void filterBarSetChecked(bool state);
     void UpdateUITheme();
 
-    GMainWindow();
+    explicit GMainWindow(Core::System& system);
     ~GMainWindow();
 
     GameList* game_list;
@@ -78,6 +95,9 @@ public:
 
     bool DropAction(QDropEvent* event);
     void AcceptDropEvent(QDropEvent* event);
+
+    void UninstallTitles(
+        const std::vector<std::tuple<Service::FS::MediaType, u64, QString>>& titles);
 
 public slots:
     void OnAppFocusStateChanged(Qt::ApplicationState state);
@@ -119,6 +139,7 @@ private:
 
     void ConnectWidgetEvents();
     void ConnectMenuEvents();
+    void UpdateMenuState();
 
     void PreventOSSleep();
     void AllowOSSleep();
@@ -128,12 +149,15 @@ private:
     void ShutdownGame();
 
     void ShowTelemetryCallout();
+    void SetDiscordEnabled(bool state);
+    void LoadAmiibo(const QString& filename);
+
+#if ENABLE_QT_UPDATER
     void ShowUpdaterWidgets();
     void ShowUpdatePrompt();
     void ShowNoUpdatePrompt();
     void CheckForUpdates();
-    void SetDiscordEnabled(bool state);
-    void LoadAmiibo(const QString& filename);
+#endif
 
     /**
      * Stores the filename in the recently loaded files list.
@@ -169,7 +193,9 @@ private:
 
 private slots:
     void OnStartGame();
+    void OnRestartGame();
     void OnPauseGame();
+    void OnPauseContinueGame();
     void OnStopGame();
     void OnSaveState();
     void OnLoadState();
@@ -183,8 +209,11 @@ private slots:
     void OnGameListOpenDirectory(const QString& directory);
     void OnGameListAddDirectory();
     void OnGameListShowList(bool show);
+    void OnGameListOpenPerGameProperties(const QString& file);
+    void OnConfigurePerGame();
     void OnMenuLoadFile();
     void OnMenuInstallCIA();
+    void OnMenuBootHomeMenu(u32 region);
     void OnUpdateProgress(std::size_t written, std::size_t total);
     void OnCIAInstallReport(Service::AM::InstallStatus status, QString filepath);
     void OnCIAInstallFinished();
@@ -197,11 +226,14 @@ private slots:
     void OnDisplayTitleBars(bool);
     void InitializeHotkeys();
     void ToggleFullscreen();
+    void ToggleSecondaryFullscreen();
     void ChangeScreenLayout();
+    void UpdateSecondaryWindowVisibility();
     void ToggleScreenLayout();
     void OnSwapScreens();
     void OnRotateScreens();
-    void OnCheats();
+    void TriggerSwapScreens();
+    void TriggerRotateScreens();
     void ShowFullscreen();
     void HideFullscreen();
     void ToggleWindowMode();
@@ -211,22 +243,30 @@ private slots:
     void OnCloseMovie();
     void OnSaveMovie();
     void OnCaptureScreenshot();
-#ifdef ENABLE_FFMPEG_VIDEO_DUMPER
-    void OnStartVideoDumping();
-    void OnStopVideoDumping();
+    void OnDumpVideo();
+#ifdef _WIN32
+    void OnOpenFFmpeg();
 #endif
+    void OnStartVideoDumping();
+    void StartVideoDumping(const QString& path);
+    void OnStopVideoDumping();
     void OnCoreError(Core::System::ResultStatus, std::string);
     /// Called whenever a user selects Help->About Citra
     void OnMenuAboutCitra();
+
+#if ENABLE_QT_UPDATER
     void OnUpdateFound(bool found, bool error);
     void OnCheckForUpdates();
     void OnOpenUpdater();
+#endif
+
     void OnLanguageChanged(const QString& locale);
     void OnMouseActivity();
 
 private:
     Q_INVOKABLE void OnMoviePlaybackCompleted();
     void UpdateStatusBar();
+    void UpdateBootHomeMenuState();
     void LoadTranslation();
     void UpdateWindowTitle();
     void UpdateUISettings();
@@ -234,10 +274,18 @@ private:
     void InstallCIA(QStringList filepaths);
     void HideMouseCursor();
     void ShowMouseCursor();
+    void OpenPerGameConfiguration(u64 title_id, const QString& file_name);
+    void UpdateAPIIndicator(bool update = false);
+#ifdef __unix__
+    void SetGamemodeEnabled(bool state);
+#endif
 
     std::unique_ptr<Ui::MainWindow> ui;
+    Core::System& system;
+    Core::Movie& movie;
 
     GRenderWindow* render_window;
+    GRenderWindow* secondary_window;
 
     GameListPlaceholder* game_list_placeholder;
     LoadingScreen* loading_screen;
@@ -248,6 +296,7 @@ private:
     QLabel* emu_speed_label = nullptr;
     QLabel* game_fps_label = nullptr;
     QLabel* emu_frametime_label = nullptr;
+    QPushButton* graphics_api_button = nullptr;
     QTimer status_bar_update_timer;
     bool message_label_used_for_movie = false;
 
@@ -281,6 +330,8 @@ private:
     // Whether game was paused due to stopping video dumping
     bool game_paused_for_dumping = false;
 
+    std::vector<QString> physical_devices;
+
     // Debugger panes
     ProfilerWidget* profilerWidget;
     MicroProfileDialog* microProfileDialog;
@@ -293,7 +344,9 @@ private:
     IPCRecorderWidget* ipcRecorderWidget;
     LLEServiceModulesWidget* lleServiceModulesWidget;
     WaitTreeWidget* waitTreeWidget;
+#if ENABLE_QT_UPDATER
     Updater* updater;
+#endif
 
     bool explicit_update_check = false;
     bool defer_update_prompt = false;
@@ -313,6 +366,12 @@ private:
     QStringList default_theme_paths;
 
     HotkeyRegistry hotkey_registry;
+
+    std::shared_ptr<Camera::QtMultimediaCameraHandlerFactory> qt_cameras;
+
+#ifdef __unix__
+    QDBusObjectPath wake_lock{};
+#endif
 
 protected:
     void dropEvent(QDropEvent* event) override;

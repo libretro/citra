@@ -2,33 +2,73 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
-#include <memory>
+#include "common/settings.h"
+#include "core/core.h"
 #include "core/frontend/emu_window.h"
+#include "core/tracer/recorder.h"
+#include "video_core/debug_utils/debug_utils.h"
 #include "video_core/renderer_base.h"
-#include "video_core/renderer_opengl/gl_rasterizer.h"
-#include "video_core/swrasterizer/swrasterizer.h"
-#include "video_core/video_core.h"
 
-RendererBase::RendererBase(Frontend::EmuWindow& window) : render_window{window} {}
+namespace VideoCore {
+
+RendererBase::RendererBase(Core::System& system_, Frontend::EmuWindow& window,
+                           Frontend::EmuWindow* secondary_window_)
+    : system{system_}, render_window{window}, secondary_window{secondary_window_} {}
+
 RendererBase::~RendererBase() = default;
-void RendererBase::UpdateCurrentFramebufferLayout(bool is_portrait_mode) {
-    const Layout::FramebufferLayout& layout = render_window.GetFramebufferLayout();
-    render_window.UpdateCurrentFramebufferLayout(layout.width, layout.height, is_portrait_mode);
+
+u32 RendererBase::GetResolutionScaleFactor() {
+    const auto graphics_api = Settings::values.graphics_api.GetValue();
+    if (graphics_api == Settings::GraphicsAPI::Software) {
+        // Software renderer always render at native resolution
+        return 1;
+    }
+
+    const u32 scale_factor = Settings::values.resolution_factor.GetValue();
+    return scale_factor != 0 ? scale_factor
+                             : render_window.GetFramebufferLayout().GetScalingRatio();
 }
 
-void RendererBase::RefreshRasterizerSetting() {
-    bool hw_renderer_enabled = VideoCore::g_hw_renderer_enabled;
-    if (rasterizer == nullptr || opengl_rasterizer_active != hw_renderer_enabled) {
-        opengl_rasterizer_active = hw_renderer_enabled;
-
-        if (hw_renderer_enabled) {
-            rasterizer = std::make_unique<OpenGL::RasterizerOpenGL>();
-        } else {
-            rasterizer = std::make_unique<VideoCore::SWRasterizer>();
-        }
+void RendererBase::UpdateCurrentFramebufferLayout(bool is_portrait_mode) {
+    const auto update_layout = [is_portrait_mode](Frontend::EmuWindow& window) {
+        const Layout::FramebufferLayout& layout = window.GetFramebufferLayout();
+        window.UpdateCurrentFramebufferLayout(layout.width, layout.height, is_portrait_mode);
+    };
+    update_layout(render_window);
+    if (secondary_window) {
+        update_layout(*secondary_window);
     }
 }
 
-void RendererBase::Sync() {
-    rasterizer->SyncEntireState();
+void RendererBase::EndFrame() {
+    current_frame++;
+
+    system.perf_stats->EndSystemFrame();
+
+    render_window.PollEvents();
+
+    system.frame_limiter.DoFrameLimiting(system.CoreTiming().GetGlobalTimeUs());
+    system.perf_stats->BeginSystemFrame();
+
+    if (Pica::g_debug_context && Pica::g_debug_context->recorder) {
+        Pica::g_debug_context->recorder->FrameFinished();
+    }
 }
+
+bool RendererBase::IsScreenshotPending() const {
+    return settings.screenshot_requested;
+}
+
+void RendererBase::RequestScreenshot(void* data, std::function<void(bool)> callback,
+                                     const Layout::FramebufferLayout& layout) {
+    if (settings.screenshot_requested) {
+        LOG_ERROR(Render, "A screenshot is already requested or in progress, ignoring the request");
+        return;
+    }
+    settings.screenshot_bits = data;
+    settings.screenshot_complete_callback = callback;
+    settings.screenshot_framebuffer_layout = layout;
+    settings.screenshot_requested = true;
+}
+
+} // namespace VideoCore

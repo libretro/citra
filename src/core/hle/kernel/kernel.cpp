@@ -23,13 +23,15 @@ namespace Kernel {
 
 /// Initialize the kernel
 KernelSystem::KernelSystem(Memory::MemorySystem& memory, Core::Timing& timing,
-                           std::function<void()> prepare_reschedule_callback, u32 system_mode,
-                           u32 num_cores, u8 n3ds_mode)
+                           std::function<void()> prepare_reschedule_callback,
+                           MemoryMode memory_mode, u32 num_cores,
+                           const New3dsHwCapabilities& n3ds_hw_caps, u64 override_init_time)
     : memory(memory), timing(timing),
-      prepare_reschedule_callback(std::move(prepare_reschedule_callback)) {
+      prepare_reschedule_callback(std::move(prepare_reschedule_callback)), memory_mode(memory_mode),
+      n3ds_hw_caps(n3ds_hw_caps) {
     std::generate(memory_regions.begin(), memory_regions.end(),
                   [] { return std::make_shared<MemoryRegionInfo>(); });
-    MemoryInit(system_mode, n3ds_mode);
+    MemoryInit(memory_mode, n3ds_hw_caps.memory_mode, override_init_time);
 
     resource_limits = std::make_unique<ResourceLimitList>(*this);
     for (u32 core_id = 0; core_id < num_cores; ++core_id) {
@@ -85,15 +87,14 @@ void KernelSystem::SetCurrentMemoryPageTable(std::shared_ptr<Memory::PageTable> 
     }
 }
 
-void KernelSystem::SetCPUs(std::vector<std::shared_ptr<ARM_Interface>> cpus) {
+void KernelSystem::SetCPUs(std::vector<std::shared_ptr<Core::ARM_Interface>> cpus) {
     ASSERT(cpus.size() == thread_managers.size());
-    u32 i = 0;
-    for (const auto& cpu : cpus) {
-        thread_managers[i++]->SetCPU(*cpu);
+    for (u32 i = 0; i < cpus.size(); i++) {
+        thread_managers[i]->SetCPU(*cpus[i]);
     }
 }
 
-void KernelSystem::SetRunningCPU(ARM_Interface* cpu) {
+void KernelSystem::SetRunningCPU(Core::ARM_Interface* cpu) {
     if (current_process) {
         stored_processes[current_cpu->GetID()] = current_process;
     }
@@ -136,6 +137,10 @@ const SharedPage::Handler& KernelSystem::GetSharedPageHandler() const {
     return *shared_page_handler;
 }
 
+ConfigMem::Handler& KernelSystem::GetConfigMemHandler() {
+    return *config_mem_handler;
+}
+
 IPCDebugger::Recorder& KernelSystem::GetIPCRecorder() {
     return *ipc_recorder;
 }
@@ -176,6 +181,8 @@ void KernelSystem::serialize(Archive& ar, const unsigned int file_version) {
     ar& shared_page_handler;
     ar& stored_processes;
     ar& next_thread_id;
+    ar& memory_mode;
+    ar& n3ds_hw_caps;
     // Deliberately don't include debugger info to allow debugging through loads
 
     if (Archive::is_loading::value) {

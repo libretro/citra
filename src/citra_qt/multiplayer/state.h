@@ -5,7 +5,7 @@
 #pragma once
 
 #include <QWidget>
-#include "core/announce_multiplayer_session.h"
+#include "network/announce_multiplayer_session.h"
 #include "network/network.h"
 
 class QStandardItemModel;
@@ -15,12 +15,16 @@ class ClientRoomWindow;
 class DirectConnectWindow;
 class ClickableLabel;
 
+namespace Core {
+class System;
+}
+
 class MultiplayerState : public QWidget {
     Q_OBJECT;
 
 public:
-    explicit MultiplayerState(QWidget* parent, QStandardItemModel* game_list, QAction* leave_room,
-                              QAction* show_room);
+    explicit MultiplayerState(Core::System& system, QWidget* parent, QStandardItemModel* game_list,
+                              QAction* leave_room, QAction* show_room);
     ~MultiplayerState();
 
     /**
@@ -71,6 +75,7 @@ signals:
     void AnnounceFailed(const Common::WebResult&);
 
 private:
+    Core::System& system;
     Lobby* lobby = nullptr;
     HostRoomWindow* host_room = nullptr;
     ClientRoomWindow* client_room = nullptr;
@@ -80,7 +85,7 @@ private:
     QStandardItemModel* game_list_model = nullptr;
     QAction* leave_room;
     QAction* show_room;
-    std::shared_ptr<Core::AnnounceMultiplayerSession> announce_multiplayer_session;
+    std::shared_ptr<Network::AnnounceMultiplayerSession> announce_multiplayer_session;
     Network::RoomMember::State current_state = Network::RoomMember::State::Uninitialized;
     bool has_mod_perms = false;
     Network::RoomMember::CallbackHandle<Network::RoomMember::State> state_callback_handle;

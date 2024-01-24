@@ -78,28 +78,27 @@ static void WriteUniformFloatReg(ShaderRegs& config, Shader::ShaderSetup& setup,
         (float_regs_counter >= 3 && !uniform_setup.IsFloat32())) {
         float_regs_counter = 0;
 
-        auto& uniform = setup.uniforms.f[uniform_setup.index];
-
-        if (uniform_setup.index >= 96) {
+        if (uniform_setup.index >= setup.uniforms.f.size()) {
             LOG_ERROR(HW_GPU, "Invalid {} float uniform index {}", GetShaderSetupTypeName(setup),
                       (int)uniform_setup.index);
         } else {
+            auto& uniform = setup.uniforms.f[uniform_setup.index];
 
             // NOTE: The destination component order indeed is "backwards"
             if (uniform_setup.IsFloat32()) {
                 for (auto i : {0, 1, 2, 3}) {
                     float buffer_value;
                     std::memcpy(&buffer_value, &uniform_write_buffer[i], sizeof(float));
-                    uniform[3 - i] = float24::FromFloat32(buffer_value);
+                    uniform[3 - i] = f24::FromFloat32(buffer_value);
                 }
             } else {
                 // TODO: Untested
-                uniform.w = float24::FromRaw(uniform_write_buffer[0] >> 8);
-                uniform.z = float24::FromRaw(((uniform_write_buffer[0] & 0xFF) << 16) |
-                                             ((uniform_write_buffer[1] >> 16) & 0xFFFF));
-                uniform.y = float24::FromRaw(((uniform_write_buffer[1] & 0xFFFF) << 8) |
-                                             ((uniform_write_buffer[2] >> 24) & 0xFF));
-                uniform.x = float24::FromRaw(uniform_write_buffer[2] & 0xFFFFFF);
+                uniform.w = f24::FromRaw(uniform_write_buffer[0] >> 8);
+                uniform.z = f24::FromRaw(((uniform_write_buffer[0] & 0xFF) << 16) |
+                                         ((uniform_write_buffer[1] >> 16) & 0xFFFF));
+                uniform.y = f24::FromRaw(((uniform_write_buffer[1] & 0xFFFF) << 8) |
+                                         ((uniform_write_buffer[2] >> 24) & 0xFF));
+                uniform.x = f24::FromRaw(uniform_write_buffer[2] & 0xFFFFFF);
             }
 
             LOG_TRACE(HW_GPU, "Set {} float uniform {:x} to ({} {} {} {})",
@@ -182,15 +181,15 @@ static void WritePicaReg(u32 id, u32 value, u32 mask) {
                 break;
             }
 
-            Common::Vec4<float24> attribute;
+            Common::Vec4<f24> attribute;
 
             // NOTE: The destination component order indeed is "backwards"
-            attribute.w = float24::FromRaw(g_state.default_attr_write_buffer[0] >> 8);
-            attribute.z = float24::FromRaw(((g_state.default_attr_write_buffer[0] & 0xFF) << 16) |
-                                           ((g_state.default_attr_write_buffer[1] >> 16) & 0xFFFF));
-            attribute.y = float24::FromRaw(((g_state.default_attr_write_buffer[1] & 0xFFFF) << 8) |
-                                           ((g_state.default_attr_write_buffer[2] >> 24) & 0xFF));
-            attribute.x = float24::FromRaw(g_state.default_attr_write_buffer[2] & 0xFFFFFF);
+            attribute.w = f24::FromRaw(g_state.default_attr_write_buffer[0] >> 8);
+            attribute.z = f24::FromRaw(((g_state.default_attr_write_buffer[0] & 0xFF) << 16) |
+                                       ((g_state.default_attr_write_buffer[1] >> 16) & 0xFFFF));
+            attribute.y = f24::FromRaw(((g_state.default_attr_write_buffer[1] & 0xFFFF) << 8) |
+                                       ((g_state.default_attr_write_buffer[2] >> 24) & 0xFF));
+            attribute.x = f24::FromRaw(g_state.default_attr_write_buffer[2] & 0xFFFFFF);
 
             LOG_TRACE(HW_GPU, "Set default VS attribute {:x} to ({} {} {} {})", (int)setup.index,
                       attribute.x.ToFloat32(), attribute.y.ToFloat32(), attribute.z.ToFloat32(),

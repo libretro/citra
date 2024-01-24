@@ -5,6 +5,7 @@
 #include <boost/serialization/base_object.hpp>
 #include <boost/serialization/shared_ptr.hpp>
 #include "common/archives.h"
+#include "common/settings.h"
 #include "core/core.h"
 #include "core/core_timing.h"
 #include "core/hle/ipc_helpers.h"
@@ -13,7 +14,6 @@
 #include "core/hle/service/hid/hid.h"
 #include "core/hle/service/ir/ir_rst.h"
 #include "core/movie.h"
-#include "core/settings.h"
 
 SERIALIZE_EXPORT_IMPL(Service::IR::IR_RST)
 SERVICE_CONSTRUCT_IMPL(Service::IR::IR_RST)
@@ -66,7 +66,7 @@ void IR_RST::UnloadInputDevices() {
     c_stick = nullptr;
 }
 
-void IR_RST::UpdateCallback(u64 userdata, s64 cycles_late) {
+void IR_RST::UpdateCallback(std::uintptr_t user_data, s64 cycles_late) {
     SharedMem* mem = reinterpret_cast<SharedMem*>(shared_memory->GetPointer());
 
     if (is_device_reload_pending.exchange(false))
@@ -83,7 +83,7 @@ void IR_RST::UpdateCallback(u64 userdata, s64 cycles_late) {
     s16 c_stick_x = static_cast<s16>(c_stick_x_f * MAX_CSTICK_RADIUS);
     s16 c_stick_y = static_cast<s16>(c_stick_y_f * MAX_CSTICK_RADIUS);
 
-    Core::Movie::GetInstance().HandleIrRst(state, c_stick_x, c_stick_y);
+    system.Movie().HandleIrRst(state, c_stick_x, c_stick_y);
 
     if (!raw_c_stick) {
         const HID::DirectionState direction = HID::GetStickDirectionState(c_stick_x, c_stick_y);
@@ -128,14 +128,14 @@ void IR_RST::UpdateCallback(u64 userdata, s64 cycles_late) {
 }
 
 void IR_RST::GetHandles(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x01, 0, 0);
+    IPC::RequestParser rp(ctx);
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 3);
     rb.Push(RESULT_SUCCESS);
     rb.PushMoveObjects(shared_memory, update_event);
 }
 
 void IR_RST::Initialize(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x02, 2, 0);
+    IPC::RequestParser rp(ctx);
     update_period = static_cast<int>(rp.Pop<u32>());
     raw_c_stick = rp.Pop<bool>();
 
@@ -153,7 +153,7 @@ void IR_RST::Initialize(Kernel::HLERequestContext& ctx) {
 }
 
 void IR_RST::Shutdown(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x03, 0, 0);
+    IPC::RequestParser rp(ctx);
 
     system.CoreTiming().UnscheduleEvent(update_callback_id, 0);
     UnloadInputDevices();
@@ -175,14 +175,17 @@ IR_RST::IR_RST(Core::System& system) : ServiceFramework("ir:rst", 1), system(sys
     update_event = system.Kernel().CreateEvent(ResetType::OneShot, "IRRST:UpdateEvent");
 
     update_callback_id = system.CoreTiming().RegisterEvent(
-        "IRRST:UpdateCallBack",
-        [this](u64 userdata, s64 cycles_late) { UpdateCallback(userdata, cycles_late); });
+        "IRRST:UpdateCallBack", [this](std::uintptr_t user_data, s64 cycles_late) {
+            UpdateCallback(user_data, cycles_late);
+        });
 
     static const FunctionInfo functions[] = {
-        {0x00010000, &IR_RST::GetHandles, "GetHandles"},
-        {0x00020080, &IR_RST::Initialize, "Initialize"},
-        {0x00030000, &IR_RST::Shutdown, "Shutdown"},
-        {0x00090000, nullptr, "WriteToTwoFields"},
+        // clang-format off
+        {0x0001, &IR_RST::GetHandles, "GetHandles"},
+        {0x0002, &IR_RST::Initialize, "Initialize"},
+        {0x0003, &IR_RST::Shutdown, "Shutdown"},
+        {0x0009, nullptr, "WriteToTwoFields"},
+        // clang-format on
     };
     RegisterHandlers(functions);
 }

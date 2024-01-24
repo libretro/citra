@@ -7,41 +7,14 @@
 #include <string>
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
-#include <fmt/format.h>
-#include <glad/glad.h>
 #include "citra/emu_window/emu_window_sdl2.h"
 #include "common/logging/log.h"
 #include "common/scm_rev.h"
-#include "core/3ds.h"
 #include "core/core.h"
-#include "core/settings.h"
 #include "input_common/keyboard.h"
 #include "input_common/main.h"
 #include "input_common/motion_emu.h"
-#include "input_common/sdl/sdl.h"
 #include "network/network.h"
-#include "video_core/renderer_base.h"
-#include "video_core/video_core.h"
-
-SharedContext_SDL2::SharedContext_SDL2() {
-    window = SDL_CreateWindow(NULL, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 0, 0,
-                              SDL_WINDOW_HIDDEN | SDL_WINDOW_OPENGL);
-    context = SDL_GL_CreateContext(window);
-}
-
-SharedContext_SDL2::~SharedContext_SDL2() {
-    DoneCurrent();
-    SDL_GL_DeleteContext(context);
-    SDL_DestroyWindow(window);
-}
-
-void SharedContext_SDL2::MakeCurrent() {
-    SDL_GL_MakeCurrent(window, context);
-}
-
-void SharedContext_SDL2::DoneCurrent() {
-    SDL_GL_MakeCurrent(window, nullptr);
-}
 
 void EmuWindow_SDL2::OnMouseMotion(s32 x, s32 y) {
     TouchMoved((unsigned)std::max(x, 0), (unsigned)std::max(y, 0));
@@ -105,9 +78,13 @@ bool EmuWindow_SDL2::IsOpen() const {
     return is_open;
 }
 
+void EmuWindow_SDL2::RequestClose() {
+    is_open = false;
+}
+
 void EmuWindow_SDL2::OnResize() {
     int width, height;
-    SDL_GetWindowSize(render_window, &width, &height);
+    SDL_GL_GetDrawableSize(render_window, &width, &height);
     UpdateCurrentFramebufferLayout(width, height);
 }
 
@@ -132,10 +109,16 @@ void EmuWindow_SDL2::Fullscreen() {
     SDL_MaximizeWindow(render_window);
 }
 
-EmuWindow_SDL2::EmuWindow_SDL2(bool fullscreen) {
-    // Initialize the window
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) < 0) {
-        LOG_CRITICAL(Frontend, "Failed to initialize SDL2! Exiting...");
+EmuWindow_SDL2::EmuWindow_SDL2(Core::System& system_, bool is_secondary)
+    : EmuWindow(is_secondary), system(system_) {}
+
+EmuWindow_SDL2::~EmuWindow_SDL2() {
+    SDL_Quit();
+}
+
+void EmuWindow_SDL2::InitializeSDL2() {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) < 0) {
+        LOG_CRITICAL(Frontend, "Failed to initialize SDL2: {}! Exiting...", SDL_GetError());
         exit(1);
     }
 
@@ -143,100 +126,56 @@ EmuWindow_SDL2::EmuWindow_SDL2(bool fullscreen) {
     Network::Init();
 
     SDL_SetMainReady();
-
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    if (Settings::values.use_gles) {
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-    } else {
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    }
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 0);
-    // Enable context sharing for the shared context
-    SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
-    // Enable vsync
-    SDL_GL_SetSwapInterval(1);
-
-    std::string window_title = fmt::format("Citra {} | {}-{}", Common::g_build_fullname,
-                                           Common::g_scm_branch, Common::g_scm_desc);
-    render_window =
-        SDL_CreateWindow(window_title.c_str(),
-                         SDL_WINDOWPOS_UNDEFINED, // x position
-                         SDL_WINDOWPOS_UNDEFINED, // y position
-                         Core::kScreenTopWidth, Core::kScreenTopHeight + Core::kScreenBottomHeight,
-                         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
-
-    if (render_window == nullptr) {
-        LOG_CRITICAL(Frontend, "Failed to create SDL2 window: {}", SDL_GetError());
-        exit(1);
-    }
-
-    dummy_window = SDL_CreateWindow(NULL, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 0, 0,
-                                    SDL_WINDOW_HIDDEN | SDL_WINDOW_OPENGL);
-
-    if (fullscreen) {
-        Fullscreen();
-    }
-
-    window_context = SDL_GL_CreateContext(render_window);
-    core_context = CreateSharedContext();
-
-    if (window_context == nullptr) {
-        LOG_CRITICAL(Frontend, "Failed to create SDL2 GL context: {}", SDL_GetError());
-        exit(1);
-    }
-    if (core_context == nullptr) {
-        LOG_CRITICAL(Frontend, "Failed to create shared SDL2 GL context: {}", SDL_GetError());
-        exit(1);
-    }
-
-    auto gl_load_func = Settings::values.use_gles ? gladLoadGLES2Loader : gladLoadGLLoader;
-
-    if (!gl_load_func(static_cast<GLADloadproc>(SDL_GL_GetProcAddress))) {
-        LOG_CRITICAL(Frontend, "Failed to initialize GL functions: {}", SDL_GetError());
-        exit(1);
-    }
-
-    OnResize();
-    OnMinimalClientAreaChangeRequest(GetActiveConfig().min_client_area_size);
-    SDL_PumpEvents();
-    LOG_INFO(Frontend, "Citra Version: {} | {}-{}", Common::g_build_fullname, Common::g_scm_branch,
-             Common::g_scm_desc);
-    Settings::LogSettings();
 }
 
-EmuWindow_SDL2::~EmuWindow_SDL2() {
-    core_context.reset();
-    Network::Shutdown();
-    InputCommon::Shutdown();
-    SDL_GL_DeleteContext(window_context);
-    SDL_Quit();
-}
-
-std::unique_ptr<Frontend::GraphicsContext> EmuWindow_SDL2::CreateSharedContext() const {
-    return std::make_unique<SharedContext_SDL2>();
-}
-
-void EmuWindow_SDL2::Present() {
-    SDL_GL_MakeCurrent(render_window, window_context);
-    SDL_GL_SetSwapInterval(1);
-    while (IsOpen()) {
-        VideoCore::g_renderer->Present();
-        SDL_GL_SwapWindow(render_window);
+u32 EmuWindow_SDL2::GetEventWindowId(const SDL_Event& event) const {
+    switch (event.type) {
+    case SDL_WINDOWEVENT:
+        return event.window.windowID;
+    case SDL_KEYDOWN:
+    case SDL_KEYUP:
+        return event.key.windowID;
+    case SDL_MOUSEMOTION:
+        return event.motion.windowID;
+    case SDL_MOUSEBUTTONDOWN:
+    case SDL_MOUSEBUTTONUP:
+        return event.button.windowID;
+    case SDL_MOUSEWHEEL:
+        return event.wheel.windowID;
+    case SDL_FINGERDOWN:
+    case SDL_FINGERMOTION:
+    case SDL_FINGERUP:
+        return event.tfinger.windowID;
+    case SDL_TEXTEDITING:
+        return event.edit.windowID;
+    case SDL_TEXTEDITING_EXT:
+        return event.editExt.windowID;
+    case SDL_TEXTINPUT:
+        return event.text.windowID;
+    case SDL_DROPBEGIN:
+    case SDL_DROPFILE:
+    case SDL_DROPTEXT:
+    case SDL_DROPCOMPLETE:
+        return event.drop.windowID;
+    case SDL_USEREVENT:
+        return event.user.windowID;
+    default:
+        // Event is not for any particular window, so we can just pretend it's for this one.
+        return render_window_id;
     }
-    SDL_GL_MakeCurrent(render_window, nullptr);
 }
 
 void EmuWindow_SDL2::PollEvents() {
     SDL_Event event;
+    std::vector<SDL_Event> other_window_events;
 
     // SDL_PollEvent returns 0 when there are no more events in the event queue
     while (SDL_PollEvent(&event)) {
+        if (GetEventWindowId(event) != render_window_id) {
+            other_window_events.push_back(event);
+            continue;
+        }
+
         switch (event.type) {
         case SDL_WINDOWEVENT:
             switch (event.window.event) {
@@ -248,7 +187,7 @@ void EmuWindow_SDL2::PollEvents() {
                 OnResize();
                 break;
             case SDL_WINDOWEVENT_CLOSE:
-                is_open = false;
+                RequestClose();
                 break;
             }
             break;
@@ -279,16 +218,30 @@ void EmuWindow_SDL2::PollEvents() {
             OnFingerUp();
             break;
         case SDL_QUIT:
-            is_open = false;
+            RequestClose();
             break;
         default:
             break;
         }
     }
+    for (auto& e : other_window_events) {
+        // This is a somewhat hacky workaround to re-emit window events meant for another window
+        // since SDL_PollEvent() is global but we poll events per window.
+        SDL_PushEvent(&e);
+    }
+    if (!is_secondary) {
+        UpdateFramerateCounter();
+    }
+}
 
+void EmuWindow_SDL2::OnMinimalClientAreaChangeRequest(std::pair<u32, u32> minimal_size) {
+    SDL_SetWindowMinimumSize(render_window, minimal_size.first, minimal_size.second);
+}
+
+void EmuWindow_SDL2::UpdateFramerateCounter() {
     const u32 current_time = SDL_GetTicks();
     if (current_time > last_time + 2000) {
-        const auto results = Core::System::GetInstance().GetAndResetPerfStats();
+        const auto results = system.GetAndResetPerfStats();
         const auto title =
             fmt::format("Citra {} | {}-{} | FPS: {:.0f} ({:.0f}%)", Common::g_build_fullname,
                         Common::g_scm_branch, Common::g_scm_desc, results.game_fps,
@@ -296,26 +249,4 @@ void EmuWindow_SDL2::PollEvents() {
         SDL_SetWindowTitle(render_window, title.c_str());
         last_time = current_time;
     }
-}
-
-bool EmuWindow_SDL2::ShouldDeferRendererInit() const {
-    return false;
-}
-
-bool EmuWindow_SDL2::NeedsClearing() const {
-    return true;
-}
-
-void EmuWindow_SDL2::SetupFramebuffer() {}
-
-void EmuWindow_SDL2::MakeCurrent() {
-    core_context->MakeCurrent();
-}
-
-void EmuWindow_SDL2::DoneCurrent() {
-    core_context->DoneCurrent();
-}
-
-void EmuWindow_SDL2::OnMinimalClientAreaChangeRequest(std::pair<u32, u32> minimal_size) {
-    SDL_SetWindowMinimumSize(render_window, minimal_size.first, minimal_size.second);
 }

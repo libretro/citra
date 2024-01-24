@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <span>
 #include <QAbstractItemModel>
 #include <QDockWidget>
 #include <QTreeView>
@@ -22,6 +23,10 @@ class Thread;
 class Timer;
 } // namespace Kernel
 
+namespace Core {
+class System;
+}
+
 class WaitTreeThread;
 
 class WaitTreeItem : public QObject {
@@ -36,9 +41,9 @@ public:
 
     void Expand();
     WaitTreeItem* Parent() const;
-    const std::vector<std::unique_ptr<WaitTreeItem>>& Children() const;
+    std::span<const std::unique_ptr<WaitTreeItem>> Children() const;
     std::size_t Row() const;
-    static std::vector<std::unique_ptr<WaitTreeThread>> MakeThreadItemList();
+    static std::vector<std::unique_ptr<WaitTreeThread>> MakeThreadItemList(Core::System& system);
 
 private:
     std::size_t row;
@@ -165,7 +170,7 @@ public:
     int columnCount(const QModelIndex& parent) const override;
 
     void ClearItems();
-    void InitItems();
+    void InitItems(Core::System& system);
 
 private:
     std::vector<std::unique_ptr<WaitTreeThread>> thread_items;
@@ -175,7 +180,7 @@ class WaitTreeWidget : public QDockWidget {
     Q_OBJECT
 
 public:
-    explicit WaitTreeWidget(QWidget* parent = nullptr);
+    explicit WaitTreeWidget(Core::System& system, QWidget* parent = nullptr);
 
 public slots:
     void OnDebugModeEntered();
@@ -187,4 +192,5 @@ public slots:
 private:
     QTreeView* view;
     WaitTreeModel* model;
+    Core::System& system;
 };

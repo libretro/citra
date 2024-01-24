@@ -19,28 +19,30 @@
 #include "core/hle/service/apt/apt.h"
 #include "core/hle/service/boss/boss.h"
 #include "core/hle/service/cam/cam.h"
+#include "core/hle/service/cam/y2r_u.h"
 #include "core/hle/service/cecd/cecd.h"
 #include "core/hle/service/cfg/cfg.h"
 #include "core/hle/service/csnd/csnd_snd.h"
 #include "core/hle/service/dlp/dlp.h"
 #include "core/hle/service/dsp/dsp_dsp.h"
-#include "core/hle/service/err_f.h"
+#include "core/hle/service/err/err_f.h"
 #include "core/hle/service/frd/frd.h"
 #include "core/hle/service/fs/archive.h"
 #include "core/hle/service/fs/fs_user.h"
 #include "core/hle/service/gsp/gsp.h"
 #include "core/hle/service/gsp/gsp_lcd.h"
 #include "core/hle/service/hid/hid.h"
-#include "core/hle/service/http_c.h"
+#include "core/hle/service/http/http_c.h"
 #include "core/hle/service/ir/ir.h"
 #include "core/hle/service/ldr_ro/ldr_ro.h"
-#include "core/hle/service/mic_u.h"
+#include "core/hle/service/mic/mic_u.h"
 #include "core/hle/service/mvd/mvd.h"
 #include "core/hle/service/ndm/ndm_u.h"
 #include "core/hle/service/news/news.h"
 #include "core/hle/service/nfc/nfc.h"
 #include "core/hle/service/nim/nim.h"
 #include "core/hle/service/nwm/nwm.h"
+#include "core/hle/service/plgldr/plgldr.h"
 #include "core/hle/service/pm/pm.h"
 #include "core/hle/service/ps/ps_ps.h"
 #include "core/hle/service/ptm/ptm.h"
@@ -49,13 +51,13 @@
 #include "core/hle/service/service.h"
 #include "core/hle/service/sm/sm.h"
 #include "core/hle/service/sm/srv.h"
-#include "core/hle/service/soc_u.h"
-#include "core/hle/service/ssl_c.h"
-#include "core/hle/service/y2r_u.h"
+#include "core/hle/service/soc/soc_u.h"
+#include "core/hle/service/ssl/ssl_c.h"
+#include "core/loader/loader.h"
 
 namespace Service {
 
-const std::array<ServiceModuleInfo, 40> service_module_map{
+const std::array<ServiceModuleInfo, 41> service_module_map{
     {{"FS", 0x00040130'00001102, FS::InstallInterfaces},
      {"PM", 0x00040130'00001202, PM::InstallInterfaces},
      {"LDR", 0x00040130'00003702, LDR::InstallInterfaces},
@@ -94,6 +96,7 @@ const std::array<ServiceModuleInfo, 40> service_module_map{
      {"SOC", 0x00040130'00002E02, SOC::InstallInterfaces},
      {"SSL", 0x00040130'00002F02, SSL::InstallInterfaces},
      {"PS", 0x00040130'00003102, PS::InstallInterfaces},
+     {"PLGLDR", 0x00040130'00006902, PLGLDR::InstallInterfaces},
      // no HLE implementation
      {"CDC", 0x00040130'00001802, nullptr},
      {"GPIO", 0x00040130'00001B02, nullptr},
@@ -141,7 +144,7 @@ void ServiceFrameworkBase::RegisterHandlersBase(const FunctionInfoBase* function
     handlers.reserve(handlers.size() + n);
     for (std::size_t i = 0; i < n; ++i) {
         // Usually this array is sorted by id already, so hint to insert at the end
-        handlers.emplace_hint(handlers.cend(), functions[i].expected_header, functions[i]);
+        handlers.emplace_hint(handlers.cend(), functions[i].command_id, functions[i]);
     }
 }
 
@@ -150,15 +153,17 @@ void ServiceFrameworkBase::ReportUnimplementedFunction(u32* cmd_buf, const Funct
     int num_params = header.normal_params_size + header.translate_params_size;
     std::string function_name = info == nullptr ? fmt::format("{:#08x}", cmd_buf[0]) : info->name;
 
-    fmt::memory_buffer buf;
-    fmt::format_to(buf, "function '{}': port='{}' cmd_buf={{[0]={:#x}", function_name, service_name,
-                   cmd_buf[0]);
+    std::string result =
+        fmt::format("function '{}': port='{}' cmd_buf={{[0]={:#x} (0x{:04X}, {}, {})",
+                    function_name, service_name, header.raw, header.command_id.Value(),
+                    header.normal_params_size.Value(), header.translate_params_size.Value());
     for (int i = 1; i <= num_params; ++i) {
-        fmt::format_to(buf, ", [{}]={:#x}", i, cmd_buf[i]);
+        result += fmt::format(", [{}]={:#x}", i, cmd_buf[i]);
     }
-    buf.push_back('}');
 
-    LOG_ERROR(Service, "unknown / unimplemented {}", fmt::to_string(buf));
+    result.push_back('}');
+
+    LOG_ERROR(Service, "unknown / unimplemented {}", result);
     // TODO(bunnei): Hack - ignore error
     header.normal_params_size.Assign(1);
     header.translate_params_size.Assign(0);
@@ -167,8 +172,7 @@ void ServiceFrameworkBase::ReportUnimplementedFunction(u32* cmd_buf, const Funct
 }
 
 void ServiceFrameworkBase::HandleSyncRequest(Kernel::HLERequestContext& context) {
-    u32 header_code = context.CommandBuffer()[0];
-    auto itr = handlers.find(header_code);
+    auto itr = handlers.find(context.CommandHeader().command_id.Value());
     const FunctionInfoBase* info = itr == handlers.end() ? nullptr : &itr->second;
     if (info == nullptr || info->handler_callback == nullptr) {
         context.ReportUnimplemented();
@@ -180,16 +184,14 @@ void ServiceFrameworkBase::HandleSyncRequest(Kernel::HLERequestContext& context)
     handler_invoker(this, info->handler_callback, context);
 }
 
-std::string ServiceFrameworkBase::GetFunctionName(u32 header) const {
-    if (!handlers.count(header)) {
+std::string ServiceFrameworkBase::GetFunctionName(IPC::Header header) const {
+    auto itr = handlers.find(header.command_id.Value());
+    if (itr == handlers.end()) {
         return "";
     }
 
-    return handlers.at(header).name;
+    return itr->second.name;
 }
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Module interface
 
 static bool AttemptLLE(const ServiceModuleInfo& service_module) {
     if (!Settings::values.lle_modules.at(service_module.name))

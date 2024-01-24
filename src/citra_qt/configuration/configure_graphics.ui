@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>400</width>
-    <height>430</height>
+    <height>509</height>
    </rect>
   </property>
   <property name="minimumSize">
@@ -19,7 +19,98 @@
   <property name="windowTitle">
    <string>Form</string>
   </property>
+  <property name="accessibleName">
+   <string>Graphics</string>
+  </property>
   <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QGroupBox" name="apiBox">
+     <property name="title">
+      <string>API Settings</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayout_3">
+      <item>
+       <widget class="QWidget" name="graphics_api_group" native="true">
+        <layout class="QHBoxLayout" name="graphics_api_group_2">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="graphics_api_label">
+           <property name="text">
+            <string>Graphics API</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QComboBox" name="graphics_api_combo">
+           <item>
+            <property name="text">
+             <string>Software</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>OpenGL</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Vulkan</string>
+            </property>
+           </item>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="physical_device_group" native="true">
+        <layout class="QHBoxLayout" name="physical_device_group_2">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="physical_device_label">
+           <property name="text">
+            <string>Physical Device</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QComboBox" name="physical_device_combo"/>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="spirv_shader_gen">
+        <property name="text">
+         <string>SPIR-V Shader Generation</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
    <item>
     <widget class="QGroupBox" name="rendererBox">
      <property name="title">
@@ -27,20 +118,10 @@
      </property>
      <layout class="QVBoxLayout" name="verticalLayout_6">
       <item>
-       <widget class="QCheckBox" name="toggle_hw_renderer">
-        <property name="toolTip">
-         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Use OpenGL to accelerate rendering.&lt;/p&gt;&lt;p&gt;Disable to debug graphics-related problem.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-        </property>
-        <property name="text">
-         <string>Enable Hardware Renderer</string>
-        </property>
-       </widget>
-      </item>
-      <item>
        <widget class="QWidget" name="hw_renderer_group" native="true">
         <layout class="QVBoxLayout" name="verticalLayout_5">
          <property name="leftMargin">
-          <number>16</number>
+          <number>0</number>
          </property>
          <property name="topMargin">
           <number>0</number>
@@ -54,7 +135,7 @@
          <item>
           <widget class="QCheckBox" name="toggle_hw_shader">
            <property name="toolTip">
-            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Use OpenGL to accelerate shader emulation.&lt;/p&gt;&lt;p&gt;Requires a relatively powerful GPU for better performance.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Use the selected graphics API to accelerate shader emulation.&lt;/p&gt;&lt;p&gt;Requires a relatively powerful GPU for better performance.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
            </property>
            <property name="text">
             <string>Enable Hardware Shader</string>
@@ -76,13 +157,6 @@
             <property name="bottomMargin">
              <number>0</number>
             </property>
-            <item>
-             <widget class="QCheckBox" name="toggle_separable_shader">
-              <property name="text">
-               <string>Separable Shader (Intel GPUs only)</string>
-              </property>
-             </widget>
-            </item>
             <item>
              <widget class="QCheckBox" name="toggle_accurate_mul">
               <property name="toolTip">
@@ -109,6 +183,26 @@
         </property>
        </widget>
       </item>
+      <item>
+       <widget class="QCheckBox" name="toggle_async_shaders">
+        <property name="toolTip">
+         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Compile shaders using background threads to avoid shader compilation stutter. Expect temporary graphical glitches&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+        </property>
+        <property name="text">
+         <string>Enable Async Shader Compilation</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="toggle_async_present">
+        <property name="toolTip">
+         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Perform presentation on separate threads. Improves performance when using Vulkan in most games.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+        </property>
+        <property name="text">
+         <string>Enable Async Presentation</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>
@@ -118,16 +212,63 @@
       <string>Advanced</string>
      </property>
      <layout class="QVBoxLayout" name="verticalLayout_2">
-       <item>
-         <widget class="QCheckBox" name="toggle_disk_shader_cache">
+      <item>
+       <widget class="QWidget" name="widget_texture_sampling" native="true">
+        <layout class="QHBoxLayout" name="horizontalLayout_2">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="texture_sampling_label">
            <property name="toolTip">
-             <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Reduce stuttering by storing and loading generated shaders to disk.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Overrides the sampling filter used by games. This can be useful in certain cases with poorly behaved games when upscaling. If unsure set this to Game Controlled&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
            </property>
            <property name="text">
-             <string>Use Disk Shader Cache</string>
+            <string>Texture Sampling</string>
            </property>
-         </widget>
-       </item>
+          </widget>
+         </item>
+         <item>
+          <widget class="QComboBox" name="texture_sampling_combobox">
+           <item>
+            <property name="text">
+             <string>Game Controlled</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Nearest Neighbor</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Linear</string>
+            </property>
+           </item>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="toggle_disk_shader_cache">
+        <property name="toolTip">
+         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Reduce stuttering by storing and loading generated shaders to disk.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+        </property>
+        <property name="text">
+         <string>Use Disk Shader Cache</string>
+        </property>
+       </widget>
+      </item>
       <item>
        <widget class="QCheckBox" name="toggle_vsync_new">
         <property name="toolTip">
@@ -156,6 +297,12 @@
    </item>
   </layout>
  </widget>
+ <tabstops>
+  <tabstop>toggle_accurate_mul</tabstop>
+  <tabstop>toggle_shader_jit</tabstop>
+  <tabstop>toggle_disk_shader_cache</tabstop>
+  <tabstop>toggle_vsync_new</tabstop>
+ </tabstops>
  <resources/>
  <connections/>
 </ui>

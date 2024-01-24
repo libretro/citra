@@ -11,14 +11,16 @@ namespace Service::NIM {
 
 NIM_AOC::NIM_AOC() : ServiceFramework("nim:aoc", 2) {
     const FunctionInfo functions[] = {
-        {0x00030042, nullptr, "SetApplicationId"},
-        {0x00040042, nullptr, "SetTin"},
-        {0x000902D0, nullptr, "ListContentSetsEx"},
-        {0x00180000, nullptr, "GetBalance"},
-        {0x001D0000, nullptr, "GetCustomerSupportCode"},
-        {0x00210000, nullptr, "Initialize"},
-        {0x00240282, nullptr, "CalculateContentsRequiredSize"},
-        {0x00250000, nullptr, "RefreshServerTime"},
+        // clang-format off
+        {0x0003, nullptr, "SetApplicationId"},
+        {0x0004, nullptr, "SetTin"},
+        {0x0009, nullptr, "ListContentSetsEx"},
+        {0x0018, nullptr, "GetBalance"},
+        {0x001D, nullptr, "GetCustomerSupportCode"},
+        {0x0021, nullptr, "Initialize"},
+        {0x0024, nullptr, "CalculateContentsRequiredSize"},
+        {0x0025, nullptr, "RefreshServerTime"},
+        // clang-format on
     };
     RegisterHandlers(functions);
 }

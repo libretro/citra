@@ -7,8 +7,8 @@
 #include <cstddef>
 #include <memory>
 #include <string>
-#include <boost/serialization/base_object.hpp>
-#include <boost/serialization/shared_ptr.hpp>
+#include <boost/optional/optional.hpp>
+#include <boost/serialization/export.hpp>
 #include "common/bit_field.h"
 #include "common/common_types.h"
 #include "core/hle/kernel/event.h"
@@ -21,6 +21,8 @@ class System;
 }
 
 namespace Kernel {
+class HLERequestContext;
+class Process;
 class SharedMemory;
 } // namespace Kernel
 
@@ -96,10 +98,8 @@ struct FrameBufferUpdate {
 static_assert(sizeof(FrameBufferUpdate) == 0x40, "Struct has incorrect size");
 // TODO: Not sure if this padding is correct.
 // Chances are the second block is stored at offset 0x24 rather than 0x20.
-#ifndef _MSC_VER
 static_assert(offsetof(FrameBufferUpdate, framebuffer_info[1]) == 0x20,
               "FrameBufferInfo element has incorrect alignment");
-#endif
 
 /// GSP command
 struct Command {
@@ -185,6 +185,17 @@ struct CommandBuffer {
 };
 static_assert(sizeof(CommandBuffer) == 0x200, "CommandBuffer struct has incorrect size");
 
+constexpr u32 FRAMEBUFFER_WIDTH = 240;
+constexpr u32 FRAMEBUFFER_WIDTH_POW2 = 256;
+constexpr u32 TOP_FRAMEBUFFER_HEIGHT = 400;
+constexpr u32 BOTTOM_FRAMEBUFFER_HEIGHT = 320;
+constexpr u32 FRAMEBUFFER_HEIGHT_POW2 = 512;
+
+// These are the VRAM addresses that GSP copies framebuffers to in SaveVramSysArea.
+constexpr VAddr FRAMEBUFFER_SAVE_AREA_TOP_LEFT = Memory::VRAM_VADDR + 0x273000;
+constexpr VAddr FRAMEBUFFER_SAVE_AREA_TOP_RIGHT = Memory::VRAM_VADDR + 0x2B9800;
+constexpr VAddr FRAMEBUFFER_SAVE_AREA_BOTTOM = Memory::VRAM_VADDR + 0x4C7800;
+
 class GSP_GPU;
 
 class SessionData : public Kernel::SessionRequestHandler::SessionDataBase {
@@ -204,14 +215,7 @@ public:
 
 private:
     template <class Archive>
-    void serialize(Archive& ar, const unsigned int) {
-        ar& boost::serialization::base_object<Kernel::SessionRequestHandler::SessionDataBase>(
-            *this);
-        ar& gsp;
-        ar& interrupt_event;
-        ar& thread_id;
-        ar& registered;
-    }
+    void serialize(Archive& ar, const unsigned int);
     friend class boost::serialization::access;
 };
 
@@ -237,6 +241,13 @@ public:
      * @returns FramebufferUpdate Information about the specified framebuffer.
      */
     FrameBufferUpdate* GetFrameBufferInfo(u32 thread_id, u32 screen_index);
+
+    /**
+     * Retreives the ID of the thread with GPU rights.
+     */
+    u32 GetActiveThreadId() {
+        return active_thread_id;
+    }
 
 private:
     /**
@@ -362,9 +373,25 @@ private:
     void UnregisterInterruptRelayQueue(Kernel::HLERequestContext& ctx);
 
     /**
-     * GSP_GPU::AcquireRight service function
+     * GSP_GPU::TryAcquireRight service function
+     *  Inputs:
+     *      0 : Header code [0x00150002]
+     *      1 : Handle translate header (0x0)
+     *      2 : Process handle
      *  Outputs:
-     *      1: Result code
+     *      1 : Result of function, 0 on success, otherwise error code
+     */
+    void TryAcquireRight(Kernel::HLERequestContext& ctx);
+
+    /**
+     * GSP_GPU::AcquireRight service function
+     *  Inputs:
+     *      0 : Header code [0x00160042]
+     *      1 : Flags
+     *      2 : Handle translate header (0x0)
+     *      3 : Process handle
+     *  Outputs:
+     *      1 : Result of function, 0 on success, otherwise error code
      */
     void AcquireRight(Kernel::HLERequestContext& ctx);
 
@@ -403,6 +430,32 @@ private:
     void ImportDisplayCaptureInfo(Kernel::HLERequestContext& ctx);
 
     /**
+     * GSP_GPU::SaveVramSysArea service function
+     *
+     * Returns information about the current framebuffer state
+     *
+     *  Inputs:
+     *      0: Header 0x00190000
+     *  Outputs:
+     *      0: Header Code[0x00190040]
+     *      1: Result code
+     */
+    void SaveVramSysArea(Kernel::HLERequestContext& ctx);
+
+    /**
+     * GSP_GPU::RestoreVramSysArea service function
+     *
+     * Returns information about the current framebuffer state
+     *
+     *  Inputs:
+     *      0: Header 0x001A0000
+     *  Outputs:
+     *      0: Header Code[0x001A0040]
+     *      1: Result code
+     */
+    void RestoreVramSysArea(Kernel::HLERequestContext& ctx);
+
+    /**
      * GSP_GPU::StoreDataCache service function
      *
      * This Function is a no-op, We aren't emulating the CPU cache any time soon.
@@ -421,6 +474,17 @@ private:
     /// Force the 3D LED State (0 = On, Non-Zero = Off)
     void SetLedForceOff(Kernel::HLERequestContext& ctx);
 
+    /**
+     * GSP_GPU::SetInternalPriorities service function
+     *  Inputs:
+     *      0 : Header code [0x001E0080]
+     *      1 : Session thread priority
+     *      2 : Session thread priority with rights
+     *  Outputs:
+     *      1 : Result of function, 0 on success, otherwise error code
+     */
+    void SetInternalPriorities(Kernel::HLERequestContext& ctx);
+
     /// Returns the session data for the specified registered thread id, or nullptr if not found.
     SessionData* FindRegisteredThreadData(u32 thread_id);
 
@@ -428,15 +492,22 @@ private:
 
     std::unique_ptr<Kernel::SessionRequestHandler::SessionDataBase> MakeSessionData() override;
 
+    ResultCode AcquireGpuRight(const Kernel::HLERequestContext& ctx,
+                               const std::shared_ptr<Kernel::Process>& process, u32 flag,
+                               bool blocking);
+
     Core::System& system;
 
     /// GSP shared memory
     std::shared_ptr<Kernel::SharedMemory> shared_memory;
 
-    /// Thread id that currently has GPU rights or UINT32_MAX if none.
-    u32 active_thread_id = UINT32_MAX;
+    /// Thread id that currently has GPU rights or std::numeric_limits<u32>::max() if none.
+    u32 active_thread_id = std::numeric_limits<u32>::max();
 
     bool first_initialization = true;
+
+    /// VRAM copy saved using SaveVramSysArea.
+    boost::optional<std::vector<u8>> saved_vram;
 
     /// Maximum number of threads that can be registered at the same time in the GSP module.
     static constexpr u32 MaxGSPThreads = 4;
@@ -447,14 +518,7 @@ private:
     friend class SessionData;
 
     template <class Archive>
-    void serialize(Archive& ar, const unsigned int) {
-        ar& boost::serialization::base_object<Kernel::SessionRequestHandler>(*this);
-        ar& shared_memory;
-        ar& active_thread_id;
-        ar& first_initialization;
-        ar& used_thread_ids;
-    }
-
+    void serialize(Archive& ar, const unsigned int);
     friend class boost::serialization::access;
 };
 

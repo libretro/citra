@@ -11,11 +11,15 @@
 #include <QStandardItemModel>
 #include "citra_qt/multiplayer/validation.h"
 #include "common/announce_multiplayer_room.h"
-#include "core/announce_multiplayer_session.h"
-#include "network/network.h"
+#include "network/announce_multiplayer_session.h"
+#include "network/room_member.h"
 
 namespace Ui {
 class Lobby;
+}
+
+namespace Core {
+class System;
 }
 
 class LobbyModel;
@@ -29,8 +33,8 @@ class Lobby : public QDialog {
     Q_OBJECT
 
 public:
-    explicit Lobby(QWidget* parent, QStandardItemModel* list,
-                   std::shared_ptr<Core::AnnounceMultiplayerSession> session);
+    explicit Lobby(Core::System& system, QWidget* parent, QStandardItemModel* list,
+                   std::shared_ptr<Network::AnnounceMultiplayerSession> session);
     ~Lobby() override;
 
     /**
@@ -84,14 +88,16 @@ private:
      */
     QString PasswordPrompt();
 
+private:
     std::unique_ptr<Ui::Lobby> ui;
+    Core::System& system;
 
     QStandardItemModel* model{};
     QStandardItemModel* game_list{};
     LobbyFilterProxyModel* proxy{};
 
     QFutureWatcher<AnnounceMultiplayerRoom::RoomList> room_list_watcher;
-    std::weak_ptr<Core::AnnounceMultiplayerSession> announce_multiplayer_session;
+    std::weak_ptr<Network::AnnounceMultiplayerSession> announce_multiplayer_session;
     QFutureWatcher<void>* watcher;
     Validation validation;
 };
@@ -116,12 +122,14 @@ public:
 
 public slots:
     void SetFilterOwned(bool);
+    void SetFilterEmpty(bool);
     void SetFilterFull(bool);
     void SetFilterSearch(const QString&);
 
 private:
     QStandardItemModel* game_list;
     bool filter_owned = false;
+    bool filter_empty = false;
     bool filter_full = false;
     QString filter_search;
 };

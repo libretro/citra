@@ -5,6 +5,7 @@
 #pragma once
 
 #include <functional>
+#include <span>
 #include <boost/serialization/vector.hpp>
 #include "common/common_types.h"
 
@@ -22,25 +23,29 @@ union PadState;
 } // namespace Service
 
 namespace Core {
+
+class System;
 struct CTMHeader;
 struct ControllerState;
 
 class Movie {
 public:
-    enum class PlayMode { None, Recording, Playing, MovieFinished };
-    enum class ValidationResult {
+    enum class PlayMode : u32 {
+        None,
+        Recording,
+        Playing,
+        MovieFinished,
+    };
+
+    enum class ValidationResult : u32 {
         OK,
         RevisionDismatch,
         InputCountDismatch,
         Invalid,
     };
-    /**
-     * Gets the instance of the Movie singleton class.
-     * @returns Reference to the instance of the Movie singleton class.
-     */
-    static Movie& GetInstance() {
-        return s_instance;
-    }
+
+    explicit Movie(const Core::System& system);
+    ~Movie();
 
     void SetPlaybackCompletionCallback(std::function<void()> completion_callback);
     void StartPlayback(const std::string& movie_file);
@@ -132,8 +137,6 @@ public:
     void SaveMovie();
 
 private:
-    static Movie s_instance;
-
     void CheckInputEnd();
 
     template <typename... Targs>
@@ -156,8 +159,10 @@ private:
     void Record(const Service::IR::ExtraHIDResponse& extra_hid_response);
 
     ValidationResult ValidateHeader(const CTMHeader& header) const;
-    ValidationResult ValidateInput(const std::vector<u8>& input, u64 expected_count) const;
+    ValidationResult ValidateInput(std::span<const u8> input, u64 expected_count) const;
 
+private:
+    const Core::System& system;
     PlayMode play_mode;
 
     std::string record_movie_file;

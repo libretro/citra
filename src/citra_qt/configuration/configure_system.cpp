@@ -3,13 +3,19 @@
 // Refer to the license.txt file included.
 
 #include <cstring>
+#include <QFutureWatcher>
 #include <QMessageBox>
+#include <QProgressDialog>
+#include <QtConcurrent/QtConcurrentMap>
+#include "citra_qt/configuration/configuration_shared.h"
 #include "citra_qt/configuration/configure_system.h"
-#include "citra_qt/uisettings.h"
+#include "common/settings.h"
 #include "core/core.h"
+#include "core/hle/service/am/am.h"
 #include "core/hle/service/cfg/cfg.h"
 #include "core/hle/service/ptm/ptm.h"
-#include "core/settings.h"
+#include "core/hw/aes/key.h"
+#include "core/system_titles.h"
 #include "ui_configure_system.h"
 
 static const std::array<int, 12> days_in_month = {{
@@ -217,41 +223,54 @@ static const std::array<const char*, 187> country_names = {
     QT_TRANSLATE_NOOP("ConfigureSystem", "Bermuda"), // 180-186
 };
 
-// The QSlider doesn't have an easy way to set a custom step amount,
-// so we can just convert from the sliders range (0 - 79) to the expected
-// settings range (5 - 400) with simple math.
-static constexpr int SliderToSettings(int value) {
-    return 5 * value + 5;
-}
-
-static constexpr int SettingsToSlider(int value) {
-    return (value - 5) / 5;
-}
-
-ConfigureSystem::ConfigureSystem(QWidget* parent)
-    : QWidget(parent), ui(std::make_unique<Ui::ConfigureSystem>()) {
+ConfigureSystem::ConfigureSystem(Core::System& system_, QWidget* parent)
+    : QWidget(parent), ui(std::make_unique<Ui::ConfigureSystem>()), system{system_} {
     ui->setupUi(this);
-    connect(ui->combo_birthmonth,
-            static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this,
+    connect(ui->combo_birthmonth, qOverload<int>(&QComboBox::currentIndexChanged), this,
             &ConfigureSystem::UpdateBirthdayComboBox);
-    connect(ui->combo_init_clock,
-            static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this,
+    connect(ui->combo_init_clock, qOverload<int>(&QComboBox::currentIndexChanged), this,
             &ConfigureSystem::UpdateInitTime);
     connect(ui->button_regenerate_console_id, &QPushButton::clicked, this,
             &ConfigureSystem::RefreshConsoleID);
+    connect(ui->button_start_download, &QPushButton::clicked, this,
+            &ConfigureSystem::DownloadFromNUS);
     for (u8 i = 0; i < country_names.size(); i++) {
         if (std::strcmp(country_names.at(i), "") != 0) {
             ui->combo_country->addItem(tr(country_names.at(i)), i);
         }
     }
 
-    // Set a minimum width for the label to prevent the slider from changing size.
-    // This scales across DPIs. (This value should be enough for "xxx%")
-    ui->clock_display_label->setMinimumWidth(40);
+    SetupPerGameUI();
 
-    connect(ui->slider_clock_speed, &QSlider::valueChanged, [&](int value) {
-        ui->clock_display_label->setText(QStringLiteral("%1%").arg(SliderToSettings(value)));
-    });
+    ui->combo_download_set->setCurrentIndex(0);    // set to Minimal
+    ui->combo_download_region->setCurrentIndex(0); // set to the base region
+
+    HW::AES::InitKeys(true);
+    bool keys_available = HW::AES::IsKeyXAvailable(HW::AES::KeySlotID::NCCHSecure1) &&
+                          HW::AES::IsKeyXAvailable(HW::AES::KeySlotID::NCCHSecure2);
+    for (u8 i = 0; i < HW::AES::MaxCommonKeySlot && keys_available; i++) {
+        HW::AES::SelectCommonKeyIndex(i);
+        if (!HW::AES::IsNormalKeyAvailable(HW::AES::KeySlotID::TicketCommonKey)) {
+            keys_available = false;
+            break;
+        }
+    }
+    if (keys_available) {
+        ui->button_start_download->setEnabled(true);
+        ui->combo_download_set->setEnabled(true);
+        ui->combo_download_region->setEnabled(true);
+        ui->label_nus_download->setText(tr("Download System Files from Nintendo servers"));
+    } else {
+        ui->button_start_download->setEnabled(false);
+        ui->combo_download_set->setEnabled(false);
+        ui->combo_download_region->setEnabled(false);
+        ui->label_nus_download->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        ui->label_nus_download->setOpenExternalLinks(true);
+        ui->label_nus_download->setText(
+            tr("Citra is missing keys to download system files. <br><a "
+               "href='https://citra-emu.org/wiki/aes-keys/'><span style=\"text-decoration: "
+               "underline; color:#039be5;\">How to get keys?</span></a>"));
+    }
 
     ConfigureTime();
 }
@@ -259,40 +278,38 @@ ConfigureSystem::ConfigureSystem(QWidget* parent)
 ConfigureSystem::~ConfigureSystem() = default;
 
 void ConfigureSystem::SetConfiguration() {
-    enabled = !Core::System::GetInstance().IsPoweredOn();
+    enabled = !system.IsPoweredOn();
 
-    ui->combo_init_clock->setCurrentIndex(static_cast<u8>(Settings::values.init_clock));
+    ui->combo_init_clock->setCurrentIndex(static_cast<u8>(Settings::values.init_clock.GetValue()));
     QDateTime date_time;
-    date_time.setTime_t(Settings::values.init_time);
+    date_time.setSecsSinceEpoch(Settings::values.init_time.GetValue());
     ui->edit_init_time->setDateTime(date_time);
 
-    if (!enabled) {
-        cfg = Service::CFG::GetModule(Core::System::GetInstance());
-        ASSERT_MSG(cfg, "CFG Module missing!");
-        ReadSystemSettings();
-        ui->group_system_settings->setEnabled(false);
-    } else {
-        // This tab is enabled only when game is not running (i.e. all service are not initialized).
-        cfg = std::make_shared<Service::CFG::Module>();
-        ReadSystemSettings();
+    s64 init_time_offset = Settings::values.init_time_offset.GetValue();
+    int days_offset = static_cast<int>(init_time_offset / 86400);
+    ui->edit_init_time_offset_days->setValue(days_offset);
 
+    u64 time_offset = std::abs(init_time_offset) - std::abs(days_offset * 86400);
+    QTime time = QTime::fromMSecsSinceStartOfDay(static_cast<int>(time_offset * 1000));
+    ui->edit_init_time_offset_time->setTime(time);
+
+    cfg = Service::CFG::GetModule(system);
+    ReadSystemSettings();
+
+    ui->group_system_settings->setEnabled(enabled);
+    if (enabled) {
         ui->label_disable_info->hide();
     }
 
-    ui->slider_clock_speed->setValue(SettingsToSlider(Settings::values.cpu_clock_percentage));
-    ui->clock_display_label->setText(
-        QStringLiteral("%1%").arg(Settings::values.cpu_clock_percentage));
-
-    ui->toggle_new_3ds->setChecked(Settings::values.is_new_3ds);
+    ui->toggle_new_3ds->setChecked(Settings::values.is_new_3ds.GetValue());
+    ui->plugin_loader->setChecked(Settings::values.plugin_loader_enabled.GetValue());
+    ui->allow_plugin_loader->setChecked(Settings::values.allow_plugin_loader.GetValue());
 }
 
 void ConfigureSystem::ReadSystemSettings() {
     // set username
     username = cfg->GetUsername();
-    // TODO(wwylele): Use this when we move to Qt 5.5
-    // ui->edit_username->setText(QString::fromStdU16String(username));
-    ui->edit_username->setText(
-        QString::fromUtf16(reinterpret_cast<const ushort*>(username.data())));
+    ui->edit_username->setText(QString::fromStdU16String(username));
 
     // set birthday
     std::tie(birthmonth, birthday) = cfg->GetBirthday();
@@ -314,6 +331,10 @@ void ConfigureSystem::ReadSystemSettings() {
     country_code = cfg->GetCountryCode();
     ui->combo_country->setCurrentIndex(ui->combo_country->findData(country_code));
 
+    // set whether system setup is needed
+    system_setup = cfg->IsSystemSetupNeeded();
+    ui->toggle_system_setup->setChecked(system_setup);
+
     // set the console id
     u64 console_id = cfg->GetConsoleUniqueId();
     ui->label_console_id->setText(
@@ -322,6 +343,9 @@ void ConfigureSystem::ReadSystemSettings() {
     // set play coin
     play_coin = Service::PTM::Module::GetPlayCoins();
     ui->spinBox_play_coins->setValue(play_coin);
+
+    // set firmware download region
+    ui->combo_download_region->setCurrentIndex(static_cast<int>(cfg->GetRegionValue()));
 }
 
 void ConfigureSystem::ApplyConfiguration() {
@@ -329,32 +353,29 @@ void ConfigureSystem::ApplyConfiguration() {
         bool modified = false;
 
         // apply username
-        // TODO(wwylele): Use this when we move to Qt 5.5
-        // std::u16string new_username = ui->edit_username->text().toStdU16String();
-        std::u16string new_username(
-            reinterpret_cast<const char16_t*>(ui->edit_username->text().utf16()));
+        std::u16string new_username = ui->edit_username->text().toStdU16String();
         if (new_username != username) {
             cfg->SetUsername(new_username);
             modified = true;
         }
 
         // apply birthday
-        int new_birthmonth = ui->combo_birthmonth->currentIndex() + 1;
-        int new_birthday = ui->combo_birthday->currentIndex() + 1;
+        s32 new_birthmonth = ui->combo_birthmonth->currentIndex() + 1;
+        s32 new_birthday = ui->combo_birthday->currentIndex() + 1;
         if (birthmonth != new_birthmonth || birthday != new_birthday) {
             cfg->SetBirthday(new_birthmonth, new_birthday);
             modified = true;
         }
 
         // apply language
-        int new_language = ui->combo_language->currentIndex();
+        s32 new_language = ui->combo_language->currentIndex();
         if (language_index != new_language) {
             cfg->SetSystemLanguage(static_cast<Service::CFG::SystemLanguage>(new_language));
             modified = true;
         }
 
         // apply sound
-        int new_sound = ui->combo_sound->currentIndex();
+        s32 new_sound = ui->combo_sound->currentIndex();
         if (sound_index != new_sound) {
             cfg->SetSoundOutputMode(static_cast<Service::CFG::SoundOutputMode>(new_sound));
             modified = true;
@@ -364,6 +385,13 @@ void ConfigureSystem::ApplyConfiguration() {
         u8 new_country = static_cast<u8>(ui->combo_country->currentData().toInt());
         if (country_code != new_country) {
             cfg->SetCountryCode(new_country);
+            modified = true;
+        }
+
+        // apply whether system setup is needed
+        bool new_system_setup = static_cast<u8>(ui->toggle_system_setup->isChecked());
+        if (system_setup != new_system_setup) {
+            cfg->SetSystemSetupNeeded(new_system_setup);
             modified = true;
         }
 
@@ -378,15 +406,26 @@ void ConfigureSystem::ApplyConfiguration() {
             cfg->UpdateConfigNANDSavegame();
         }
 
+        ConfigurationShared::ApplyPerGameSetting(&Settings::values.is_new_3ds, ui->toggle_new_3ds,
+                                                 is_new_3ds);
+
         Settings::values.init_clock =
             static_cast<Settings::InitClock>(ui->combo_init_clock->currentIndex());
-        Settings::values.init_time = ui->edit_init_time->dateTime().toTime_t();
+        Settings::values.init_time = ui->edit_init_time->dateTime().toSecsSinceEpoch();
 
+        s64 time_offset_time = ui->edit_init_time_offset_time->time().msecsSinceStartOfDay() / 1000;
+        s64 time_offset_days = ui->edit_init_time_offset_days->value() * 86400;
+
+        if (time_offset_days < 0) {
+            time_offset_time = -time_offset_time;
+        }
+
+        Settings::values.init_time_offset = time_offset_days + time_offset_time;
         Settings::values.is_new_3ds = ui->toggle_new_3ds->isChecked();
-    }
 
-    Settings::values.cpu_clock_percentage = SliderToSettings(ui->slider_clock_speed->value());
-    Settings::Apply();
+        Settings::values.plugin_loader_enabled.SetValue(ui->plugin_loader->isChecked());
+        Settings::values.allow_plugin_loader.SetValue(ui->allow_plugin_loader->isChecked());
+    }
 }
 
 void ConfigureSystem::UpdateBirthdayComboBox(int birthmonth_index) {
@@ -394,10 +433,10 @@ void ConfigureSystem::UpdateBirthdayComboBox(int birthmonth_index) {
         return;
 
     // store current day selection
-    int birthday_index = ui->combo_birthday->currentIndex();
+    s32 birthday_index = ui->combo_birthday->currentIndex();
 
     // get number of days in the new selected month
-    int days = days_in_month[birthmonth_index];
+    s32 days = days_in_month[birthmonth_index];
 
     // if the selected day is out of range,
     // reset it to 1st
@@ -406,7 +445,7 @@ void ConfigureSystem::UpdateBirthdayComboBox(int birthmonth_index) {
 
     // update the day combo box
     ui->combo_birthday->clear();
-    for (int i = 1; i <= days; ++i) {
+    for (s32 i = 1; i <= days; ++i) {
         ui->combo_birthday->addItem(QString::number(i));
     }
 
@@ -415,10 +454,10 @@ void ConfigureSystem::UpdateBirthdayComboBox(int birthmonth_index) {
 }
 
 void ConfigureSystem::ConfigureTime() {
-    ui->edit_init_time->setCalendarPopup(true);
     QDateTime dt;
     dt.fromString(QStringLiteral("2000-01-01 00:00:01"), QStringLiteral("yyyy-MM-dd hh:mm:ss"));
     ui->edit_init_time->setMinimumDateTime(dt);
+    ui->edit_init_time->setCalendarPopup(true);
 
     SetConfiguration();
 
@@ -426,10 +465,16 @@ void ConfigureSystem::ConfigureTime() {
 }
 
 void ConfigureSystem::UpdateInitTime(int init_clock) {
+    const bool is_global = Settings::IsConfiguringGlobal();
     const bool is_fixed_time =
         static_cast<Settings::InitClock>(init_clock) == Settings::InitClock::FixedTime;
-    ui->label_init_time->setVisible(is_fixed_time);
-    ui->edit_init_time->setVisible(is_fixed_time);
+
+    ui->label_init_time->setVisible(is_fixed_time && is_global);
+    ui->edit_init_time->setVisible(is_fixed_time && is_global);
+
+    ui->label_init_time_offset->setVisible(!is_fixed_time && is_global);
+    ui->edit_init_time_offset_days->setVisible(!is_fixed_time && is_global);
+    ui->edit_init_time_offset_time->setVisible(!is_fixed_time && is_global);
 }
 
 void ConfigureSystem::RefreshConsoleID() {
@@ -453,4 +498,90 @@ void ConfigureSystem::RefreshConsoleID() {
 
 void ConfigureSystem::RetranslateUI() {
     ui->retranslateUi(this);
+}
+
+void ConfigureSystem::SetupPerGameUI() {
+    // Block the global settings if a game is currently running that overrides them
+    if (Settings::IsConfiguringGlobal()) {
+        ui->toggle_new_3ds->setEnabled(Settings::values.is_new_3ds.UsingGlobal());
+        return;
+    }
+
+    // Hide most settings for now, we can implement them later
+    ui->label_username->setVisible(false);
+    ui->label_birthday->setVisible(false);
+    ui->label_init_clock->setVisible(false);
+    ui->label_init_time->setVisible(false);
+    ui->label_console_id->setVisible(false);
+    ui->label_sound->setVisible(false);
+    ui->label_language->setVisible(false);
+    ui->label_country->setVisible(false);
+    ui->label_play_coins->setVisible(false);
+    ui->edit_username->setVisible(false);
+    ui->spinBox_play_coins->setVisible(false);
+    ui->combo_birthday->setVisible(false);
+    ui->combo_birthmonth->setVisible(false);
+    ui->combo_init_clock->setVisible(false);
+    ui->combo_sound->setVisible(false);
+    ui->combo_language->setVisible(false);
+    ui->combo_country->setVisible(false);
+    ui->label_init_time_offset->setVisible(false);
+    ui->edit_init_time_offset_days->setVisible(false);
+    ui->edit_init_time_offset_time->setVisible(false);
+    ui->toggle_system_setup->setVisible(false);
+    ui->button_regenerate_console_id->setVisible(false);
+    // Apps can change the state of the plugin loader, so plugins load
+    // to a chainloaded app with specific parameters. Don't allow
+    // the plugin loader state to be configured per-game as it may
+    // mess things up.
+    ui->label_plugin_loader->setVisible(false);
+    ui->plugin_loader->setVisible(false);
+    ui->allow_plugin_loader->setVisible(false);
+    // Disable the system firmware downloader.
+    ui->label_nus_download->setVisible(false);
+    ui->body_nus_download->setVisible(false);
+
+    ConfigurationShared::SetColoredTristate(ui->toggle_new_3ds, Settings::values.is_new_3ds,
+                                            is_new_3ds);
+}
+
+void ConfigureSystem::DownloadFromNUS() {
+    ui->button_start_download->setEnabled(false);
+
+    const auto mode =
+        static_cast<Core::SystemTitleSet>(1 << ui->combo_download_set->currentIndex());
+    const auto region = static_cast<u32>(ui->combo_download_region->currentIndex());
+    const std::vector<u64> titles = Core::GetSystemTitleIds(mode, region);
+
+    QProgressDialog progress(tr("Downloading files..."), tr("Cancel"), 0,
+                             static_cast<int>(titles.size()), this);
+    progress.setWindowModality(Qt::WindowModal);
+
+    QFutureWatcher<void> future_watcher;
+    QObject::connect(&future_watcher, &QFutureWatcher<void>::finished, &progress,
+                     &QProgressDialog::reset);
+    QObject::connect(&progress, &QProgressDialog::canceled, &future_watcher,
+                     &QFutureWatcher<void>::cancel);
+    QObject::connect(&future_watcher, &QFutureWatcher<void>::progressValueChanged, &progress,
+                     &QProgressDialog::setValue);
+
+    auto failed = false;
+    const auto download_title = [&future_watcher, &failed](const u64& title_id) {
+        if (Service::AM::InstallFromNus(title_id) != Service::AM::InstallStatus::Success) {
+            failed = true;
+            future_watcher.cancel();
+        }
+    };
+
+    future_watcher.setFuture(QtConcurrent::map(titles, download_title));
+    progress.exec();
+    future_watcher.waitForFinished();
+
+    if (failed) {
+        QMessageBox::critical(this, tr("Citra"), tr("Downloading system files failed."));
+    } else if (!future_watcher.isCanceled()) {
+        QMessageBox::information(this, tr("Citra"), tr("Successfully downloaded system files."));
+    }
+
+    ui->button_start_download->setEnabled(true);
 }

@@ -98,21 +98,17 @@ use_cpu_jit =
 cpu_clock_percentage =
 
 [Renderer]
+# Whether to render using OpenGL or Software
+# 0: Software, 1: OpenGL (default), 2: Vulkan
+graphics_api =
+
 # Whether to render using GLES or OpenGL
 # 0 (default): OpenGL, 1: GLES
 use_gles =
 
-# Whether to use software or hardware rendering.
-# 0: Software, 1 (default): Hardware
-use_hw_renderer =
-
 # Whether to use hardware shaders to emulate 3DS shaders
 # 0: Software, 1 (default): Hardware
 use_hw_shader =
-
-# Whether to use separable shaders to emulate 3DS shaders (macOS only)
-# 0: Off (Default), 1 : On
-separable_shader =
 
 # Whether to use accurate multiplication in hardware shaders
 # 0: Off (Faster, but causes issues in some games) 1: On (Default. Slower, but correct)
@@ -136,8 +132,9 @@ use_disk_shader_cache =
 # factor for the 3DS resolution
 resolution_factor =
 
-# Texture filter name
-texture_filter_name =
+# Texture filter
+# 0: None, 1: Anime4K, 2: Bicubic, 3: Nearest Neighbor, 4: ScaleForce, 5: xBRZ
+texture_filter =
 
 # Limits the speed of the game to run no faster than this value as a percentage of target speed.
 # Will not have an effect if unthrottled is enabled.
@@ -166,10 +163,17 @@ render_3d =
 # 0 - 100: Intensity. 0 (default)
 factor_3d =
 
+# Change Default Eye to Render When in Monoscopic Mode
+# 0 (default): Left, 1: Right
+mono_render_option =
+
 # The name of the post processing shader to apply.
 # Loaded from shaders if render_3d is off or side by side.
-# Loaded from shaders/anaglyph if render_3d is anaglyph
 pp_shader_name =
+
+# The name of the shader to apply when render_3d is anaglyph.
+# Loaded from shaders/anaglyph
+anaglyph_shader_name =
 
 # Whether to enable linear filtering or not
 # This is required for some shaders to work correctly
@@ -178,7 +182,12 @@ filter_mode =
 
 [Layout]
 # Layout for the screen inside the render window.
-# 0 (default): Default Top Bottom Screen, 1: Single Screen Only, 2: Large Screen Small Screen, 3: Side by Side
+# 0 (default): Default Top Bottom Screen
+# 1: Single Screen Only
+# 2: Large Screen Small Screen
+# 3: Side by Side
+# 4: Separate Windows
+# 5: Hybrid Screen
 layout_option =
 
 # Toggle custom layout (using the settings below) on or off.
@@ -196,6 +205,9 @@ custom_bottom_top =
 custom_bottom_right =
 custom_bottom_bottom =
 
+# Opacity of second layer when using custom layout option (bottom screen unless swapped)
+custom_second_layer_opacity =
+
 # Swaps the prominent screen with the other screen.
 # For example, if Single Screen is chosen, setting this to 1 will display the bottom screen instead of the top screen.
 # 0 (default): Top Screen is prominent, 1: Bottom Screen is prominent
@@ -204,6 +216,10 @@ swap_screen =
 # Toggle upright orientation, for book style games.
 # 0 (default): Off, 1: On
 upright_screen =
+
+# The proportion between the large and small screens when playing in Large Screen Small Screen layout.
+# Must be a real value between 1.0 and 16.0. Default is 4
+large_screen_proportion =
 
 # Dumps textures as PNG to dump/textures/[Title ID]/.
 # 0 (default): Off, 1: On
@@ -217,6 +233,10 @@ custom_textures =
 # 0 (default): Off, 1: On
 preload_textures =
 
+# Loads custom textures asynchronously with background threads.
+# 0: Off, 1 (default): On
+async_custom_loading =
+
 [Audio]
 # Whether or not to enable DSP LLE
 # 0 (default): No, 1: Yes
@@ -226,29 +246,40 @@ enable_dsp_lle =
 # 0 (default): No, 1: Yes
 enable_dsp_lle_thread =
 
-
-# Which audio output engine to use.
-# auto (default): Auto-select, null: No audio output, sdl2: SDL2 (if available)
-output_engine =
-
 # Whether or not to enable the audio-stretching post-processing effect.
 # This effect adjusts audio speed to match emulation speed and helps prevent audio stutter,
 # at the cost of increasing audio latency.
 # 0: No, 1 (default): Yes
 enable_audio_stretching =
 
-# Which audio device to use.
-# auto (default): Auto-select
-output_device =
-
 # Output volume.
 # 1.0 (default): 100%, 0.0; mute
 volume =
+
+# Which audio output type to use.
+# 0 (default): Auto-select, 1: No audio output, 2: Cubeb (if available), 3: OpenAL (if available), 4: SDL2 (if available)
+output_type =
+
+# Which audio output device to use.
+# auto (default): Auto-select
+output_device =
+
+# Which audio input type to use.
+# 0 (default): Auto-select, 1: No audio input, 2: Static noise, 3: Cubeb (if available), 4: OpenAL (if available)
+input_type =
+
+# Which audio input device to use.
+# auto (default): Auto-select
+input_device =
 
 [Data Storage]
 # Whether to create a virtual SD card.
 # 1 (default): Yes, 0: No
 use_virtual_sd =
+
+# Whether to use custom storage locations
+# 1: Yes, 0 (default): No
+use_custom_storage =
 
 # The path of the virtual SD card directory.
 # empty (default) will use the user_path
@@ -306,14 +337,20 @@ log_filter = *:Info
 [Debugging]
 # Record frame time data, can be found in the log directory. Boolean value
 record_frame_times =
+
 # Port for listening to GDB connections.
 use_gdbstub=false
 gdbstub_port=24689
+
+# Whether to enable additional debugging information during emulation
+# 0 (default): Off, 1: On
+renderer_debug =
+
 # To LLE a service module add "LLE\<module name>=true"
 
 [WebService]
 # Whether or not to enable telemetry
-# 0: No, 1 (default): Yes
+# 0 (default): No, 1: Yes
 enable_telemetry =
 # URL for Web API
 web_api_url = https://api.citra-emu.org

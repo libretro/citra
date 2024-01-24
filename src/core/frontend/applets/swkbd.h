@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include <unordered_map>
 #include <utility>
 #include <vector>
 #include "common/assert.h"
@@ -85,8 +84,8 @@ public:
     /**
      * Executes the software keyboard, configured with the given parameters.
      */
-    virtual void Execute(const KeyboardConfig& config) {
-        this->config = config;
+    virtual void Execute(const KeyboardConfig& config_) {
+        config = config_;
     }
 
     /**

@@ -11,39 +11,36 @@
 // This needs to be included before getopt.h because the latter #defines symbols used by it
 #include "common/microprofile.h"
 
-#ifdef _WIN32
-// windows.h needs to be included before shellapi.h
-#include <windows.h>
-
-#include <shellapi.h>
-#endif
-
 #include "citra/config.h"
 #include "citra/emu_window/emu_window_sdl2.h"
-#include "citra/lodepng_image_interface.h"
+#include "citra/emu_window/emu_window_sdl2_gl.h"
+#include "citra/emu_window/emu_window_sdl2_sw.h"
+#include "citra/emu_window/emu_window_sdl2_vk.h"
 #include "common/common_paths.h"
 #include "common/detached_tasks.h"
 #include "common/file_util.h"
 #include "common/logging/backend.h"
-#include "common/logging/filter.h"
 #include "common/logging/log.h"
 #include "common/scm_rev.h"
 #include "common/scope_exit.h"
+#include "common/settings.h"
 #include "common/string_util.h"
 #include "core/core.h"
 #include "core/dumping/backend.h"
-#include "core/file_sys/cia_container.h"
+#include "core/dumping/ffmpeg_backend.h"
 #include "core/frontend/applets/default_applets.h"
 #include "core/frontend/framebuffer_layout.h"
-#include "core/frontend/scope_acquire_context.h"
-#include "core/gdbstub/gdbstub.h"
 #include "core/hle/service/am/am.h"
 #include "core/hle/service/cfg/cfg.h"
-#include "core/loader/loader.h"
 #include "core/movie.h"
-#include "core/settings.h"
+#include "core/telemetry_session.h"
+#include "input_common/main.h"
 #include "network/network.h"
 #include "video_core/renderer_base.h"
+
+#ifdef __unix__
+#include "common/linux/gamemode.h"
+#endif
 
 #undef _UNICODE
 #include <getopt.h>
@@ -52,6 +49,11 @@
 #endif
 
 #ifdef _WIN32
+// windows.h needs to be included before shellapi.h
+#include <windows.h>
+
+#include <shellapi.h>
+
 extern "C" {
 // tells Nvidia drivers to use the dedicated GPU by default on laptops with switchable graphics
 __declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
@@ -104,41 +106,44 @@ static void OnNetworkError(const Network::RoomMember::Error& error) {
         break;
     case Network::RoomMember::Error::CouldNotConnect:
         LOG_ERROR(Network, "Error: Could not connect");
-        exit(1);
+        std::exit(1);
         break;
     case Network::RoomMember::Error::NameCollision:
         LOG_ERROR(
             Network,
             "You tried to use the same nickname as another user that is connected to the Room");
-        exit(1);
+        std::exit(1);
         break;
     case Network::RoomMember::Error::MacCollision:
         LOG_ERROR(Network, "You tried to use the same MAC-Address as another user that is "
                            "connected to the Room");
-        exit(1);
+        std::exit(1);
         break;
     case Network::RoomMember::Error::ConsoleIdCollision:
         LOG_ERROR(Network, "Your Console ID conflicted with someone else in the Room");
-        exit(1);
+        std::exit(1);
         break;
     case Network::RoomMember::Error::WrongPassword:
         LOG_ERROR(Network, "Room replied with: Wrong password");
-        exit(1);
+        std::exit(1);
         break;
     case Network::RoomMember::Error::WrongVersion:
         LOG_ERROR(Network,
                   "You are using a different version than the room you are trying to connect to");
-        exit(1);
+        std::exit(1);
         break;
     case Network::RoomMember::Error::RoomIsFull:
         LOG_ERROR(Network, "The room is full");
-        exit(1);
+        std::exit(1);
         break;
     case Network::RoomMember::Error::HostKicked:
         LOG_ERROR(Network, "You have been kicked by the host");
         break;
     case Network::RoomMember::Error::HostBanned:
         LOG_ERROR(Network, "You have been banned by the host");
+        break;
+    default:
+        LOG_ERROR(Network, "Unknown network error: {}", error);
         break;
     }
 }
@@ -170,34 +175,20 @@ static void OnStatusMessageReceived(const Network::StatusMessageEntry& msg) {
         std::cout << std::endl << "* " << message << std::endl << std::endl;
 }
 
-static void InitializeLogging() {
-    Log::Filter log_filter(Log::Level::Debug);
-    log_filter.ParseFilterString(Settings::values.log_filter);
-    Log::SetGlobalFilter(log_filter);
-
-    Log::AddBackend(std::make_unique<Log::ColorConsoleBackend>());
-
-    const std::string& log_dir = FileUtil::GetUserPath(FileUtil::UserPath::LogDir);
-    FileUtil::CreateFullPath(log_dir);
-    Log::AddBackend(std::make_unique<Log::FileBackend>(log_dir + LOG_FILE));
-#ifdef _WIN32
-    Log::AddBackend(std::make_unique<Log::DebuggerBackend>());
-#endif
-}
-
 /// Application entry point
 int main(int argc, char** argv) {
+    Common::Log::Initialize();
+    Common::Log::SetColorConsoleBackendEnabled(true);
+    Common::Log::Start();
     Common::DetachedTasks detached_tasks;
     Config config;
     int option_index = 0;
-    bool use_gdbstub = Settings::values.use_gdbstub;
-    u32 gdb_port = static_cast<u32>(Settings::values.gdbstub_port);
+    bool use_gdbstub = Settings::values.use_gdbstub.GetValue();
+    u32 gdb_port = static_cast<u32>(Settings::values.gdbstub_port.GetValue());
     std::string movie_record;
     std::string movie_record_author;
     std::string movie_play;
     std::string dump_video;
-
-    InitializeLogging();
 
     char* endarg;
 #ifdef _WIN32
@@ -340,29 +331,54 @@ int main(int argc, char** argv) {
         return -1;
     }
 
+    auto& system = Core::System::GetInstance();
+    auto& movie = system.Movie();
+
     if (!movie_record.empty()) {
-        Core::Movie::GetInstance().PrepareForRecording();
+        movie.PrepareForRecording();
     }
     if (!movie_play.empty()) {
-        Core::Movie::GetInstance().PrepareForPlayback(movie_play);
+        movie.PrepareForPlayback(movie_play);
     }
 
     // Apply the command line arguments
     Settings::values.gdbstub_port = gdb_port;
     Settings::values.use_gdbstub = use_gdbstub;
-    Settings::Apply();
+    system.ApplySettings();
 
     // Register frontend applets
-    Frontend::RegisterDefaultApplets();
+    Frontend::RegisterDefaultApplets(system);
 
-    // Register generic image interface
-    Core::System::GetInstance().RegisterImageInterface(std::make_shared<LodePNGImageInterface>());
+    EmuWindow_SDL2::InitializeSDL2();
 
-    std::unique_ptr<EmuWindow_SDL2> emu_window{std::make_unique<EmuWindow_SDL2>(fullscreen)};
-    Frontend::ScopeAcquireContext scope(*emu_window);
-    Core::System& system{Core::System::GetInstance()};
+    const auto create_emu_window = [&](bool fullscreen,
+                                       bool is_secondary) -> std::unique_ptr<EmuWindow_SDL2> {
+        switch (Settings::values.graphics_api.GetValue()) {
+        case Settings::GraphicsAPI::OpenGL:
+            return std::make_unique<EmuWindow_SDL2_GL>(system, fullscreen, is_secondary);
+        case Settings::GraphicsAPI::Vulkan:
+            return std::make_unique<EmuWindow_SDL2_VK>(system, fullscreen, is_secondary);
+        case Settings::GraphicsAPI::Software:
+            return std::make_unique<EmuWindow_SDL2_SW>(system, fullscreen, is_secondary);
+        }
+        LOG_ERROR(Frontend, "Invalid Graphics API, using OpenGL");
+        return std::make_unique<EmuWindow_SDL2_GL>(system, fullscreen, is_secondary);
+    };
 
-    const Core::System::ResultStatus load_result{system.Load(*emu_window, filepath)};
+    const auto emu_window{create_emu_window(fullscreen, false)};
+    const bool use_secondary_window{
+        Settings::values.layout_option.GetValue() == Settings::LayoutOption::SeparateWindows &&
+        Settings::values.graphics_api.GetValue() != Settings::GraphicsAPI::Software};
+    const auto secondary_window = use_secondary_window ? create_emu_window(false, true) : nullptr;
+
+    const auto scope = emu_window->Acquire();
+
+    LOG_INFO(Frontend, "Citra Version: {} | {}-{}", Common::g_build_fullname, Common::g_scm_branch,
+             Common::g_scm_desc);
+    Settings::LogSettings();
+
+    const Core::System::ResultStatus load_result{
+        system.Load(*emu_window, filepath, secondary_window.get())};
 
     switch (load_result) {
     case Core::System::ResultStatus::ErrorGetLoader:
@@ -386,11 +402,11 @@ int main(int argc, char** argv) {
     case Core::System::ResultStatus::ErrorSystemMode:
         LOG_CRITICAL(Frontend, "Failed to determine system mode!");
         return -1;
-    case Core::System::ResultStatus::ErrorVideoCore:
-        LOG_CRITICAL(Frontend, "VideoCore not initialized");
-        return -1;
     case Core::System::ResultStatus::Success:
         break; // Expected case
+    default:
+        LOG_ERROR(Frontend, "Error while loading ROM: {}", system.GetStatusDetails());
+        break;
     }
 
     system.TelemetrySession().AddField(Common::Telemetry::FieldType::App, "Frontend", "SDL");
@@ -412,41 +428,82 @@ int main(int argc, char** argv) {
     }
 
     if (!movie_play.empty()) {
-        auto metadata = Core::Movie::GetInstance().GetMovieMetadata(movie_play);
+        auto metadata = movie.GetMovieMetadata(movie_play);
         LOG_INFO(Movie, "Author: {}", metadata.author);
         LOG_INFO(Movie, "Rerecord count: {}", metadata.rerecord_count);
         LOG_INFO(Movie, "Input count: {}", metadata.input_count);
-        Core::Movie::GetInstance().StartPlayback(movie_play);
+        movie.StartPlayback(movie_play);
     }
     if (!movie_record.empty()) {
-        Core::Movie::GetInstance().StartRecording(movie_record, movie_record_author);
+        movie.StartRecording(movie_record, movie_record_author);
     }
-    if (!dump_video.empty()) {
-        Layout::FramebufferLayout layout{
-            Layout::FrameLayoutFromResolutionScale(VideoCore::GetResolutionScaleFactor())};
-        system.VideoDumper().StartDumping(dump_video, layout);
+    if (!dump_video.empty() && DynamicLibrary::FFmpeg::LoadFFmpeg()) {
+        const auto layout{
+            Layout::FrameLayoutFromResolutionScale(system.Renderer().GetResolutionScaleFactor())};
+        auto dumper = std::make_shared<VideoDumper::FFmpegBackend>();
+        if (dumper->StartDumping(dump_video, layout)) {
+            system.RegisterVideoDumper(dumper);
+        }
     }
 
-    std::thread render_thread([&emu_window] { emu_window->Present(); });
+#ifdef __unix__
+    Common::Linux::StartGamemode();
+#endif
+
+    std::thread main_render_thread([&emu_window] { emu_window->Present(); });
+    std::thread secondary_render_thread([&secondary_window] {
+        if (secondary_window) {
+            secondary_window->Present();
+        }
+    });
 
     std::atomic_bool stop_run;
-    Core::System::GetInstance().Renderer().Rasterizer()->LoadDiskResources(
+    system.Renderer().Rasterizer()->LoadDiskResources(
         stop_run, [](VideoCore::LoadCallbackStage stage, std::size_t value, std::size_t total) {
             LOG_DEBUG(Frontend, "Loading stage {} progress {} {}", static_cast<u32>(stage), value,
                       total);
         });
 
-    while (emu_window->IsOpen()) {
-        system.RunLoop();
-    }
-    render_thread.join();
+    const auto secondary_is_open = [&secondary_window] {
+        // if the secondary window isn't created, it shouldn't affect the main loop
+        return secondary_window ? secondary_window->IsOpen() : true;
+    };
+    while (emu_window->IsOpen() && secondary_is_open()) {
+        const auto result = system.RunLoop();
 
-    Core::Movie::GetInstance().Shutdown();
-    if (system.VideoDumper().IsDumping()) {
-        system.VideoDumper().StopDumping();
+        switch (result) {
+        case Core::System::ResultStatus::ShutdownRequested:
+            emu_window->RequestClose();
+            break;
+        case Core::System::ResultStatus::Success:
+            break;
+        default:
+            LOG_ERROR(Frontend, "Error in main run loop: {}", result, system.GetStatusDetails());
+            break;
+        }
     }
+    emu_window->RequestClose();
+    if (secondary_window) {
+        secondary_window->RequestClose();
+    }
+    main_render_thread.join();
+    secondary_render_thread.join();
+
+    movie.Shutdown();
+
+    auto video_dumper = system.GetVideoDumper();
+    if (video_dumper && video_dumper->IsDumping()) {
+        video_dumper->StopDumping();
+    }
+
+    Network::Shutdown();
+    InputCommon::Shutdown();
 
     system.Shutdown();
+
+#ifdef __unix__
+    Common::Linux::StopGamemode();
+#endif
 
     detached_tasks.WaitForAllTasks();
     return 0;

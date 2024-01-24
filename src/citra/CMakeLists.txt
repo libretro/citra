@@ -8,25 +8,35 @@ add_executable(citra
     default_ini.h
     emu_window/emu_window_sdl2.cpp
     emu_window/emu_window_sdl2.h
-    lodepng_image_interface.cpp
-    lodepng_image_interface.h
+    emu_window/emu_window_sdl2_gl.cpp
+    emu_window/emu_window_sdl2_gl.h
+    emu_window/emu_window_sdl2_sw.cpp
+    emu_window/emu_window_sdl2_sw.h
+    emu_window/emu_window_sdl2_vk.cpp
+    emu_window/emu_window_sdl2_vk.h
+    precompiled_headers.h
     resource.h
 )
 
 create_target_directory_groups(citra)
 
-target_link_libraries(citra PRIVATE common core input_common network)
-target_link_libraries(citra PRIVATE inih glad lodepng)
+target_link_libraries(citra PRIVATE citra_common citra_core input_common network)
+target_link_libraries(citra PRIVATE inih glad)
 if (MSVC)
     target_link_libraries(citra PRIVATE getopt)
 endif()
-target_link_libraries(citra PRIVATE ${PLATFORM_LIBRARIES} SDL2 Threads::Threads)
+target_link_libraries(citra PRIVATE ${PLATFORM_LIBRARIES} SDL2::SDL2 Threads::Threads)
 
 if(UNIX AND NOT APPLE)
     install(TARGETS citra RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
 endif()
 
+if (CITRA_USE_PRECOMPILED_HEADERS)
+    target_precompile_headers(citra PRIVATE precompiled_headers.h)
+endif()
+
+# Bundle in-place on MSVC so dependencies can be resolved by builds.
 if (MSVC)
-    include(CopyCitraSDLDeps)
-    copy_citra_SDL_deps(citra)
+    include(BundleTarget)
+    bundle_target_in_place(citra)
 endif()

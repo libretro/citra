@@ -6,14 +6,15 @@
 
 #include <array>
 #include <functional>
+#include <span>
 #include "common/common_types.h"
 
-namespace RPC {
+namespace Core::RPC {
 
-enum class PacketType {
+enum class PacketType : u32 {
     Undefined = 0,
-    ReadMemory,
-    WriteMemory,
+    ReadMemory = 1,
+    WriteMemory = 2,
 };
 
 struct PacketHeader {
@@ -31,7 +32,9 @@ constexpr u32 MAX_READ_SIZE = MAX_PACKET_DATA_SIZE;
 
 class Packet {
 public:
-    Packet(const PacketHeader& header, u8* data, std::function<void(Packet&)> send_reply_callback);
+    explicit Packet(const PacketHeader& header, u8* data,
+                    std::function<void(Packet&)> send_reply_callback);
+    ~Packet();
 
     u32 GetVersion() const {
         return header.version;
@@ -53,7 +56,7 @@ public:
         return header;
     }
 
-    std::array<u8, MAX_PACKET_DATA_SIZE>& GetPacketData() {
+    std::span<u8, MAX_PACKET_DATA_SIZE> GetPacketData() {
         return packet_data;
     }
 
@@ -67,7 +70,7 @@ public:
 
 private:
     void HandleReadMemory(u32 address, u32 data_size);
-    void HandleWriteMemory(u32 address, const u8* data, u32 data_size);
+    void HandleWriteMemory(u32 address, std::span<const u8> data);
 
     struct PacketHeader header;
     std::array<u8, MAX_PACKET_DATA_SIZE> packet_data;
@@ -75,4 +78,4 @@ private:
     std::function<void(Packet&)> send_reply_callback;
 };
 
-} // namespace RPC
+} // namespace Core::RPC

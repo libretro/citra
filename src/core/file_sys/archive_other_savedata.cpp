@@ -10,9 +10,6 @@
 #include "core/hle/kernel/process.h"
 #include "core/hle/service/fs/archive.h"
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// FileSys namespace
-
 SERIALIZE_EXPORT_IMPL(FileSys::ArchiveFactory_OtherSaveDataPermitted)
 SERIALIZE_EXPORT_IMPL(FileSys::ArchiveFactory_OtherSaveDataGeneral)
 
@@ -48,7 +45,7 @@ ResultVal<std::tuple<MediaType, u64>> ParsePath(const Path& path, T program_id_r
         return ERROR_UNSUPPORTED_OPEN_FLAGS;
     }
 
-    return MakeResult<std::tuple<MediaType, u64>>(media_type, program_id_reader(data));
+    return std::make_tuple(media_type, program_id_reader(data));
 }
 
 ResultVal<std::tuple<MediaType, u64>> ParsePathPermitted(const Path& path) {

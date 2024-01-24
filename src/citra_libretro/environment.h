@@ -9,8 +9,10 @@
 #include "common/logging/backend.h"
 #include "common/logging/filter.h"
 #include "common/logging/log.h"
+#include "common/settings.h"
 #include "core/core.h"
 #include "libretro.h"
+#include "libretro_vulkan.h"
 
 namespace LibRetro {
 
@@ -39,6 +41,11 @@ std::string FetchVariable(std::string key, std::string def);
 /// Returns a logging backend, or null if the frontend refuses to provide one.
 retro_log_printf_t GetLoggingBackend();
 
+/// Returns graphics api based on global frontend setting
+Settings::GraphicsAPI GetPrefferedHWRenderer();
+
+const struct retro_hw_render_interface_vulkan* GetHWRenderInterfaceVulkan();
+
 /// Displays information about the kinds of controllers that this Citra recreates.
 bool SetControllerInfo(const retro_controller_info info[]);
 
@@ -47,6 +54,8 @@ bool SetPixelFormat(const retro_pixel_format fmt);
 
 /// Sets the H/W rendering context.
 bool SetHWRenderer(retro_hw_render_callback* cb);
+
+bool SetVkDeviceCallbacks(const retro_vulkan_create_device_t vk_create_device, const retro_vulkan_destroy_device_t vk_destroy_device);
 
 /// Sets the async audio callback.
 bool SetAudioCallback(retro_audio_callback* cb);

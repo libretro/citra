@@ -5,7 +5,6 @@
 #define CITRA_IGNORE_EXIT(x)
 
 #include <algorithm>
-#include <cinttypes>
 #include <cstdio>
 #include "common/common_types.h"
 #include "common/logging/log.h"
@@ -849,17 +848,13 @@ static int InterpreterTranslateBlock(ARMul_State* cpu, std::size_t& bb_start, u3
     // Save start addr of basicblock in CreamCache
     ARM_INST_PTR inst_base = nullptr;
     TransExtData ret = TransExtData::NON_BRANCH;
-    int size = 0; // instruction size of basic block
     bb_start = trans_cache_buf_top;
 
     u32 phys_addr = addr;
     u32 pc_start = cpu->Reg[15];
 
     while (ret == TransExtData::NON_BRANCH) {
-        unsigned int inst_size = InterpreterTranslateInstruction(cpu, phys_addr, inst_base);
-
-        size++;
-
+        u32 inst_size = InterpreterTranslateInstruction(cpu, phys_addr, inst_base);
         phys_addr += inst_size;
 
         if ((phys_addr & 0xfff) == 0) {
@@ -972,7 +967,7 @@ unsigned InterpreterMainLoop(ARMul_State* cpu) {
 
 // GCC and Clang have a C++ extension to support a lookup table of labels. Otherwise, fallback to a
 // clunky switch statement.
-#if defined __GNUC__ || defined __clang__
+#if defined __GNUC__ || (defined __clang__ && !defined _MSC_VER)
 #define GOTO_NEXT_INST                                                                             \
     GDB_BP_CHECK;                                                                                  \
     if (num_instrs >= cpu->NumInstrsToExecute)                                                     \
@@ -3869,13 +3864,12 @@ SUB_INST : {
 }
 SWI_INST : {
     if (inst_base->cond == ConditionCode::AL || CondPassed(cpu, inst_base->cond)) {
-        DEBUG_ASSERT(cpu->system != nullptr);
         swi_inst* const inst_cream = (swi_inst*)inst_base->component;
-        cpu->system->GetRunningCore().GetTimer().AddTicks(num_instrs);
+        cpu->system.GetRunningCore().GetTimer().AddTicks(num_instrs);
         cpu->NumInstrsToExecute =
             num_instrs >= cpu->NumInstrsToExecute ? 0 : cpu->NumInstrsToExecute - num_instrs;
         num_instrs = 0;
-        Kernel::SVCContext{*cpu->system}.CallSVC(inst_cream->num & 0xFFFF);
+        Kernel::SVCContext{cpu->system}.CallSVC(inst_cream->num & 0xFFFF);
         // The kernel would call ERET to get here, which clears exclusive memory state.
         cpu->UnsetExclusiveMemoryAddress();
     }

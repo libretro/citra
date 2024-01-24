@@ -111,6 +111,11 @@ static THREEDSX_Error Load3DSXFile(FileUtil::IOFile& file, u32 base_addr,
     loadinfo.seg_sizes[0] = (hdr.code_seg_size + 0xFFF) & ~0xFFF;
     loadinfo.seg_sizes[1] = (hdr.rodata_seg_size + 0xFFF) & ~0xFFF;
     loadinfo.seg_sizes[2] = (hdr.data_seg_size + 0xFFF) & ~0xFFF;
+    // prevent integer overflow leading to heap-buffer-overflow
+    if (loadinfo.seg_sizes[0] < hdr.code_seg_size || loadinfo.seg_sizes[1] < hdr.rodata_seg_size ||
+        loadinfo.seg_sizes[2] < hdr.data_seg_size) {
+        return ERROR_READ;
+    }
     u32 offsets[2] = {loadinfo.seg_sizes[0], loadinfo.seg_sizes[0] + loadinfo.seg_sizes[1]};
     u32 n_reloc_tables = hdr.reloc_hdr_size / sizeof(u32);
     std::vector<u8> program_image(loadinfo.seg_sizes[0] + loadinfo.seg_sizes[1] +
@@ -144,7 +149,7 @@ static THREEDSX_Error Load3DSXFile(FileUtil::IOFile& file, u32 base_addr,
         return ERROR_READ;
 
     // BSS clear
-    memset((char*)loadinfo.seg_ptrs[2] + hdr.data_seg_size - hdr.bss_size, 0, hdr.bss_size);
+    std::memset((char*)loadinfo.seg_ptrs[2] + hdr.data_seg_size - hdr.bss_size, 0, hdr.bss_size);
 
     // Relocate the segments
     for (unsigned int current_segment = 0; current_segment < NUM_SEGMENTS; ++current_segment) {
@@ -272,12 +277,12 @@ ResultStatus AppLoader_THREEDSX::Load(std::shared_ptr<Kernel::Process>& process)
 
     // Attach the default resource limit (APPLICATION) to the process
     process->resource_limit = Core::System::GetInstance().Kernel().ResourceLimit().GetForCategory(
-        Kernel::ResourceLimitCategory::APPLICATION);
+        Kernel::ResourceLimitCategory::Application);
 
     // On real HW this is done with FS:Reg, but we can be lazy
     auto fs_user =
         Core::System::GetInstance().ServiceManager().GetService<Service::FS::FS_USER>("fs:USER");
-    fs_user->Register(process->GetObjectId(), process->codeset->program_id, filepath);
+    fs_user->RegisterProgramInfo(process->GetObjectId(), process->codeset->program_id, filepath);
 
     process->Run(48, Kernel::DEFAULT_STACK_SIZE);
 

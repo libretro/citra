@@ -7,10 +7,13 @@
 #include <QAbstractListModel>
 #include <QDockWidget>
 #include "video_core/debug_utils/debug_utils.h"
-#include "video_core/gpu_debugger.h"
 
 class QPushButton;
 class QTreeView;
+
+namespace Core {
+class System;
+}
 
 class GPUCommandListModel : public QAbstractListModel {
     Q_OBJECT
@@ -39,7 +42,7 @@ class GPUCommandListWidget : public QDockWidget {
     Q_OBJECT
 
 public:
-    explicit GPUCommandListWidget(QWidget* parent = nullptr);
+    explicit GPUCommandListWidget(Core::System& system, QWidget* parent = nullptr);
 
 public slots:
     void OnToggleTracing();
@@ -54,7 +57,7 @@ signals:
 
 private:
     std::unique_ptr<Pica::DebugUtils::PicaTrace> pica_trace;
-
+    Core::System& system;
     QTreeView* list_widget;
     QWidget* command_info_widget;
     QPushButton* toggle_tracing;

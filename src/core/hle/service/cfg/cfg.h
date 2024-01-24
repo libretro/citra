@@ -6,9 +6,9 @@
 
 #include <array>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
-#include <vector>
 #include "common/common_types.h"
 #include "core/hle/service/service.h"
 
@@ -21,6 +21,74 @@ class System;
 }
 
 namespace Service::CFG {
+
+enum ConfigBlockID {
+    ConfigSavegameVersionBlockID = 0x00000000, // Maybe?
+    RtcCompensationBlockID = 0x00010000,
+    AudioCalibrationBlockID = 0x00020000,
+    LeapYearCounterBlockID = 0x00030000,
+    UserTimeOffsetBlockID = 0x00030001,
+    SettingsTimeOffsetBlockID = 0x00030002,
+    TouchCalibrationBlockID = 0x00040000,
+    AnalogStickCalibrationBlockID = 0x00040001, // Maybe?
+    GyroscopeCalibrationBlockID = 0x00040002,
+    AccelerometerCalibrationBlockID = 0x00040003,
+    CStickCalibrationBlockID = 0x00040004,
+    ScreenFlickerCalibrationBlockID = 0x00050000,
+    BacklightControlsBlockID = 0x00050001,
+    BacklightPwmCalibrationBlockID = 0x00050002,
+    PowerSavingModeCalibrationBlockID = 0x00050003,
+    PowerSavingModeCalibrationLegacyBlockID = 0x00050004,
+    StereoCameraSettingsBlockID = 0x00050005,
+    _3dSwitchingDelayBlockID = 0x00050006,
+    Unknown_0x00050007 = 0x00050007,
+    PowerSavingModeExtraConfigBlockID = 0x00050008,
+    BacklightControlNew3dsBlockID = 0x00050009,
+    Unknown_0x00060000 = 0x00060000,
+    _3dFiltersBlockID = 0x00070000,
+    SoundOutputModeBlockID = 0x00070001,
+    MicrophoneEchoCancellationBlockID = 0x00070002,
+    WifiConfigurationSlot0BlockID = 0x00080000,
+    WifiConfigurationSlot1BlockID = 0x00080001,
+    WifiConfigurationSlot2BlockID = 0x00080002,
+    ConsoleUniqueID1BlockID = 0x00090000,
+    ConsoleUniqueID2BlockID = 0x00090001,
+    ConsoleUniqueID3BlockID = 0x00090002,
+    UsernameBlockID = 0x000A0000,
+    BirthdayBlockID = 0x000A0001,
+    LanguageBlockID = 0x000A0002,
+    CountryInfoBlockID = 0x000B0000,
+    CountryNameBlockID = 0x000B0001,
+    StateNameBlockID = 0x000B0002,
+    LatitudeLongitudeBlockID = 0x000B0003,
+    RestrictedPhotoExchangeBlockID = 0x000C0000,
+    CoppacsRestrictionBlockID = 0x000C0001,
+    ParentalRestrictionEmailBlockID = 0x000C0002,
+    EULAVersionBlockID = 0x000D0000,
+    Unknown_0x000E0000 = 0x000E0000,
+    DebugConfigurationBlockID = 0x000F0000,
+    Unknown_0x000F0001 = 0x000F0001,
+    Unknown_0x000F0003 = 0x000F0003,
+    ConsoleModelBlockID = 0x000F0004,
+    NetworkUpdatesEnabledBlockID = 0x000F0005,
+    XDeviceTokenBlockID = 0x000F0006,
+    TwlEulaInfoBlockID = 0x00100000,
+    TwlParentalRestrictionsBlockID = 0x00100001,
+    TwlCountryCodeBlockID = 0x00100002,
+    TwlMovableUniqueBlockIDBlockID = 0x00100003,
+    SystemSetupRequiredBlockID = 0x00110000,
+    LaunchMenuBlockID = 0x00110001,
+    VolumeSliderBoundsBlockID = 0x00120000,
+    DebugModeBlockID = 0x00130000,
+    ClockSequenceBlockID = 0x00150000,
+    Unknown_0x00150001 = 0x00150001,
+    ServerType = 0x00150002,
+    Unknown_0x00160000 = 0x00160000,
+    MiiverseAccessKeyBlockID = 0x00170000,
+    QtmInfraredLedRelatedBlockID = 0x00180000,
+    QtmCalibrationDataBlockID = 0x00180001,
+    Unknown_0x00190000 = 0x00190000,
+};
 
 enum SystemModel {
     NINTENDO_3DS = 0,
@@ -51,80 +119,66 @@ enum SoundOutputMode { SOUND_MONO = 0, SOUND_STEREO = 1, SOUND_SURROUND = 2 };
 struct EULAVersion {
     u8 minor;
     u8 major;
+    INSERT_PADDING_BYTES(2);
 };
+static_assert(sizeof(EULAVersion) == 4, "EULAVersion must be exactly 0x4 bytes");
 
-/// Block header in the config savedata file
-struct SaveConfigBlockEntry {
-    u32 block_id;       ///< The id of the current block
-    u32 offset_or_data; ///< This is the absolute offset to the block data if the size is greater
-                        /// than 4 bytes, otherwise it contains the data itself
-    u16 size;           ///< The size of the block
-    u16 flags;          ///< The flags of the block, possibly used for access control
+struct UsernameBlock {
+    /// Exactly 20 bytes long, padded with zeros at the end if necessary
+    std::array<char16_t, 10> username;
+    u32 zero;
+    u32 ng_word;
 };
+static_assert(sizeof(UsernameBlock) == 0x1C, "UsernameBlock must be exactly 0x1C bytes");
 
-static constexpr u16 C(const char code[2]) {
-    return code[0] | (code[1] << 8);
-}
+struct BirthdayBlock {
+    u8 month; ///< The month of the birthday
+    u8 day;   ///< The day of the birthday
+};
+static_assert(sizeof(BirthdayBlock) == 2, "BirthdayBlock must be exactly 2 bytes");
 
-static const std::array<u16, 187> country_codes = {{
-    0,       C("JP"), 0,       0,       0,       0,       0,       0,       // 0-7
-    C("AI"), C("AG"), C("AR"), C("AW"), C("BS"), C("BB"), C("BZ"), C("BO"), // 8-15
-    C("BR"), C("VG"), C("CA"), C("KY"), C("CL"), C("CO"), C("CR"), C("DM"), // 16-23
-    C("DO"), C("EC"), C("SV"), C("GF"), C("GD"), C("GP"), C("GT"), C("GY"), // 24-31
-    C("HT"), C("HN"), C("JM"), C("MQ"), C("MX"), C("MS"), C("AN"), C("NI"), // 32-39
-    C("PA"), C("PY"), C("PE"), C("KN"), C("LC"), C("VC"), C("SR"), C("TT"), // 40-47
-    C("TC"), C("US"), C("UY"), C("VI"), C("VE"), 0,       0,       0,       // 48-55
-    0,       0,       0,       0,       0,       0,       0,       0,       // 56-63
-    C("AL"), C("AU"), C("AT"), C("BE"), C("BA"), C("BW"), C("BG"), C("HR"), // 64-71
-    C("CY"), C("CZ"), C("DK"), C("EE"), C("FI"), C("FR"), C("DE"), C("GR"), // 72-79
-    C("HU"), C("IS"), C("IE"), C("IT"), C("LV"), C("LS"), C("LI"), C("LT"), // 80-87
-    C("LU"), C("MK"), C("MT"), C("ME"), C("MZ"), C("NA"), C("NL"), C("NZ"), // 88-95
-    C("NO"), C("PL"), C("PT"), C("RO"), C("RU"), C("RS"), C("SK"), C("SI"), // 96-103
-    C("ZA"), C("ES"), C("SZ"), C("SE"), C("CH"), C("TR"), C("GB"), C("ZM"), // 104-111
-    C("ZW"), C("AZ"), C("MR"), C("ML"), C("NE"), C("TD"), C("SD"), C("ER"), // 112-119
-    C("DJ"), C("SO"), C("AD"), C("GI"), C("GG"), C("IM"), C("JE"), C("MC"), // 120-127
-    C("TW"), 0,       0,       0,       0,       0,       0,       0,       // 128-135
-    C("KR"), 0,       0,       0,       0,       0,       0,       0,       // 136-143
-    C("HK"), C("MO"), 0,       0,       0,       0,       0,       0,       // 144-151
-    C("ID"), C("SG"), C("TH"), C("PH"), C("MY"), 0,       0,       0,       // 152-159
-    C("CN"), 0,       0,       0,       0,       0,       0,       0,       // 160-167
-    C("AE"), C("IN"), C("EG"), C("OM"), C("QA"), C("KW"), C("SA"), C("SY"), // 168-175
-    C("BH"), C("JO"), 0,       0,       0,       0,       0,       0,       // 176-183
-    C("SM"), C("VA"), C("BM"),                                              // 184-186
-}};
+struct ConsoleModelInfo {
+    u8 model;                  ///< The console model (3DS, 2DS, etc)
+    std::array<u8, 3> unknown; ///< Unknown data
+};
+static_assert(sizeof(ConsoleModelInfo) == 4, "ConsoleModelInfo must be exactly 4 bytes");
 
-// Based on PKHeX's lists of subregions at
-// https://github.com/kwsch/PKHeX/tree/master/PKHeX.Core/Resources/text/locale3DS/subregions
-static const std::array<u8, 187> default_subregion = {{
-    0, 2, 0,  0, 0, 0, 0, 0, // 0-7
-    1, 2, 2,  1, 1, 1, 2, 2, // 8-15
-    2, 1, 2,  1, 2, 2, 2, 1, // 16-23
-    2, 2, 2,  1, 1, 1, 2, 2, // 24-31
-    2, 2, 2,  1, 2, 1, 1, 2, // 32-39
-    2, 2, 2,  2, 1, 1, 2, 2, // 40-47
-    1, 2, 2,  1, 2, 0, 0, 0, // 48-55
-    0, 0, 0,  0, 0, 0, 0, 0, // 56-63
-    2, 2, 2,  2, 2, 1, 2, 6, // 64-71
-    1, 2, 18, 1, 8, 2, 2, 2, // 72-79
-    2, 1, 2,  2, 1, 2, 1, 2, // 80-87
-    1, 1, 1,  1, 1, 1, 2, 2, // 88-95
-    7, 2, 2,  2, 9, 1, 2, 1, // 96-103
-    2, 2, 2,  2, 2, 2, 2, 1, // 104-111
-    1, 1, 1,  1, 1, 1, 1, 1, // 112-119
-    1, 1, 1,  1, 1, 1, 1, 1, // 120-127
-    2, 0, 0,  0, 0, 0, 0, 0, // 128-135
-    2, 0, 0,  0, 0, 0, 0, 0, // 136-143
-    1, 0, 0,  0, 0, 0, 0, 0, // 144-151
-    0, 1, 0,  0, 2, 0, 0, 0, // 152-159
-    2, 0, 0,  0, 0, 0, 0, 0, // 160-167
-    2, 2, 0,  0, 0, 0, 2, 0, // 168-175
-    0, 0, 0,  0, 0, 0, 0, 0, // 176-183
-    1, 1, 1,                 // 184-186
-}};
+struct ConsoleCountryInfo {
+    std::array<u8, 2> unknown; ///< Unknown data
+    u8 state_code;             ///< The state or province code.
+    u8 country_code;           ///< The country code of the console
+};
+static_assert(sizeof(ConsoleCountryInfo) == 4, "ConsoleCountryInfo must be exactly 4 bytes");
+
+struct BacklightControls {
+    u8 power_saving_enabled; ///< Whether power saving mode is enabled.
+    u8 brightness_level;     ///< The configured brightness level.
+};
+static_assert(sizeof(BacklightControls) == 2, "BacklightControls must be exactly 2 bytes");
+
+struct New3dsBacklightControls {
+    std::array<u8, 4> unknown_1; ///< Unknown data
+    u8 auto_brightness_enabled;  ///< Whether auto brightness is enabled.
+    std::array<u8, 3> unknown_2; ///< Unknown data
+};
+static_assert(sizeof(New3dsBacklightControls) == 8,
+              "New3dsBacklightControls must be exactly 8 bytes");
+
+/// Access control flags for config blocks
+enum class AccessFlag : u16 {
+    UserRead = 1 << 1,    ///< Readable by user applications (cfg:u)
+    SystemWrite = 1 << 2, ///< Writable by system applications and services (cfg:s / cfg:i)
+    SystemRead = 1 << 3,  ///< Readable by system applications and services (cfg:s / cfg:i)
+
+    // Commonly used combinations for convenience
+    System = SystemRead | SystemWrite,
+    Global = UserRead | SystemRead | SystemWrite,
+};
+DECLARE_ENUM_FLAG_OPERATORS(AccessFlag);
 
 class Module final {
 public:
-    Module();
+    Module(Core::System& system_);
     ~Module();
 
     class Interface : public ServiceFramework<Interface> {
@@ -155,7 +209,7 @@ public:
         void GetCountryCodeID(Kernel::HLERequestContext& ctx);
 
         /**
-         * CFG::SecureInfoGetRegion service function
+         * CFG::GetRegion service function
          *  Inputs:
          *      1 : None
          *  Outputs:
@@ -163,10 +217,42 @@ public:
          *      1 : Result of function, 0 on success, otherwise error code
          *      2 : Region value loaded from SecureInfo offset 0x100
          */
-        void SecureInfoGetRegion(Kernel::HLERequestContext& ctx, u16 id);
+        void GetRegion(Kernel::HLERequestContext& ctx);
 
         /**
-         * CFG::GenHashConsoleUnique service function
+         * CFG::SecureInfoGetByte101 service function
+         *  Inputs:
+         *      1 : None
+         *  Outputs:
+         *      0 : Result Header code
+         *      1 : Result of function, 0 on success, otherwise error code
+         *      2 : Value loaded from SecureInfo offset 0x101
+         */
+        void SecureInfoGetByte101(Kernel::HLERequestContext& ctx);
+
+        /**
+         * CFG::SetUUIDClockSequence service function
+         *  Inputs:
+         *      1 : UUID Clock Sequence
+         *  Outputs:
+         *      0 : Result Header code
+         *      1 : Result of function, 0 on success, otherwise error code
+         */
+        void SetUUIDClockSequence(Kernel::HLERequestContext& ctx);
+
+        /**
+         * CFG::GetUUIDClockSequence service function
+         *  Inputs:
+         *      1 : None
+         *  Outputs:
+         *      0 : Result Header code
+         *      1 : Result of function, 0 on success, otherwise error code
+         *      2 : UUID Clock Sequence
+         */
+        void GetUUIDClockSequence(Kernel::HLERequestContext& ctx);
+
+        /**
+         * CFG::GetTransferableId service function
          *  Inputs:
          *      1 : 20 bit application ID salt
          *  Outputs:
@@ -175,10 +261,10 @@ public:
          *      2 : Hash/"ID" lower word
          *      3 : Hash/"ID" upper word
          */
-        void GenHashConsoleUnique(Kernel::HLERequestContext& ctx);
+        void GetTransferableId(Kernel::HLERequestContext& ctx);
 
         /**
-         * CFG::GetRegionCanadaUSA service function
+         * CFG::IsCoppacsSupported service function
          *  Inputs:
          *      1 : None
          *  Outputs:
@@ -186,7 +272,7 @@ public:
          *      1 : Result of function, 0 on success, otherwise error code
          *      2 : 1 if the system is a Canada or USA model, 0 otherwise
          */
-        void GetRegionCanadaUSA(Kernel::HLERequestContext& ctx);
+        void IsCoppacsSupported(Kernel::HLERequestContext& ctx);
 
         /**
          * CFG::GetSystemModel service function
@@ -209,7 +295,7 @@ public:
         void GetModelNintendo2DS(Kernel::HLERequestContext& ctx);
 
         /**
-         * CFG::GetConfigInfoBlk2 service function
+         * CFG::GetConfig service function
          *  Inputs:
          *      0 : 0x00010082
          *      1 : Size
@@ -219,10 +305,10 @@ public:
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          */
-        void GetConfigInfoBlk2(Kernel::HLERequestContext& ctx);
+        void GetConfig(Kernel::HLERequestContext& ctx);
 
         /**
-         * CFG::GetConfigInfoBlk8 service function
+         * CFG::GetSystemConfig service function
          *  Inputs:
          *      0 : 0x04010082 / 0x08010082
          *      1 : Size
@@ -232,10 +318,10 @@ public:
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          */
-        void GetConfigInfoBlk8(Kernel::HLERequestContext& ctx, u16 id);
+        void GetSystemConfig(Kernel::HLERequestContext& ctx);
 
         /**
-         * CFG::SetConfigInfoBlk4 service function
+         * CFG::SetSystemConfig service function
          *  Inputs:
          *      0 : 0x04020082 / 0x08020082
          *      1 : Block ID
@@ -245,10 +331,10 @@ public:
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          *  Note:
-         *      The parameters order is different from GetConfigInfoBlk2/8's,
+         *      The parameters order is different from GetConfig/GetSystemConfig's,
          *      where Block ID and Size are switched.
          */
-        void SetConfigInfoBlk4(Kernel::HLERequestContext& ctx, u16 id);
+        void SetSystemConfig(Kernel::HLERequestContext& ctx);
 
         /**
          * CFG::UpdateConfigNANDSavegame service function
@@ -257,7 +343,7 @@ public:
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          */
-        void UpdateConfigNANDSavegame(Kernel::HLERequestContext& ctx, u16 id);
+        void UpdateConfigNANDSavegame(Kernel::HLERequestContext& ctx);
 
         /**
          * CFG::FormatConfig service function
@@ -268,18 +354,31 @@ public:
          */
         void FormatConfig(Kernel::HLERequestContext& ctx);
 
-        /// A helper function for dispatching service functions that have multiple IDs
-        template <void (Interface::*function)(Kernel::HLERequestContext& ctx, u16 id), u16 id>
-        void D(Kernel::HLERequestContext& ctx) {
-            (this->*function)(ctx, id);
-        }
-
     protected:
         std::shared_ptr<Module> cfg;
     };
 
 private:
-    ResultVal<void*> GetConfigInfoBlockPointer(u32 block_id, u32 size, u32 flag);
+    // Represents save data that would normally be stored in the MCU
+    // on real hardware. Try to keep this struct backwards compatible
+    // if a new version is needed to prevent data loss.
+    struct MCUData {
+        struct Header {
+            static constexpr u32 MAGIC_VALUE = 0x4455434D;
+            static constexpr u32 VERSION_VALUE = 1;
+            u32 magic = MAGIC_VALUE;
+            u32 version = VERSION_VALUE;
+            u64 reserved = 0;
+        };
+        Header header;
+        u32 clock_sequence = 0;
+
+        [[nodiscard]] bool IsValid() const {
+            return header.magic == Header::MAGIC_VALUE && header.version == Header::VERSION_VALUE;
+        }
+    };
+
+    ResultVal<void*> GetConfigBlockPointer(u32 block_id, u32 size, AccessFlag accesss_flag);
 
     /**
      * Reads a block with the specified id and flag from the Config savegame buffer
@@ -288,11 +387,11 @@ private:
      *
      * @param block_id The id of the block we want to read
      * @param size The size of the block we want to read
-     * @param flag The requested block must have this flag set
+     * @param accesss_flag The requested block must have this access flag set
      * @param output A pointer where we will write the read data
      * @returns ResultCode indicating the result of the operation, 0 on success
      */
-    ResultCode GetConfigInfoBlock(u32 block_id, u32 size, u32 flag, void* output);
+    ResultCode GetConfigBlock(u32 block_id, u32 size, AccessFlag accesss_flag, void* output);
 
     /**
      * Reads data from input and writes to a block with the specified id and flag
@@ -301,11 +400,11 @@ private:
      *
      * @param block_id The id of the block we want to write
      * @param size The size of the block we want to write
-     * @param flag The target block must have this flag set
+     * @param accesss_flag The target block must have this access flag set
      * @param input A pointer where we will read data and write to Config savegame buffer
      * @returns ResultCode indicating the result of the operation, 0 on success
      */
-    ResultCode SetConfigInfoBlock(u32 block_id, u32 size, u32 flag, const void* input);
+    ResultCode SetConfigBlock(u32 block_id, u32 size, AccessFlag accesss_flag, const void* input);
 
     /**
      * Creates a block with the specified id and writes the input data to the cfg savegame buffer in
@@ -313,11 +412,12 @@ private:
      *
      * @param block_id The id of the block we want to create
      * @param size The size of the block we want to create
-     * @param flags The flags of the new block
+     * @param accesss_flags The access flags of the new block
      * @param data A pointer containing the data we will write to the new block
      * @returns ResultCode indicating the result of the operation, 0 on success
      */
-    ResultCode CreateConfigInfoBlk(u32 block_id, u16 size, u16 flags, const void* data);
+    ResultCode CreateConfigBlock(u32 block_id, u16 size, AccessFlag accesss_flags,
+                                 const void* data);
 
     /**
      * Deletes the config savegame file from the filesystem, the buffer in memory is not affected
@@ -337,15 +437,13 @@ private:
      */
     ResultCode LoadConfigNANDSaveFile();
 
+    /**
+     * Loads MCU specific data
+     */
+    void LoadMCUConfig();
+
 public:
     u32 GetRegionValue();
-
-    /**
-     * Set the region codes preferred by the game so that CFG will adjust to it when the region
-     * setting is auto.
-     * @param region_codes the preferred region codes to set
-     */
-    void SetPreferredRegionCodes(const std::vector<u32>& region_codes);
 
     // Utilities for frontend to set config data.
     // Note: UpdateConfigNANDSavegame should be called after making changes to config data.
@@ -461,16 +559,40 @@ public:
     EULAVersion GetEULAVersion();
 
     /**
+     * Sets whether system initial setup is needed in config savegame.
+     * @param setup_needed Whether system initial setup is needed.
+     */
+    void SetSystemSetupNeeded(bool setup_needed);
+
+    /**
+     * Gets whether system initial setup is needed from config savegame.
+     * @returns Whether system initial setup is needed.
+     */
+    bool IsSystemSetupNeeded();
+
+    /**
      * Writes the config savegame memory buffer to the config savegame file in the filesystem
      * @returns ResultCode indicating the result of the operation, 0 on success
      */
     ResultCode UpdateConfigNANDSavegame();
 
+    /**
+     * Saves MCU specific data
+     */
+    void SaveMCUConfig();
+
 private:
+    void UpdatePreferredRegionCode();
+    SystemLanguage GetRawSystemLanguage();
+
+    Core::System& system;
+
     static constexpr u32 CONFIG_SAVEFILE_SIZE = 0x8000;
     std::array<u8, CONFIG_SAVEFILE_SIZE> cfg_config_file_buffer;
     std::unique_ptr<FileSys::ArchiveBackend> cfg_system_save_data_archive;
     u32 preferred_region_code = 0;
+    bool preferred_region_chosen = false;
+    MCUData mcu_data{};
 
     template <class Archive>
     void serialize(Archive& ar, const unsigned int);
@@ -486,4 +608,5 @@ std::string GetConsoleIdHash(Core::System& system);
 
 } // namespace Service::CFG
 
+SERVICE_CONSTRUCT(Service::CFG::Module)
 BOOST_CLASS_EXPORT_KEY(Service::CFG::Module)

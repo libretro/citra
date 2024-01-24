@@ -9,10 +9,11 @@
 #include <boost/serialization/unique_ptr.hpp>
 #include <cryptopp/osrng.h>
 #include <cryptopp/sha.h>
+#include <fmt/format.h>
 #include "common/archives.h"
-#include "common/common_paths.h"
 #include "common/file_util.h"
 #include "common/logging/log.h"
+#include "common/settings.h"
 #include "common/string_util.h"
 #include "common/swap.h"
 #include "core/core.h"
@@ -22,13 +23,15 @@
 #include "core/hle/ipc_helpers.h"
 #include "core/hle/result.h"
 #include "core/hle/service/cfg/cfg.h"
+#include "core/hle/service/cfg/cfg_defaults.h"
 #include "core/hle/service/cfg/cfg_i.h"
 #include "core/hle/service/cfg/cfg_nor.h"
 #include "core/hle/service/cfg/cfg_s.h"
 #include "core/hle/service/cfg/cfg_u.h"
-#include "core/settings.h"
 #include "citra_libretro/core_settings.h"
+#include "core/loader/loader.h"
 
+SERVICE_CONSTRUCT_IMPL(Service::CFG::Module)
 SERIALIZE_EXPORT_IMPL(Service::CFG::Module)
 
 namespace Service::CFG {
@@ -38,6 +41,7 @@ void Module::serialize(Archive& ar, const unsigned int) {
     ar& cfg_config_file_buffer;
     ar& cfg_system_save_data_archive;
     ar& preferred_region_code;
+    ar& preferred_region_chosen;
 }
 SERIALIZE_IMPL(Module)
 
@@ -45,6 +49,15 @@ SERIALIZE_IMPL(Module)
 constexpr u32 CONFIG_FILE_MAX_BLOCK_ENTRIES = 1479;
 
 namespace {
+
+/// Block header in the config savedata file
+struct SaveConfigBlockEntry {
+    u32 block_id;       ///< The id of the current block
+    u32 offset_or_data; ///< This is the absolute offset to the block data if the size is greater
+    /// than 4 bytes, otherwise it contains the data itself
+    u16 size;                ///< The size of the block
+    AccessFlag access_flags; ///< The access control flags of the block
+};
 
 /**
  * The header of the config savedata file,
@@ -62,73 +75,68 @@ struct SaveFileConfig {
 static_assert(sizeof(SaveFileConfig) == 0x455C,
               "SaveFileConfig header must be exactly 0x455C bytes");
 
-enum ConfigBlockID {
-    StereoCameraSettingsBlockID = 0x00050005,
-    SoundOutputModeBlockID = 0x00070001,
-    ConsoleUniqueID1BlockID = 0x00090000,
-    ConsoleUniqueID2BlockID = 0x00090001,
-    ConsoleUniqueID3BlockID = 0x00090002,
-    UsernameBlockID = 0x000A0000,
-    BirthdayBlockID = 0x000A0001,
-    LanguageBlockID = 0x000A0002,
-    CountryInfoBlockID = 0x000B0000,
-    CountryNameBlockID = 0x000B0001,
-    StateNameBlockID = 0x000B0002,
-    EULAVersionBlockID = 0x000D0000,
-    ConsoleModelBlockID = 0x000F0004,
-    DebugModeBlockID = 0x00130000,
-};
-
-struct UsernameBlock {
-    char16_t username[10]; ///< Exactly 20 bytes long, padded with zeros at the end if necessary
-    u32 zero;
-    u32 ng_word;
-};
-static_assert(sizeof(UsernameBlock) == 0x1C, "UsernameBlock must be exactly 0x1C bytes");
-
-struct BirthdayBlock {
-    u8 month; ///< The month of the birthday
-    u8 day;   ///< The day of the birthday
-};
-static_assert(sizeof(BirthdayBlock) == 2, "BirthdayBlock must be exactly 2 bytes");
-
-struct ConsoleModelInfo {
-    u8 model;      ///< The console model (3DS, 2DS, etc)
-    u8 unknown[3]; ///< Unknown data
-};
-static_assert(sizeof(ConsoleModelInfo) == 4, "ConsoleModelInfo must be exactly 4 bytes");
-
-struct ConsoleCountryInfo {
-    u8 unknown[2];   ///< Unknown data
-    u8 state_code;   ///< The state or province code.
-    u8 country_code; ///< The country code of the console
-};
-static_assert(sizeof(ConsoleCountryInfo) == 4, "ConsoleCountryInfo must be exactly 4 bytes");
 } // namespace
 
-constexpr EULAVersion MAX_EULA_VERSION{0x7F, 0x7F};
-constexpr ConsoleModelInfo CONSOLE_MODEL_OLD{NINTENDO_3DS_XL, {0, 0, 0}};
-constexpr ConsoleModelInfo CONSOLE_MODEL_NEW{NEW_NINTENDO_3DS_XL, {0, 0, 0}};
-constexpr u8 CONSOLE_LANGUAGE = LANGUAGE_EN;
-constexpr UsernameBlock CONSOLE_USERNAME_BLOCK{u"CITRA", 0, 0};
-constexpr BirthdayBlock PROFILE_BIRTHDAY{3, 25}; // March 25th, 2014
-constexpr u8 SOUND_OUTPUT_MODE = SOUND_SURROUND;
-constexpr u8 UNITED_STATES_COUNTRY_ID = 49;
-constexpr u8 WASHINGTON_DC_STATE_ID = 2;
-/// TODO(Subv): Find what the other bytes are
-constexpr ConsoleCountryInfo COUNTRY_INFO{{0, 0}, WASHINGTON_DC_STATE_ID, UNITED_STATES_COUNTRY_ID};
+static constexpr u16 C(const char code[2]) {
+    return code[0] | (code[1] << 8);
+}
 
-/**
- * TODO(Subv): Find out what this actually is, these values fix some NaN uniforms in some games,
- * for example Nintendo Zone
- * Thanks Normmatt for providing this information
- */
-constexpr std::array<float, 8> STEREO_CAMERA_SETTINGS = {
-    62.0f, 289.0f, 76.80000305175781f, 46.08000183105469f,
-    10.0f, 5.0f,   55.58000183105469f, 21.56999969482422f,
-};
-static_assert(sizeof(STEREO_CAMERA_SETTINGS) == 0x20,
-              "STEREO_CAMERA_SETTINGS must be exactly 0x20 bytes");
+static const std::array<u16, 187> country_codes = {{
+    0,       C("JP"), 0,       0,       0,       0,       0,       0,       // 0-7
+    C("AI"), C("AG"), C("AR"), C("AW"), C("BS"), C("BB"), C("BZ"), C("BO"), // 8-15
+    C("BR"), C("VG"), C("CA"), C("KY"), C("CL"), C("CO"), C("CR"), C("DM"), // 16-23
+    C("DO"), C("EC"), C("SV"), C("GF"), C("GD"), C("GP"), C("GT"), C("GY"), // 24-31
+    C("HT"), C("HN"), C("JM"), C("MQ"), C("MX"), C("MS"), C("AN"), C("NI"), // 32-39
+    C("PA"), C("PY"), C("PE"), C("KN"), C("LC"), C("VC"), C("SR"), C("TT"), // 40-47
+    C("TC"), C("US"), C("UY"), C("VI"), C("VE"), 0,       0,       0,       // 48-55
+    0,       0,       0,       0,       0,       0,       0,       0,       // 56-63
+    C("AL"), C("AU"), C("AT"), C("BE"), C("BA"), C("BW"), C("BG"), C("HR"), // 64-71
+    C("CY"), C("CZ"), C("DK"), C("EE"), C("FI"), C("FR"), C("DE"), C("GR"), // 72-79
+    C("HU"), C("IS"), C("IE"), C("IT"), C("LV"), C("LS"), C("LI"), C("LT"), // 80-87
+    C("LU"), C("MK"), C("MT"), C("ME"), C("MZ"), C("NA"), C("NL"), C("NZ"), // 88-95
+    C("NO"), C("PL"), C("PT"), C("RO"), C("RU"), C("RS"), C("SK"), C("SI"), // 96-103
+    C("ZA"), C("ES"), C("SZ"), C("SE"), C("CH"), C("TR"), C("GB"), C("ZM"), // 104-111
+    C("ZW"), C("AZ"), C("MR"), C("ML"), C("NE"), C("TD"), C("SD"), C("ER"), // 112-119
+    C("DJ"), C("SO"), C("AD"), C("GI"), C("GG"), C("IM"), C("JE"), C("MC"), // 120-127
+    C("TW"), 0,       0,       0,       0,       0,       0,       0,       // 128-135
+    C("KR"), 0,       0,       0,       0,       0,       0,       0,       // 136-143
+    C("HK"), C("MO"), 0,       0,       0,       0,       0,       0,       // 144-151
+    C("ID"), C("SG"), C("TH"), C("PH"), C("MY"), 0,       0,       0,       // 152-159
+    C("CN"), 0,       0,       0,       0,       0,       0,       0,       // 160-167
+    C("AE"), C("IN"), C("EG"), C("OM"), C("QA"), C("KW"), C("SA"), C("SY"), // 168-175
+    C("BH"), C("JO"), 0,       0,       0,       0,       0,       0,       // 176-183
+    C("SM"), C("VA"), C("BM"),                                              // 184-186
+}};
+
+// Based on PKHeX's lists of subregions at
+// https://github.com/kwsch/PKHeX/tree/master/PKHeX.Core/Resources/text/locale3DS/subregions
+static const std::array<u8, 187> default_subregion = {{
+    0, 2, 0,  0, 0, 0, 0, 0, // 0-7
+    1, 2, 2,  1, 1, 1, 2, 2, // 8-15
+    2, 1, 2,  1, 2, 2, 2, 1, // 16-23
+    2, 2, 2,  1, 1, 1, 2, 2, // 24-31
+    2, 2, 2,  1, 2, 1, 1, 2, // 32-39
+    2, 2, 2,  2, 1, 1, 2, 2, // 40-47
+    1, 2, 2,  1, 2, 0, 0, 0, // 48-55
+    0, 0, 0,  0, 0, 0, 0, 0, // 56-63
+    2, 2, 2,  2, 2, 1, 2, 6, // 64-71
+    1, 2, 18, 1, 8, 2, 2, 2, // 72-79
+    2, 1, 2,  2, 1, 2, 1, 2, // 80-87
+    1, 1, 1,  1, 1, 1, 2, 2, // 88-95
+    7, 2, 2,  2, 9, 1, 2, 1, // 96-103
+    2, 2, 2,  2, 2, 2, 2, 1, // 104-111
+    1, 1, 1,  1, 1, 1, 1, 1, // 112-119
+    1, 1, 1,  1, 1, 1, 1, 1, // 120-127
+    2, 0, 0,  0, 0, 0, 0, 0, // 128-135
+    2, 0, 0,  0, 0, 0, 0, 0, // 136-143
+    1, 0, 0,  0, 0, 0, 0, 0, // 144-151
+    0, 1, 0,  0, 2, 0, 0, 0, // 152-159
+    2, 0, 0,  0, 0, 0, 0, 0, // 160-167
+    2, 2, 0,  0, 0, 0, 2, 0, // 168-175
+    0, 0, 0,  0, 0, 0, 0, 0, // 176-183
+    1, 1, 1,                 // 184-186
+}};
+std::array<u8, 2> unknown;
 
 constexpr std::array<u8, 8> cfg_system_savedata_id{
     0x00, 0x00, 0x00, 0x00, 0x17, 0x00, 0x01, 0x00,
@@ -140,7 +148,7 @@ Module::Interface::Interface(std::shared_ptr<Module> cfg, const char* name, u32 
 Module::Interface::~Interface() = default;
 
 void Module::Interface::GetCountryCodeString(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x09, 1, 0);
+    IPC::RequestParser rp(ctx);
     u16 country_code_id = rp.Pop<u16>();
 
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
@@ -162,7 +170,7 @@ std::shared_ptr<Module> Module::Interface::Interface::GetModule() const {
 }
 
 void Module::Interface::GetCountryCodeID(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x0A, 1, 0);
+    IPC::RequestParser rp(ctx);
     u16 country_code = rp.Pop<u16>();
     u16 country_code_id = 0;
 
@@ -191,36 +199,68 @@ void Module::Interface::GetCountryCodeID(Kernel::HLERequestContext& ctx) {
 }
 
 u32 Module::GetRegionValue() {
-    if (Settings::values.region_value == Settings::REGION_VALUE_AUTO_SELECT)
+    if (Settings::values.region_value.GetValue() == Settings::REGION_VALUE_AUTO_SELECT) {
+        UpdatePreferredRegionCode();
         return preferred_region_code;
+    }
 
-    return Settings::values.region_value;
+    return Settings::values.region_value.GetValue();
 }
 
-void Module::Interface::SecureInfoGetRegion(Kernel::HLERequestContext& ctx, u16 id) {
-    IPC::RequestParser rp(ctx, id, 0, 0);
+void Module::Interface::GetRegion(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
 
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
     rb.Push(RESULT_SUCCESS);
     rb.Push<u8>(static_cast<u8>(cfg->GetRegionValue()));
 }
 
-void Module::Interface::GenHashConsoleUnique(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x03, 1, 0);
+void Module::Interface::SecureInfoGetByte101(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    LOG_DEBUG(Service_CFG, "(STUBBED) called");
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
+    rb.Push(RESULT_SUCCESS);
+    // According to 3dbrew this is normally 0.
+    rb.Push<u8>(0);
+}
+
+void Module::Interface::SetUUIDClockSequence(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    cfg->mcu_data.clock_sequence = rp.Pop<u16>();
+    cfg->SaveMCUConfig();
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
+    rb.Push(RESULT_SUCCESS);
+}
+
+void Module::Interface::GetUUIDClockSequence(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
+
+    IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
+    rb.Push(RESULT_SUCCESS);
+    rb.Push<u16>(static_cast<u16>(cfg->mcu_data.clock_sequence));
+}
+
+void Module::Interface::GetTransferableId(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
     const u32 app_id_salt = rp.Pop<u32>() & 0x000FFFFF;
 
     IPC::RequestBuilder rb = rp.MakeBuilder(3, 0);
 
     std::array<u8, 12> buffer;
-    const ResultCode result = cfg->GetConfigInfoBlock(ConsoleUniqueID2BlockID, 8, 2, buffer.data());
+    const ResultCode result =
+        cfg->GetConfigBlock(ConsoleUniqueID2BlockID, 8, AccessFlag::SystemRead, buffer.data());
     rb.Push(result);
     if (result.IsSuccess()) {
         std::memcpy(&buffer[8], &app_id_salt, sizeof(u32));
         std::array<u8, CryptoPP::SHA256::DIGESTSIZE> hash;
         CryptoPP::SHA256().CalculateDigest(hash.data(), buffer.data(), sizeof(buffer));
         u32 low, high;
-        memcpy(&low, &hash[hash.size() - 8], sizeof(u32));
-        memcpy(&high, &hash[hash.size() - 4], sizeof(u32));
+        std::memcpy(&low, &hash[hash.size() - 8], sizeof(u32));
+        std::memcpy(&high, &hash[hash.size() - 4], sizeof(u32));
         rb.Push(low);
         rb.Push(high);
     } else {
@@ -231,8 +271,8 @@ void Module::Interface::GenHashConsoleUnique(Kernel::HLERequestContext& ctx) {
     LOG_DEBUG(Service_CFG, "called app_id_salt=0x{:X}", app_id_salt);
 }
 
-void Module::Interface::GetRegionCanadaUSA(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x04, 0, 0);
+void Module::Interface::IsCoppacsSupported(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
 
     rb.Push(RESULT_SUCCESS);
@@ -246,12 +286,13 @@ void Module::Interface::GetRegionCanadaUSA(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::GetSystemModel(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x05, 0, 0);
+    IPC::RequestParser rp(ctx);
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
-    u32 data;
+    u32 data{};
 
     // TODO(Subv): Find out the correct error codes
-    rb.Push(cfg->GetConfigInfoBlock(ConsoleModelBlockID, 4, 0x8, reinterpret_cast<u8*>(&data)));
+    rb.Push(cfg->GetConfigBlock(ConsoleModelBlockID, 4, AccessFlag::SystemRead,
+                                reinterpret_cast<u8*>(&data)));
     ConsoleModelInfo model;
     std::memcpy(&model, &data, 4);
     if ((model.model == NINTENDO_3DS || model.model == NINTENDO_3DS_XL ||
@@ -268,44 +309,45 @@ void Module::Interface::GetSystemModel(Kernel::HLERequestContext& ctx) {
 }
 
 void Module::Interface::GetModelNintendo2DS(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x06, 0, 0);
+    IPC::RequestParser rp(ctx);
     IPC::RequestBuilder rb = rp.MakeBuilder(2, 0);
-    u32 data;
+    u32 data{};
 
     // TODO(Subv): Find out the correct error codes
-    rb.Push(cfg->GetConfigInfoBlock(ConsoleModelBlockID, 4, 0x8, reinterpret_cast<u8*>(&data)));
+    rb.Push(cfg->GetConfigBlock(ConsoleModelBlockID, 4, AccessFlag::SystemRead,
+                                reinterpret_cast<u8*>(&data)));
     u8 model = data & 0xFF;
     rb.Push(model != Service::CFG::NINTENDO_2DS);
 }
 
-void Module::Interface::GetConfigInfoBlk2(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x01, 2, 2);
+void Module::Interface::GetConfig(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
     u32 size = rp.Pop<u32>();
     u32 block_id = rp.Pop<u32>();
     auto& buffer = rp.PopMappedBuffer();
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
     std::vector<u8> data(size);
-    rb.Push(cfg->GetConfigInfoBlock(block_id, size, 0x2, data.data()));
+    rb.Push(cfg->GetConfigBlock(block_id, size, AccessFlag::UserRead, data.data()));
     buffer.Write(data.data(), 0, data.size());
     rb.PushMappedBuffer(buffer);
 }
 
-void Module::Interface::GetConfigInfoBlk8(Kernel::HLERequestContext& ctx, u16 id) {
-    IPC::RequestParser rp(ctx, id, 2, 2);
+void Module::Interface::GetSystemConfig(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
     u32 size = rp.Pop<u32>();
     u32 block_id = rp.Pop<u32>();
     auto& buffer = rp.PopMappedBuffer();
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
     std::vector<u8> data(size);
-    rb.Push(cfg->GetConfigInfoBlock(block_id, size, 0x8, data.data()));
+    rb.Push(cfg->GetConfigBlock(block_id, size, AccessFlag::SystemRead, data.data()));
     buffer.Write(data.data(), 0, data.size());
     rb.PushMappedBuffer(buffer);
 }
 
-void Module::Interface::SetConfigInfoBlk4(Kernel::HLERequestContext& ctx, u16 id) {
-    IPC::RequestParser rp(ctx, id, 2, 2);
+void Module::Interface::SetSystemConfig(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
     u32 block_id = rp.Pop<u32>();
     u32 size = rp.Pop<u32>();
     auto& buffer = rp.PopMappedBuffer();
@@ -314,47 +356,73 @@ void Module::Interface::SetConfigInfoBlk4(Kernel::HLERequestContext& ctx, u16 id
     buffer.Read(data.data(), 0, data.size());
 
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 2);
-    rb.Push(cfg->SetConfigInfoBlock(block_id, size, 0x4, data.data()));
+    rb.Push(cfg->SetConfigBlock(block_id, size, AccessFlag::SystemWrite, data.data()));
     rb.PushMappedBuffer(buffer);
 }
 
-void Module::Interface::UpdateConfigNANDSavegame(Kernel::HLERequestContext& ctx, u16 id) {
-    IPC::RequestParser rp(ctx, id, 0, 0);
+void Module::Interface::UpdateConfigNANDSavegame(Kernel::HLERequestContext& ctx) {
+    IPC::RequestParser rp(ctx);
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
     rb.Push(cfg->UpdateConfigNANDSavegame());
 }
 
 void Module::Interface::FormatConfig(Kernel::HLERequestContext& ctx) {
-    IPC::RequestParser rp(ctx, 0x0806, 0, 0);
+    IPC::RequestParser rp(ctx);
     IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
     rb.Push(cfg->FormatConfig());
 }
 
-ResultVal<void*> Module::GetConfigInfoBlockPointer(u32 block_id, u32 size, u32 flag) {
+ResultVal<void*> Module::GetConfigBlockPointer(u32 block_id, u32 size, AccessFlag accesss_flag) {
     // Read the header
-    SaveFileConfig* config = reinterpret_cast<SaveFileConfig*>(cfg_config_file_buffer.data());
-
+    auto config = reinterpret_cast<SaveFileConfig*>(cfg_config_file_buffer.data());
     auto itr =
         std::find_if(std::begin(config->block_entries), std::end(config->block_entries),
                      [&](const SaveConfigBlockEntry& entry) { return entry.block_id == block_id; });
 
     if (itr == std::end(config->block_entries)) {
-        LOG_ERROR(Service_CFG, "Config block 0x{:X} with flags {} and size {} was not found",
-                  block_id, flag, size);
-        return ResultCode(ErrorDescription::NotFound, ErrorModule::Config,
-                          ErrorSummary::WrongArgument, ErrorLevel::Permanent);
+        if (HasDefaultConfigBlock(static_cast<ConfigBlockID>(block_id))) {
+            LOG_WARNING(Service_CFG,
+                        "Config block 0x{:X} with flags {} and size {} was not found, creating "
+                        "from defaults.",
+                        block_id, accesss_flag, size);
+            auto default_block = GetDefaultConfigBlock(static_cast<ConfigBlockID>(block_id));
+            auto result = CreateConfigBlock(block_id, static_cast<u16>(default_block.data.size()),
+                                            default_block.access_flags, default_block.data.data());
+            if (!result.IsSuccess()) {
+                LOG_ERROR(Service_CFG,
+                          "Failed to create config block 0x{:X} from defaults: 0x{:08X}", block_id,
+                          result.raw);
+                return result;
+            }
+            result = UpdateConfigNANDSavegame();
+            if (!result.IsSuccess()) {
+                LOG_ERROR(Service_CFG, "Failed to save updated config savegame: 0x{:08X}",
+                          result.raw);
+                return result;
+            }
+            itr = std::find_if(
+                std::begin(config->block_entries), std::end(config->block_entries),
+                [&](const SaveConfigBlockEntry& entry) { return entry.block_id == block_id; });
+        } else {
+            LOG_ERROR(Service_CFG,
+                      "Config block 0x{:X} with flags {} and size {} was not found, and no default "
+                      "exists.",
+                      block_id, accesss_flag, size);
+            return ResultCode(ErrorDescription::NotFound, ErrorModule::Config,
+                              ErrorSummary::WrongArgument, ErrorLevel::Permanent);
+        }
     }
 
-    if ((itr->flags & flag) == 0) {
-        LOG_ERROR(Service_CFG, "Invalid flag {} for config block 0x{:X} with size {}", flag,
-                  block_id, size);
+    if (False(itr->access_flags & accesss_flag)) {
+        LOG_ERROR(Service_CFG, "Invalid access flag {:X} for config block 0x{:X} with size {}",
+                  accesss_flag, block_id, size);
         return ResultCode(ErrorDescription::NotAuthorized, ErrorModule::Config,
                           ErrorSummary::WrongArgument, ErrorLevel::Permanent);
     }
 
     if (itr->size != size) {
         LOG_ERROR(Service_CFG, "Invalid size {} for config block 0x{:X} with flags {}", size,
-                  block_id, flag);
+                  block_id, accesss_flag);
         return ResultCode(ErrorDescription::InvalidSize, ErrorModule::Config,
                           ErrorSummary::WrongArgument, ErrorLevel::Permanent);
     }
@@ -367,31 +435,33 @@ ResultVal<void*> Module::GetConfigInfoBlockPointer(u32 block_id, u32 size, u32 f
     else
         pointer = &cfg_config_file_buffer[itr->offset_or_data];
 
-    return MakeResult<void*>(pointer);
+    return pointer;
 }
 
-ResultCode Module::GetConfigInfoBlock(u32 block_id, u32 size, u32 flag, void* output) {
-    void* pointer;
-    CASCADE_RESULT(pointer, GetConfigInfoBlockPointer(block_id, size, flag));
-    memcpy(output, pointer, size);
+ResultCode Module::GetConfigBlock(u32 block_id, u32 size, AccessFlag accesss_flag, void* output) {
+    void* pointer = nullptr;
+    CASCADE_RESULT(pointer, GetConfigBlockPointer(block_id, size, accesss_flag));
+    std::memcpy(output, pointer, size);
 
     return RESULT_SUCCESS;
 }
 
-ResultCode Module::SetConfigInfoBlock(u32 block_id, u32 size, u32 flag, const void* input) {
-    void* pointer;
-    CASCADE_RESULT(pointer, GetConfigInfoBlockPointer(block_id, size, flag));
-    memcpy(pointer, input, size);
+ResultCode Module::SetConfigBlock(u32 block_id, u32 size, AccessFlag accesss_flag,
+                                  const void* input) {
+    void* pointer = nullptr;
+    CASCADE_RESULT(pointer, GetConfigBlockPointer(block_id, size, accesss_flag));
+    std::memcpy(pointer, input, size);
     return RESULT_SUCCESS;
 }
 
-ResultCode Module::CreateConfigInfoBlk(u32 block_id, u16 size, u16 flags, const void* data) {
+ResultCode Module::CreateConfigBlock(u32 block_id, u16 size, AccessFlag access_flags,
+                                     const void* data) {
     SaveFileConfig* config = reinterpret_cast<SaveFileConfig*>(cfg_config_file_buffer.data());
     if (config->total_entries >= CONFIG_FILE_MAX_BLOCK_ENTRIES)
         return ResultCode(-1); // TODO(Subv): Find the right error code
 
     // Insert the block header with offset 0 for now
-    config->block_entries[config->total_entries] = {block_id, 0, size, flags};
+    config->block_entries[config->total_entries] = {block_id, 0, size, access_flags};
     if (size > 4) {
         u32 offset = config->data_entries_offset;
         // Perform a search to locate the next offset for the new data
@@ -407,10 +477,10 @@ ResultCode Module::CreateConfigInfoBlk(u32 block_id, u16 size, u16 flags, const 
         config->block_entries[config->total_entries].offset_or_data = offset;
 
         // Write the data at the new offset
-        memcpy(&cfg_config_file_buffer[offset], data, size);
+        std::memcpy(&cfg_config_file_buffer[offset], data, size);
     } else {
         // The offset_or_data field in the header contains the data itself if it's 4 bytes or less
-        memcpy(&config->block_entries[config->total_entries].offset_or_data, data, size);
+        std::memcpy(&config->block_entries[config->total_entries].offset_or_data, data, size);
     }
 
     ++config->total_entries;
@@ -451,116 +521,28 @@ ResultCode Module::FormatConfig() {
     // This value is hardcoded, taken from 3dbrew, verified by hardware, it's always the same value
     config->data_entries_offset = 0x455C;
 
-    // Insert the default blocks
-    u8 zero_buffer[0xC0] = {};
-
-    // 0x00030001 - Unknown
-    res = CreateConfigInfoBlk(0x00030001, 0x8, 0xE, zero_buffer);
-    if (!res.IsSuccess())
-        return res;
-
-    res = CreateConfigInfoBlk(StereoCameraSettingsBlockID, sizeof(STEREO_CAMERA_SETTINGS), 0xE,
-                              STEREO_CAMERA_SETTINGS.data());
-    if (!res.IsSuccess())
-        return res;
-
-    res = CreateConfigInfoBlk(SoundOutputModeBlockID, sizeof(SOUND_OUTPUT_MODE), 0xE,
-                              &SOUND_OUTPUT_MODE);
-    if (!res.IsSuccess())
-        return res;
-
-    const auto [random_number, console_id] = GenerateConsoleUniqueId();
-
-    u64_le console_id_le = console_id;
-    res = CreateConfigInfoBlk(ConsoleUniqueID1BlockID, sizeof(console_id_le), 0xE, &console_id_le);
-    if (!res.IsSuccess())
-        return res;
-
-    res = CreateConfigInfoBlk(ConsoleUniqueID2BlockID, sizeof(console_id_le), 0xE, &console_id_le);
-    if (!res.IsSuccess())
-        return res;
-
-    u32_le random_number_le = random_number;
-    res = CreateConfigInfoBlk(ConsoleUniqueID3BlockID, sizeof(random_number_le), 0xE,
-                              &random_number_le);
-    if (!res.IsSuccess())
-        return res;
-
-    res = CreateConfigInfoBlk(UsernameBlockID, sizeof(CONSOLE_USERNAME_BLOCK), 0xE,
-                              &CONSOLE_USERNAME_BLOCK);
-    if (!res.IsSuccess())
-        return res;
-
-    res = CreateConfigInfoBlk(BirthdayBlockID, sizeof(PROFILE_BIRTHDAY), 0xE, &PROFILE_BIRTHDAY);
-    if (!res.IsSuccess())
-        return res;
-
-    res = CreateConfigInfoBlk(LanguageBlockID, sizeof(CONSOLE_LANGUAGE), 0xE, &CONSOLE_LANGUAGE);
-    if (!res.IsSuccess())
-        return res;
-
-    res = CreateConfigInfoBlk(CountryInfoBlockID, sizeof(COUNTRY_INFO), 0xE, &COUNTRY_INFO);
-    if (!res.IsSuccess())
-        return res;
-
-    u16_le country_name_buffer[16][0x40] = {};
-    std::u16string region_name = Common::UTF8ToUTF16("Gensokyo");
-    for (std::size_t i = 0; i < 16; ++i) {
-        std::copy(region_name.cbegin(), region_name.cend(), country_name_buffer[i]);
+    // Fill the config with default block data.
+    auto default_blocks = GetDefaultConfigBlocks();
+    for (auto& entry : default_blocks) {
+        res = CreateConfigBlock(entry.first, static_cast<u16>(entry.second.data.size()),
+                                entry.second.access_flags, entry.second.data.data());
+        if (!res.IsSuccess()) {
+            return res;
+        }
     }
-    // 0x000B0001 - Localized names for the profile Country
-    res = CreateConfigInfoBlk(CountryNameBlockID, sizeof(country_name_buffer), 0xE,
-                              country_name_buffer);
-    if (!res.IsSuccess())
-        return res;
-    // 0x000B0002 - Localized names for the profile State/Province
-    res = CreateConfigInfoBlk(StateNameBlockID, sizeof(country_name_buffer), 0xE,
-                              country_name_buffer);
-    if (!res.IsSuccess())
-        return res;
 
-    // 0x000B0003 - Unknown, related to country/address (zip code?)
-    res = CreateConfigInfoBlk(0x000B0003, 0x4, 0xE, zero_buffer);
-    if (!res.IsSuccess())
-        return res;
-
-    // 0x000C0000 - Unknown
-    res = CreateConfigInfoBlk(0x000C0000, 0xC0, 0xE, zero_buffer);
-    if (!res.IsSuccess())
-        return res;
-
-    // 0x000C0001 - Unknown
-    res = CreateConfigInfoBlk(0x000C0001, 0x14, 0xE, zero_buffer);
-    if (!res.IsSuccess())
-        return res;
-
-    // 0x000D0000 - Accepted EULA version
-    u32_le data = MAX_EULA_VERSION.minor + (MAX_EULA_VERSION.major << 8);
-    res = CreateConfigInfoBlk(EULAVersionBlockID, sizeof(data), 0xE, &data);
-    if (!res.IsSuccess())
-        return res;
-
-    res = CreateConfigInfoBlk(ConsoleModelBlockID, sizeof(CONSOLE_MODEL_OLD), 0xC,
-                              &CONSOLE_MODEL_OLD);
-    if (!res.IsSuccess())
-        return res;
-
-    // 0x00130000 - DebugMode (0x100 for debug mode)
-    res = CreateConfigInfoBlk(DebugModeBlockID, 0x4, 0xE, zero_buffer);
-    if (!res.IsSuccess())
-        return res;
-
-    // 0x00170000 - Unknown
-    res = CreateConfigInfoBlk(0x00170000, 0x4, 0xE, zero_buffer);
-    if (!res.IsSuccess())
-        return res;
+    // Generate a new console unique ID.
+    const auto [random_number, console_id] = GenerateConsoleUniqueId();
+    SetConsoleUniqueId(random_number, console_id);
 
     // Save the buffer to the file
     res = UpdateConfigNANDSavegame();
-    if (!res.IsSuccess())
+    if (!res.IsSuccess()) {
         return res;
+    }
+
     return RESULT_SUCCESS;
-} // namespace Service::CFG
+}
 
 ResultCode Module::LoadConfigNANDSaveFile() {
     const std::string& nand_directory = FileUtil::GetUserPath(FileUtil::UserPath::NANDDir);
@@ -571,7 +553,7 @@ ResultCode Module::LoadConfigNANDSaveFile() {
     auto archive_result = systemsavedata_factory.Open(archive_path, 0);
 
     // If the archive didn't exist, create the files inside
-    if (archive_result.Code() == FileSys::ERR_NOT_FORMATTED) {
+    if (archive_result.Code() == FileSys::ERROR_NOT_FOUND) {
         // Format the archive to create the directories
         systemsavedata_factory.Format(archive_path, FileSys::ArchiveFormatInfo(), 0);
 
@@ -599,15 +581,41 @@ ResultCode Module::LoadConfigNANDSaveFile() {
     return FormatConfig();
 }
 
-Module::Module() {
+void Module::LoadMCUConfig() {
+    FileUtil::IOFile mcu_data_file(
+        fmt::format("{}/mcu.dat", FileUtil::GetUserPath(FileUtil::UserPath::SysDataDir)), "rb");
+
+    if (mcu_data_file.IsOpen() && mcu_data_file.GetSize() >= sizeof(MCUData) &&
+        mcu_data_file.ReadBytes(&mcu_data, sizeof(MCUData)) == sizeof(MCUData)) {
+        if (mcu_data.IsValid()) {
+            return;
+        }
+    }
+    mcu_data_file.Close();
+    mcu_data = MCUData();
+    SaveMCUConfig();
+}
+
+void Module::SaveMCUConfig() {
+    FileUtil::IOFile mcu_data_file(
+        fmt::format("{}/mcu.dat", FileUtil::GetUserPath(FileUtil::UserPath::SysDataDir)), "wb");
+
+    if (mcu_data_file.IsOpen()) {
+        mcu_data_file.WriteBytes(&mcu_data, sizeof(MCUData));
+    }
+}
+
+Module::Module(Core::System& system_) : system(system_) {
     LoadConfigNANDSaveFile();
+    LoadMCUConfig();
     // Check the config savegame EULA Version and update it to 0x7F7F if necessary
-    // so users will never get a promt to accept EULA
-    EULAVersion version = GetEULAVersion();
-    if (version.major != MAX_EULA_VERSION.major || version.minor != MAX_EULA_VERSION.minor) {
-        LOG_INFO(Service_CFG, "Updating accepted EULA version to {}.{}", MAX_EULA_VERSION.major,
-                 MAX_EULA_VERSION.minor);
-        SetEULAVersion(Service::CFG::MAX_EULA_VERSION);
+    // so users will never get a prompt to accept EULA
+    auto version = GetEULAVersion();
+    auto& default_version = GetDefaultEULAVersion();
+    if (version.major != default_version.major || version.minor != default_version.minor) {
+        LOG_INFO(Service_CFG, "Updating accepted EULA version to {}.{}", default_version.major,
+                 default_version.minor);
+        SetEULAVersion(default_version);
         UpdateConfigNANDSavegame();
     }
 }
@@ -616,7 +624,7 @@ Module::~Module() = default;
 
 /// Checks if the language is available in the chosen region, and returns a proper one
 static std::tuple<u32 /*region*/, SystemLanguage> AdjustLanguageInfoBlock(
-    const std::vector<u32>& region_code, SystemLanguage language) {
+    std::span<const u32> region_code, SystemLanguage language) {
     static const std::array<std::vector<SystemLanguage>, 7> region_languages{{
         // JPN
         {LANGUAGE_JP},
@@ -645,43 +653,52 @@ static std::tuple<u32 /*region*/, SystemLanguage> AdjustLanguageInfoBlock(
     }
     // The language is not available in any available region, so default to the first region and
     // language
-    u32 default_region = region_code[0];
+    const u32 default_region = region_code[0];
     return {default_region, region_languages[default_region][0]};
 }
 
-void Module::SetPreferredRegionCodes(const std::vector<u32>& region_codes) {
+void Module::UpdatePreferredRegionCode() {
+    if (preferred_region_chosen || !system.IsPoweredOn()) {
+        return;
+    }
     // Apply language set in core options first
     SetSystemLanguage(LibRetro::settings.language_value);
 
-    const SystemLanguage current_language = GetSystemLanguage();
-    auto [region, adjusted_language] = AdjustLanguageInfoBlock(region_codes, current_language);
+    preferred_region_chosen = true;
+
+    const auto preferred_regions = system.GetAppLoader().GetPreferredRegions();
+    if (preferred_regions.empty()) {
+        return;
+    }
+
+    const auto current_language = GetRawSystemLanguage();
+    const auto [region, adjusted_language] =
+        AdjustLanguageInfoBlock(preferred_regions, current_language);
 
     preferred_region_code = region;
     LOG_INFO(Service_CFG, "Preferred region code set to {}", preferred_region_code);
 
-    if (Settings::values.region_value == Settings::REGION_VALUE_AUTO_SELECT) {
-        if (current_language != adjusted_language) {
-            LOG_WARNING(Service_CFG, "System language {} does not fit the region. Adjusted to {}",
-                        current_language, adjusted_language);
-            SetSystemLanguage(adjusted_language);
-        }
+    if (current_language != adjusted_language) {
+        LOG_WARNING(Service_CFG, "System language {} does not fit the region. Adjusted to {}",
+                    current_language, adjusted_language);
+        SetSystemLanguage(adjusted_language);
     }
 }
 
 void Module::SetUsername(const std::u16string& name) {
     ASSERT(name.size() <= 10);
     UsernameBlock block{};
-    name.copy(block.username, name.size());
-    SetConfigInfoBlock(UsernameBlockID, sizeof(block), 4, &block);
+    name.copy(block.username.data(), name.size());
+    SetConfigBlock(UsernameBlockID, sizeof(block), AccessFlag::SystemWrite, &block);
 }
 
 std::u16string Module::GetUsername() {
     UsernameBlock block;
-    GetConfigInfoBlock(UsernameBlockID, sizeof(block), 8, &block);
+    GetConfigBlock(UsernameBlockID, sizeof(block), AccessFlag::SystemRead, &block);
 
     // the username string in the block isn't null-terminated,
     // so we need to find the end manually.
-    std::u16string username(block.username, std::size(block.username));
+    std::u16string username(block.username.data(), std::size(block.username));
     const std::size_t pos = username.find(u'\0');
     if (pos != std::u16string::npos)
         username.erase(pos);
@@ -690,56 +707,63 @@ std::u16string Module::GetUsername() {
 
 void Module::SetBirthday(u8 month, u8 day) {
     BirthdayBlock block = {month, day};
-    SetConfigInfoBlock(BirthdayBlockID, sizeof(block), 4, &block);
+    SetConfigBlock(BirthdayBlockID, sizeof(block), AccessFlag::SystemWrite, &block);
 }
 
 std::tuple<u8, u8> Module::GetBirthday() {
     BirthdayBlock block;
-    GetConfigInfoBlock(BirthdayBlockID, sizeof(block), 8, &block);
+    GetConfigBlock(BirthdayBlockID, sizeof(block), AccessFlag::SystemRead, &block);
     return std::make_tuple(block.month, block.day);
 }
 
 void Module::SetSystemLanguage(SystemLanguage language) {
     u8 block = language;
-    SetConfigInfoBlock(LanguageBlockID, sizeof(block), 4, &block);
+    SetConfigBlock(LanguageBlockID, sizeof(block), AccessFlag::SystemWrite, &block);
 }
 
 SystemLanguage Module::GetSystemLanguage() {
-    u8 block;
-    GetConfigInfoBlock(LanguageBlockID, sizeof(block), 8, &block);
+    if (Settings::values.region_value.GetValue() == Settings::REGION_VALUE_AUTO_SELECT) {
+        UpdatePreferredRegionCode();
+    }
+    return GetRawSystemLanguage();
+}
+
+SystemLanguage Module::GetRawSystemLanguage() {
+    u8 block{};
+    GetConfigBlock(LanguageBlockID, sizeof(block), AccessFlag::SystemRead, &block);
     return static_cast<SystemLanguage>(block);
 }
 
 void Module::SetSoundOutputMode(SoundOutputMode mode) {
     u8 block = mode;
-    SetConfigInfoBlock(SoundOutputModeBlockID, sizeof(block), 4, &block);
+    SetConfigBlock(SoundOutputModeBlockID, sizeof(block), AccessFlag::SystemWrite, &block);
 }
 
 SoundOutputMode Module::GetSoundOutputMode() {
-    u8 block;
-    GetConfigInfoBlock(SoundOutputModeBlockID, sizeof(block), 8, &block);
+    u8 block{};
+    GetConfigBlock(SoundOutputModeBlockID, sizeof(block), AccessFlag::SystemRead, &block);
     return static_cast<SoundOutputMode>(block);
 }
 
 void Module::SetCountryCode(u8 country_code) {
     ConsoleCountryInfo block = {{0, 0}, default_subregion[country_code], country_code};
-    SetConfigInfoBlock(CountryInfoBlockID, sizeof(block), 4, &block);
+    SetConfigBlock(CountryInfoBlockID, sizeof(block), AccessFlag::SystemWrite, &block);
 }
 
 u8 Module::GetCountryCode() {
-    ConsoleCountryInfo block;
-    GetConfigInfoBlock(CountryInfoBlockID, sizeof(block), 8, &block);
+    ConsoleCountryInfo block{};
+    GetConfigBlock(CountryInfoBlockID, sizeof(block), AccessFlag::SystemRead, &block);
     return block.country_code;
 }
 
 void Module::SetCountryInfo(u8 country_code, u8 state_code) {
     ConsoleCountryInfo block = {{0, 0}, state_code, country_code};
-    SetConfigInfoBlock(CountryInfoBlockID, sizeof(block), 4, &block);
+    SetConfigBlock(CountryInfoBlockID, sizeof(block), AccessFlag::SystemWrite, &block);
 }
 
 u8 Module::GetStateCode() {
-    ConsoleCountryInfo block;
-    GetConfigInfoBlock(CountryInfoBlockID, sizeof(block), 8, &block);
+    ConsoleCountryInfo block{};
+    GetConfigBlock(CountryInfoBlockID, sizeof(block), AccessFlag::SystemRead, &block);
     return block.state_code;
 }
 
@@ -759,18 +783,19 @@ std::pair<u32, u64> Module::GenerateConsoleUniqueId() const {
 
 ResultCode Module::SetConsoleUniqueId(u32 random_number, u64 console_id) {
     u64_le console_id_le = console_id;
-    ResultCode res =
-        SetConfigInfoBlock(ConsoleUniqueID1BlockID, sizeof(console_id_le), 0xE, &console_id_le);
+    ResultCode res = SetConfigBlock(ConsoleUniqueID1BlockID, sizeof(console_id_le),
+                                    AccessFlag::Global, &console_id_le);
     if (!res.IsSuccess())
         return res;
 
-    res = SetConfigInfoBlock(ConsoleUniqueID2BlockID, sizeof(console_id_le), 0xE, &console_id_le);
+    res = SetConfigBlock(ConsoleUniqueID2BlockID, sizeof(console_id_le), AccessFlag::Global,
+                         &console_id_le);
     if (!res.IsSuccess())
         return res;
 
     u32_le random_number_le = random_number;
-    res = SetConfigInfoBlock(ConsoleUniqueID3BlockID, sizeof(random_number_le), 0xE,
-                             &random_number_le);
+    res = SetConfigBlock(ConsoleUniqueID3BlockID, sizeof(random_number_le), AccessFlag::Global,
+                         &random_number_le);
     if (!res.IsSuccess())
         return res;
 
@@ -778,14 +803,15 @@ ResultCode Module::SetConsoleUniqueId(u32 random_number, u64 console_id) {
 }
 
 u64 Module::GetConsoleUniqueId() {
-    u64_le console_id_le;
-    GetConfigInfoBlock(ConsoleUniqueID2BlockID, sizeof(console_id_le), 0xE, &console_id_le);
+    u64_le console_id_le{};
+    GetConfigBlock(ConsoleUniqueID2BlockID, sizeof(console_id_le), AccessFlag::Global,
+                   &console_id_le);
     return console_id_le;
 }
 
 EULAVersion Module::GetEULAVersion() {
-    u32_le data;
-    GetConfigInfoBlock(EULAVersionBlockID, sizeof(data), 0xE, &data);
+    u32_le data{};
+    GetConfigBlock(EULAVersionBlockID, sizeof(data), AccessFlag::Global, &data);
     EULAVersion version;
     version.minor = data & 0xFF;
     version.major = (data >> 8) & 0xFF;
@@ -793,20 +819,36 @@ EULAVersion Module::GetEULAVersion() {
 }
 
 void Module::SetEULAVersion(const EULAVersion& version) {
-    u32_le data = version.minor + (version.major << 8);
-    SetConfigInfoBlock(EULAVersionBlockID, sizeof(data), 0xE, &data);
+    SetConfigBlock(EULAVersionBlockID, sizeof(version), AccessFlag::Global, &version);
+}
+
+void Module::SetSystemSetupNeeded(bool setup_needed) {
+    u32 block = setup_needed ? 0 : 1;
+    SetConfigBlock(SystemSetupRequiredBlockID, sizeof(block), AccessFlag::System, &block);
+}
+
+bool Module::IsSystemSetupNeeded() {
+    u32 block{};
+    GetConfigBlock(SystemSetupRequiredBlockID, sizeof(block), AccessFlag::System, &block);
+    return (block & 0xFFFF) == 0;
 }
 
 std::shared_ptr<Module> GetModule(Core::System& system) {
-    auto cfg = system.ServiceManager().GetService<Service::CFG::Module::Interface>("cfg:u");
-    if (!cfg)
-        return nullptr;
-    return cfg->GetModule();
+    if (system.IsPoweredOn()) {
+        auto cfg = system.ServiceManager().GetService<Module::Interface>("cfg:u");
+        if (cfg) {
+            return cfg->GetModule();
+        }
+    }
+
+    // If the system is not running or the module is missing,
+    // create an ad-hoc module instance to read data from.
+    return std::make_shared<Module>(system);
 }
 
 void InstallInterfaces(Core::System& system) {
     auto& service_manager = system.ServiceManager();
-    auto cfg = std::make_shared<Module>();
+    auto cfg = std::make_shared<Module>(system);
     std::make_shared<CFG_I>(cfg)->InstallAsService(service_manager);
     std::make_shared<CFG_S>(cfg)->InstallAsService(service_manager);
     std::make_shared<CFG_U>(cfg)->InstallAsService(service_manager);
@@ -814,15 +856,8 @@ void InstallInterfaces(Core::System& system) {
 }
 
 std::string GetConsoleIdHash(Core::System& system) {
-    u64_le console_id{};
+    u64_le console_id = GetModule(system)->GetConsoleUniqueId();
     std::array<u8, sizeof(console_id)> buffer;
-    if (system.IsPoweredOn()) {
-        auto cfg = GetModule(system);
-        ASSERT_MSG(cfg, "CFG Module missing!");
-        console_id = cfg->GetConsoleUniqueId();
-    } else {
-        console_id = std::make_unique<Service::CFG::Module>()->GetConsoleUniqueId();
-    }
     std::memcpy(buffer.data(), &console_id, sizeof(console_id));
 
     std::array<u8, CryptoPP::SHA256::DIGESTSIZE> hash;

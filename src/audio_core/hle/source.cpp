@@ -72,10 +72,10 @@ void Source::ParseConfig(SourceConfiguration::Configuration& config,
         LOG_TRACE(Audio_DSP, "source_id={} enable={}", source_id, state.enabled);
     }
 
-    if (config.sync_dirty) {
-        config.sync_dirty.Assign(0);
-        state.sync = config.sync;
-        LOG_TRACE(Audio_DSP, "source_id={} sync={}", source_id, state.sync);
+    if (config.sync_count_dirty) {
+        config.sync_count_dirty.Assign(0);
+        state.sync_count = config.sync_count;
+        LOG_TRACE(Audio_DSP, "source_id={} sync={}", source_id, state.sync_count);
     }
 
     if (config.rate_multiplier_dirty) {
@@ -231,7 +231,8 @@ void Source::ParseConfig(SourceConfiguration::Configuration& config,
             }
         }
         LOG_TRACE(Audio_DSP, "partially updating embedded buffer addr={:#010x} len={} id={}",
-                  state.current_buffer_physical_address, config.length, config.buffer_id);
+                  state.current_buffer_physical_address, static_cast<u32>(config.length),
+                  config.buffer_id);
     }
 
     if (config.embedded_buffer_dirty) {
@@ -248,7 +249,7 @@ void Source::ParseConfig(SourceConfiguration::Configuration& config,
             LOG_ERROR(Audio_DSP,
                       "Skipping embedded buffer sample! Game passed in improper value for length. "
                       "addr {:X} length {:X}",
-                      config.physical_address, config.length);
+                      static_cast<u32>(config.physical_address), static_cast<u32>(config.length));
         } else {
             state.input_queue.emplace(Buffer{
                 config.physical_address,
@@ -266,8 +267,8 @@ void Source::ParseConfig(SourceConfiguration::Configuration& config,
             });
         }
         LOG_TRACE(Audio_DSP, "enqueuing embedded addr={:#010x} len={} id={} start={}",
-                  config.physical_address, config.length, config.buffer_id,
-                  static_cast<u32>(config.play_position));
+                  static_cast<u32>(config.physical_address), static_cast<u32>(config.length),
+                  config.buffer_id, static_cast<u32>(config.play_position));
     }
 
     if (config.loop_related_dirty && config.loop_related != 0) {
@@ -285,7 +286,7 @@ void Source::ParseConfig(SourceConfiguration::Configuration& config,
                     LOG_ERROR(Audio_DSP,
                               "Skipping buffer queue sample! Game passed in improper value for "
                               "length. addr {:X} length {:X}",
-                              b.physical_address, b.length);
+                              static_cast<u32>(b.physical_address), static_cast<u32>(b.length));
                 } else {
                     state.input_queue.emplace(Buffer{
                         b.physical_address,
@@ -303,7 +304,8 @@ void Source::ParseConfig(SourceConfiguration::Configuration& config,
                     });
                 }
                 LOG_TRACE(Audio_DSP, "enqueuing queued {} addr={:#010x} len={} id={}", i,
-                          b.physical_address, b.length, b.buffer_id);
+                          static_cast<u32>(b.physical_address), static_cast<u32>(b.length),
+                          b.buffer_id);
             }
         }
         config.buffers_dirty = 0;
@@ -432,7 +434,7 @@ SourceStatus::Status Source::GetCurrentStatus() {
     state.buffer_update = false;
     ret.current_buffer_id = state.current_buffer_id;
     ret.buffer_position = state.current_sample_number;
-    ret.sync = state.sync;
+    ret.sync_count = state.sync_count;
 
     return ret;
 }

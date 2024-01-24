@@ -45,13 +45,25 @@
      <x>0</x>
      <y>0</y>
      <width>1081</width>
-     <height>21</height>
+     <height>22</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
     <property name="title">
      <string>&amp;File</string>
     </property>
+    <widget class="QMenu" name="menu_Boot_Home_Menu">
+     <property name="title">
+      <string>Boot Home Menu</string>
+     </property>
+     <addaction name="action_Boot_Home_Menu_JPN"/>
+     <addaction name="action_Boot_Home_Menu_USA"/>
+     <addaction name="action_Boot_Home_Menu_EUR"/>
+     <addaction name="action_Boot_Home_Menu_AUS"/>
+     <addaction name="action_Boot_Home_Menu_CHN"/>
+     <addaction name="action_Boot_Home_Menu_KOR"/>
+     <addaction name="action_Boot_Home_Menu_TWN"/>
+    </widget>
     <widget class="QMenu" name="menu_recent_files">
      <property name="title">
       <string>Recent Files</string>
@@ -66,6 +78,7 @@
     </widget>
     <addaction name="action_Load_File"/>
     <addaction name="action_Install_CIA"/>
+    <addaction name="menu_Boot_Home_Menu"/>
     <addaction name="separator"/>
     <addaction name="menu_recent_files"/>
     <addaction name="separator"/>
@@ -93,7 +106,6 @@
      <addaction name="action_Load_from_Newest_Slot"/>
      <addaction name="separator"/>
     </widget>
-    <addaction name="action_Start"/>
     <addaction name="action_Pause"/>
     <addaction name="action_Stop"/>
     <addaction name="action_Restart"/>
@@ -101,10 +113,8 @@
     <addaction name="menu_Load_State"/>
     <addaction name="menu_Save_State"/>
     <addaction name="separator"/>
-    <addaction name="action_Report_Compatibility"/>
-    <addaction name="separator"/>
     <addaction name="action_Configure"/>
-    <addaction name="action_Cheats"/>
+    <addaction name="action_Configure_Current_Game"/>
    </widget>
    <widget class="QMenu" name="menu_View">
     <property name="title">
@@ -124,7 +134,9 @@
      <addaction name="action_Screen_Layout_Default"/>
      <addaction name="action_Screen_Layout_Single_Screen"/>
      <addaction name="action_Screen_Layout_Large_Screen"/>
+     <addaction name="action_Screen_Layout_Hybrid_Screen"/>
      <addaction name="action_Screen_Layout_Side_by_Side"/>
+     <addaction name="action_Screen_Layout_Separate_Windows"/>
      <addaction name="separator"/>
      <addaction name="action_Screen_Layout_Upright_Screens"/>
      <addaction name="action_Screen_Layout_Swap_Screens"/>
@@ -188,6 +200,8 @@
     <addaction name="action_Check_For_Updates"/>
     <addaction name="action_Open_Maintenance_Tool"/>
     <addaction name="separator"/>
+    <addaction name="action_Report_Compatibility"/>
+    <addaction name="separator"/>
     <addaction name="action_FAQ"/>
     <addaction name="action_About"/>
    </widget>
@@ -208,17 +222,44 @@
     <string>Install CIA...</string>
    </property>
   </action>
+  <action name="action_Boot_Home_Menu_JPN">
+   <property name="text">
+    <string>JPN</string>
+   </property>
+  </action>
+  <action name="action_Boot_Home_Menu_USA">
+   <property name="text">
+    <string>USA</string>
+   </property>
+  </action>
+  <action name="action_Boot_Home_Menu_EUR">
+   <property name="text">
+    <string>EUR</string>
+   </property>
+  </action>
+  <action name="action_Boot_Home_Menu_AUS">
+   <property name="text">
+    <string>AUS</string>
+   </property>
+  </action>
+  <action name="action_Boot_Home_Menu_CHN">
+   <property name="text">
+    <string>CHN</string>
+   </property>
+  </action>
+  <action name="action_Boot_Home_Menu_KOR">
+   <property name="text">
+    <string>KOR</string>
+   </property>
+  </action>
+  <action name="action_Boot_Home_Menu_TWN">
+   <property name="text">
+    <string>TWN</string>
+   </property>
+  </action>
   <action name="action_Exit">
    <property name="text">
     <string>E&amp;xit</string>
-   </property>
-  </action>
-  <action name="action_Start">
-   <property name="enabled">
-    <bool>false</bool>
-   </property>
-   <property name="text">
-    <string>&amp;Start</string>
    </property>
   </action>
   <action name="action_Pause">
@@ -238,20 +279,20 @@
    </property>
   </action>
   <action name="action_Save">
-    <property name="enabled">
-      <bool>false</bool>
-    </property>
-    <property name="text">
-      <string>Save</string>
-    </property>
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Save</string>
+   </property>
   </action>
   <action name="action_Load">
-    <property name="enabled">
-      <bool>false</bool>
-    </property>
-    <property name="text">
-      <string>Load</string>
-    </property>
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Load</string>
+   </property>
   </action>
   <action name="action_FAQ">
    <property name="text">
@@ -261,6 +302,9 @@
   <action name="action_About">
    <property name="text">
     <string>About Citra</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::AboutRole</enum>
    </property>
   </action>
   <action name="action_Single_Window_Mode">
@@ -285,10 +329,8 @@
    <property name="text">
     <string>Configure...</string>
    </property>
-  </action>
-  <action name="action_Cheats">
-   <property name="text">
-    <string>Cheats...</string>
+   <property name="menuRole">
+    <enum>QAction::PreferencesRole</enum>
    </property>
   </action>
   <action name="action_Display_Dock_Widget_Headers">
@@ -463,12 +505,28 @@
     <string>Large Screen</string>
    </property>
   </action>
+  <action name="action_Screen_Layout_Hybrid_Screen">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Hybrid Screen</string>
+   </property>
+  </action>
   <action name="action_Screen_Layout_Side_by_Side">
    <property name="checkable">
     <bool>true</bool>
    </property>
    <property name="text">
     <string>Side by Side</string>
+   </property>
+  </action>
+  <action name="action_Screen_Layout_Separate_Windows">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Separate Windows</string>
    </property>
   </action>
   <action name="action_Screen_Layout_Swap_Screens">
@@ -530,6 +588,17 @@
   <action name="action_Open_Citra_Folder">
    <property name="text">
     <string>Open Citra Folder</string>
+   </property>
+  </action>
+  <action name="action_Configure_Current_Game">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Configure Current Game...</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::NoRole</enum>
    </property>
   </action>
  </widget>

@@ -3,22 +3,20 @@
 // Refer to the license.txt file included.
 
 #pragma once
-
 #include <array>
 #include <cstddef>
-#include <memory>
 #include <string>
-#include <vector>
 #include <boost/serialization/array.hpp>
 #include <boost/serialization/vector.hpp>
 #include "common/common_types.h"
 #include "common/memory_ref.h"
-#include "core/mmio.h"
-
-class ARM_Interface;
 
 namespace Kernel {
 class Process;
+}
+
+namespace Core {
+class System;
 }
 
 namespace AudioCore {
@@ -27,17 +25,14 @@ class DspInterface;
 
 namespace Memory {
 
-// Are defined in a system header
-#undef PAGE_SIZE
-#undef PAGE_MASK
 /**
  * Page size used by the ARM architecture. This is the smallest granularity with which memory can
  * be mapped.
  */
-const u32 PAGE_SIZE = 0x1000;
-const u32 PAGE_MASK = PAGE_SIZE - 1;
-const int PAGE_BITS = 12;
-const std::size_t PAGE_TABLE_NUM_ENTRIES = 1 << (32 - PAGE_BITS);
+constexpr u32 CITRA_PAGE_SIZE = 0x1000;
+constexpr u32 CITRA_PAGE_MASK = CITRA_PAGE_SIZE - 1;
+constexpr int CITRA_PAGE_BITS = 12;
+constexpr std::size_t PAGE_TABLE_NUM_ENTRIES = 1 << (32 - CITRA_PAGE_BITS);
 
 enum class PageType {
     /// Page is unmapped and should cause an access error.
@@ -47,23 +42,6 @@ enum class PageType {
     /// Page is mapped to regular memory, but also needs to check for rasterizer cache flushing and
     /// invalidation
     RasterizerCachedMemory,
-    /// Page is mapped to a I/O region. Writing and reading to this page is handled by functions.
-    Special,
-};
-
-struct SpecialRegion {
-    VAddr base;
-    u32 size;
-    MMIORegionPointer handler;
-
-private:
-    template <class Archive>
-    void serialize(Archive& ar, const unsigned int file_version) {
-        ar& base;
-        ar& size;
-        ar& handler;
-    }
-    friend class boost::serialization::access;
 };
 
 /**
@@ -106,18 +84,11 @@ struct PageTable {
 
     private:
         std::array<u8*, PAGE_TABLE_NUM_ENTRIES> raw;
-
         std::array<MemoryRef, PAGE_TABLE_NUM_ENTRIES> refs;
-
         friend struct PageTable;
     };
-    Pointers pointers;
 
-    /**
-     * Contains MMIO handlers that back memory regions whose entries in the `attribute` array is of
-     * type `Special`.
-     */
-    std::vector<SpecialRegion> special_regions;
+    Pointers pointers;
 
     /**
      * Array of fine grained page attributes. If it is set to any value other than `Memory`, then
@@ -135,7 +106,6 @@ private:
     template <class Archive>
     void serialize(Archive& ar, const unsigned int) {
         ar& pointers.refs;
-        ar& special_regions;
         ar& attributes;
         for (std::size_t i = 0; i < PAGE_TABLE_NUM_ENTRIES; i++) {
             pointers.raw[i] = pointers.refs[i].GetPtr();
@@ -249,6 +219,11 @@ enum : VAddr {
     NEW_LINEAR_HEAP_VADDR = 0x30000000,
     NEW_LINEAR_HEAP_SIZE = 0x10000000,
     NEW_LINEAR_HEAP_VADDR_END = NEW_LINEAR_HEAP_VADDR + NEW_LINEAR_HEAP_SIZE,
+
+    /// Area where 3GX plugin framebuffers are stored
+    PLUGIN_3GX_FB_VADDR = 0x06000000,
+    PLUGIN_3GX_FB_SIZE = 0x000A9000,
+    PLUGIN_3GX_FB_VADDR_END = PLUGIN_3GX_FB_VADDR + PLUGIN_3GX_FB_SIZE
 };
 
 /**
@@ -289,7 +264,7 @@ void RasterizerFlushVirtualRegion(VAddr start, u32 size, FlushMode mode);
 
 class MemorySystem {
 public:
-    MemorySystem();
+    explicit MemorySystem(Core::System& system);
     ~MemorySystem();
 
     /**
@@ -302,54 +277,285 @@ public:
      */
     void MapMemoryRegion(PageTable& page_table, VAddr base, u32 size, MemoryRef target);
 
-    /**
-     * Maps a region of the emulated process address space as a IO region.
-     * @param page_table The page table of the emulated process.
-     * @param base The address to start mapping at. Must be page-aligned.
-     * @param size The amount of bytes to map. Must be page-aligned.
-     * @param mmio_handler The handler that backs the mapping.
-     */
-    void MapIoRegion(PageTable& page_table, VAddr base, u32 size, MMIORegionPointer mmio_handler);
-
     void UnmapRegion(PageTable& page_table, VAddr base, u32 size);
 
     /// Currently active page table
     void SetCurrentPageTable(std::shared_ptr<PageTable> page_table);
     std::shared_ptr<PageTable> GetCurrentPageTable() const;
 
+    /**
+     * Gets a pointer to the given address.
+     *
+     * @param vaddr Virtual address to retrieve a pointer to.
+     *
+     * @returns The pointer to the given address, if the address is valid.
+     *          If the address is not valid, nullptr will be returned.
+     */
+    u8* GetPointer(VAddr vaddr);
+
+    /**
+     * Gets a pointer to the given address.
+     *
+     * @param vaddr Virtual address to retrieve a pointer to.
+     *
+     * @returns The pointer to the given address, if the address is valid.
+     *          If the address is not valid, nullptr will be returned.
+     */
+    const u8* GetPointer(VAddr vaddr) const;
+
+    /**
+     * Reads an 8-bit unsigned value from the current process' address space
+     * at the given virtual address.
+     *
+     * @param addr The virtual address to read the 8-bit value from.
+     *
+     * @returns the read 8-bit unsigned value.
+     */
     u8 Read8(VAddr addr);
+
+    /**
+     * Reads a 16-bit unsigned value from the current process' address space
+     * at the given virtual address.
+     *
+     * @param addr The virtual address to read the 16-bit value from.
+     *
+     * @returns the read 16-bit unsigned value.
+     */
     u16 Read16(VAddr addr);
+
+    /**
+     * Reads a 32-bit unsigned value from the current process' address space
+     * at the given virtual address.
+     *
+     * @param addr The virtual address to read the 32-bit value from.
+     *
+     * @returns the read 32-bit unsigned value.
+     */
     u32 Read32(VAddr addr);
+
+    /**
+     * Reads a 64-bit unsigned value from the current process' address space
+     * at the given virtual address.
+     *
+     * @param addr The virtual address to read the 64-bit value from.
+     *
+     * @returns the read 64-bit value.
+     */
     u64 Read64(VAddr addr);
 
+    /**
+     * Writes an 8-bit unsigned integer to the given virtual address in
+     * the current process' address space.
+     *
+     * @param addr The virtual address to write the 8-bit unsigned integer to.
+     * @param data The 8-bit unsigned integer to write to the given virtual address.
+     *
+     * @post The memory at the given virtual address contains the specified data value.
+     */
     void Write8(VAddr addr, u8 data);
+
+    /**
+     * Writes a 16-bit unsigned integer to the given virtual address in
+     * the current process' address space.
+     *
+     * @param addr The virtual address to write the 16-bit unsigned integer to.
+     * @param data The 16-bit unsigned integer to write to the given virtual address.
+     *
+     * @post The memory range [addr, sizeof(data)) contains the given data value.
+     */
     void Write16(VAddr addr, u16 data);
+
+    /**
+     * Writes a 32-bit unsigned integer to the given virtual address in
+     * the current process' address space.
+     *
+     * @param addr The virtual address to write the 32-bit unsigned integer to.
+     * @param data The 32-bit unsigned integer to write to the given virtual address.
+     *
+     * @post The memory range [addr, sizeof(data)) contains the given data value.
+     */
     void Write32(VAddr addr, u32 data);
+
+    /**
+     * Writes a 64-bit unsigned integer to the given virtual address in
+     * the current process' address space.
+     *
+     * @param addr The virtual address to write the 64-bit unsigned integer to.
+     * @param data The 64-bit unsigned integer to write to the given virtual address.
+     *
+     * @post The memory range [addr, sizeof(data)) contains the given data value.
+     */
     void Write64(VAddr addr, u64 data);
 
+    /**
+     * Writes a {8, 16, 32, 64}-bit unsigned integer to the given virtual address in
+     * the current process' address space if and only if the address contains
+     * the expected value. This operation is atomic.
+     *
+     * @param addr The virtual address to write the X-bit unsigned integer to.
+     * @param data The X-bit unsigned integer to write to the given virtual address.
+     * @param expected The X-bit unsigned integer to check against the given virtual address.
+     * @returns true if the operation failed
+     *
+     * @post The memory range [addr, sizeof(data)) contains the given data value.
+     */
+    bool WriteExclusive8(const VAddr addr, const u8 data, const u8 expected);
+    bool WriteExclusive16(const VAddr addr, const u16 data, const u16 expected);
+    bool WriteExclusive32(const VAddr addr, const u32 data, const u32 expected);
+    bool WriteExclusive64(const VAddr addr, const u64 data, const u64 expected);
+
+    /**
+     * Reads a null-terminated string from the given virtual address.
+     * This function will continually read characters until either:
+     *
+     * - A null character ('\0') is reached.
+     * - max_length characters have been read.
+     *
+     * @note The final null-terminating character (if found) is not included
+     *       in the returned string.
+     *
+     * @param vaddr      The address to begin reading the string from.
+     * @param max_length The maximum length of the string to read in characters.
+     *
+     * @returns The read string.
+     */
+    std::string ReadCString(VAddr vaddr, std::size_t max_length);
+
+    /**
+     * Reads a contiguous block of bytes from a specified process' address space.
+     *
+     * @param process     The process to read the data from.
+     * @param src_addr    The virtual address to begin reading from.
+     * @param dest_buffer The buffer to place the read bytes into.
+     * @param size        The amount of data to read, in bytes.
+     *
+     * @note If a size of 0 is specified, then this function reads nothing and
+     *       no attempts to access memory are made at all.
+     *
+     * @pre dest_buffer must be at least size bytes in length, otherwise a
+     *      buffer overrun will occur.
+     *
+     * @post The range [dest_buffer, size) contains the read bytes from the
+     *       process' address space.
+     */
     void ReadBlock(const Kernel::Process& process, VAddr src_addr, void* dest_buffer,
                    std::size_t size);
+
+    /**
+     * Reads a contiguous block of bytes from the current process' address space.
+     *
+     * @param src_addr    The virtual address to begin reading from.
+     * @param dest_buffer The buffer to place the read bytes into.
+     * @param size        The amount of data to read, in bytes.
+     *
+     * @note If a size of 0 is specified, then this function reads nothing and
+     *       no attempts to access memory are made at all.
+     *
+     * @pre dest_buffer must be at least size bytes in length, otherwise a
+     *      buffer overrun will occur.
+     *
+     * @post The range [dest_buffer, size) contains the read bytes from the
+     *       current process' address space.
+     */
+    void ReadBlock(VAddr src_addr, void* dest_buffer, std::size_t size);
+
+    /**
+     * Writes a range of bytes into a given process' address space at the specified
+     * virtual address.
+     *
+     * @param process    The process to write data into the address space of.
+     * @param dest_addr  The destination virtual address to begin writing the data at.
+     * @param src_buffer The data to write into the process' address space.
+     * @param size       The size of the data to write, in bytes.
+     *
+     * @post The address range [dest_addr, size) in the process' address space
+     *       contains the data that was within src_buffer.
+     *
+     * @post If an attempt is made to write into an unmapped region of memory, the writes
+     *       will be ignored and an error will be logged.
+     *
+     * @post If a write is performed into a region of memory that is considered cached
+     *       rasterizer memory, will cause the currently active rasterizer to be notified
+     *       and will mark that region as invalidated to caches that the active
+     *       graphics backend may be maintaining over the course of execution.
+     */
     void WriteBlock(const Kernel::Process& process, VAddr dest_addr, const void* src_buffer,
                     std::size_t size);
+
+    /**
+     * Writes a range of bytes into a given process' address space at the specified
+     * virtual address.
+     *
+     * @param dest_addr  The destination virtual address to begin writing the data at.
+     * @param src_buffer The data to write into the process' address space.
+     * @param size       The size of the data to write, in bytes.
+     *
+     * @post The address range [dest_addr, size) in the process' address space
+     *       contains the data that was within src_buffer.
+     *
+     * @post If an attempt is made to write into an unmapped region of memory, the writes
+     *       will be ignored and an error will be logged.
+     *
+     * @post If a write is performed into a region of memory that is considered cached
+     *       rasterizer memory, will cause the currently active rasterizer to be notified
+     *       and will mark that region as invalidated to caches that the active
+     *       graphics backend may be maintaining over the course of execution.
+     */
+    void WriteBlock(VAddr dest_addr, const void* src_buffer, std::size_t size);
+
+    /**
+     * Zeros a range of bytes within the current process' address space at the specified
+     * virtual address.
+     *
+     * @param process   The process that will have data zeroed within its address space.
+     * @param dest_addr The destination virtual address to zero the data from.
+     * @param size      The size of the range to zero out, in bytes.
+     *
+     * @post The range [dest_addr, size) within the process' address space contains the
+     *       value 0.
+     */
     void ZeroBlock(const Kernel::Process& process, VAddr dest_addr, const std::size_t size);
+
+    /**
+     * Copies data within a process' address space to another location within the
+     * same address space.
+     *
+     * @param process   The process that will have data copied within its address space.
+     * @param dest_addr The destination virtual address to begin copying the data into.
+     * @param src_addr  The source virtual address to begin copying the data from.
+     * @param size      The size of the data to copy, in bytes.
+     *
+     * @post The range [dest_addr, size) within the process' address space contains the
+     *       same data within the range [src_addr, size).
+     */
     void CopyBlock(const Kernel::Process& process, VAddr dest_addr, VAddr src_addr,
                    std::size_t size);
     void CopyBlock(const Kernel::Process& dest_process, const Kernel::Process& src_process,
                    VAddr dest_addr, VAddr src_addr, std::size_t size);
 
-    std::string ReadCString(VAddr vaddr, std::size_t max_length);
+    /**
+     * Marks each page within the specified address range as cached or uncached.
+     *
+     * @param vaddr  The virtual address indicating the start of the address range.
+     * @param size   The size of the address range in bytes.
+     * @param cached Whether or not any pages within the address range should be
+     *               marked as cached or uncached.
+     */
+    void RasterizerMarkRegionCached(PAddr start, u32 size, bool cached);
+
+    /// For a rasterizer-accessible PAddr, gets a list of all possible VAddr
+    std::vector<VAddr> PhysicalToVirtualAddressForRasterizer(PAddr addr);
 
     /// Gets a pointer to the memory region beginning at the specified physical address.
-    u8* GetPhysicalPointer(PAddr address);
+    u8* GetPhysicalPointer(PAddr address) const;
 
-    /// Gets a pointer to the memory region beginning at the specified physical address.
-    const u8* GetPhysicalPointer(PAddr address) const;
-
+    /// Returns a reference to the memory region beginning at the specified physical address
     MemoryRef GetPhysicalRef(PAddr address) const;
 
-    u8* GetPointer(VAddr vaddr);
-    const u8* GetPointer(VAddr vaddr) const;
+    /// Determines if the given VAddr is valid for the specified process.
+    bool IsValidVirtualAddress(const Kernel::Process& process, VAddr vaddr);
 
+    /// Returns true if the address refers to a valid memory region
     bool IsValidPhysicalAddress(PAddr paddr) const;
 
     /// Gets offset in FCRAM from a pointer inside FCRAM range
@@ -363,11 +569,6 @@ public:
 
     /// Gets a serializable ref to FCRAM with the given offset
     MemoryRef GetFCRAMRef(std::size_t offset) const;
-
-    /**
-     * Mark each page touching the region as cached.
-     */
-    void RasterizerMarkRegionCached(PAddr start, u32 size, bool cached);
 
     /// Registers page table for rasterizer cache marking
     void RegisterPageTable(std::shared_ptr<PageTable> page_table);
@@ -384,6 +585,9 @@ private:
     template <typename T>
     void Write(const VAddr vaddr, const T data);
 
+    template <typename T>
+    bool WriteExclusive(const VAddr vaddr, const T data, const T expected);
+
     /**
      * Gets the pointer for virtual memory where the page is marked as RasterizerCachedMemory.
      * This is used to access the memory where the page pointer is nullptr due to rasterizer cache.
@@ -394,8 +598,8 @@ private:
 
     void MapPages(PageTable& page_table, u32 base, u32 size, MemoryRef memory, PageType type);
 
+private:
     class Impl;
-
     std::unique_ptr<Impl> impl;
 
     friend class boost::serialization::access;
@@ -406,9 +610,6 @@ public:
     template <Region R>
     class BackingMemImpl;
 };
-
-/// Determines if the given VAddr is valid for the specified process.
-bool IsValidVirtualAddress(const Kernel::Process& process, VAddr vaddr);
 
 } // namespace Memory
 

@@ -1,8 +1,13 @@
 add_library(network STATIC
+    announce_multiplayer_session.cpp
+    announce_multiplayer_session.h
     network.cpp
     network.h
+    network_settings.cpp
+    network_settings.h
     packet.cpp
     packet.h
+    precompiled_headers.h
     room.cpp
     room.h
     room_member.cpp
@@ -13,4 +18,12 @@ add_library(network STATIC
 
 create_target_directory_groups(network)
 
-target_link_libraries(network PRIVATE common enet Boost::serialization)
+if (ENABLE_WEB_SERVICE)
+    target_link_libraries(network PRIVATE web_service)
+endif()
+
+target_link_libraries(network PRIVATE citra_common enet Boost::serialization httplib)
+
+if (CITRA_USE_PRECOMPILED_HEADERS)
+    target_precompile_headers(network PRIVATE precompiled_headers.h)
+endif()

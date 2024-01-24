@@ -1,31 +1,18 @@
-// Copyright 2015 Citra Emulator Project
+// Copyright 2022 Citra Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
 #pragma once
 
 #include <array>
-#include <cstddef>
 #include <glad/glad.h>
 #include "common/assert.h"
-#include "common/common_types.h"
 #include "common/logging/log.h"
 #include "core/core.h"
+#include "core/telemetry_session.h"
 #include "video_core/regs_framebuffer.h"
 #include "video_core/regs_lighting.h"
 #include "video_core/regs_texturing.h"
-
-using GLvec2 = std::array<GLfloat, 2>;
-using GLvec3 = std::array<GLfloat, 3>;
-using GLvec4 = std::array<GLfloat, 4>;
-
-using GLuvec2 = std::array<GLuint, 2>;
-using GLuvec3 = std::array<GLuint, 3>;
-using GLuvec4 = std::array<GLuint, 4>;
-
-using GLivec2 = std::array<GLint, 2>;
-using GLivec3 = std::array<GLint, 3>;
-using GLivec4 = std::array<GLint, 4>;
 
 namespace PicaToGL {
 
@@ -108,13 +95,20 @@ inline GLenum WrapMode(Pica::TexturingRegs::TextureConfig::WrapMode mode) {
     return gl_mode;
 }
 
-inline GLenum BlendEquation(Pica::FramebufferRegs::BlendEquation equation) {
+inline GLenum BlendEquation(Pica::FramebufferRegs::BlendEquation equation, bool factor_minmax) {
     static constexpr std::array<GLenum, 5> blend_equation_table{{
         GL_FUNC_ADD,              // BlendEquation::Add
         GL_FUNC_SUBTRACT,         // BlendEquation::Subtract
         GL_FUNC_REVERSE_SUBTRACT, // BlendEquation::ReverseSubtract
         GL_MIN,                   // BlendEquation::Min
         GL_MAX,                   // BlendEquation::Max
+    }};
+    static constexpr std::array<GLenum, 5> blend_equation_table_minmax{{
+        GL_FUNC_ADD,              // BlendEquation::Add
+        GL_FUNC_SUBTRACT,         // BlendEquation::Subtract
+        GL_FUNC_REVERSE_SUBTRACT, // BlendEquation::ReverseSubtract
+        GL_FACTOR_MIN_AMD,        // BlendEquation::Min
+        GL_FACTOR_MAX_AMD,        // BlendEquation::Max
     }};
 
     const auto index = static_cast<std::size_t>(equation);
@@ -127,7 +121,7 @@ inline GLenum BlendEquation(Pica::FramebufferRegs::BlendEquation equation) {
         return GL_FUNC_ADD;
     }
 
-    return blend_equation_table[index];
+    return (factor_minmax ? blend_equation_table_minmax : blend_equation_table)[index];
 }
 
 inline GLenum BlendFunc(Pica::FramebufferRegs::BlendFactor factor) {
@@ -245,21 +239,14 @@ inline GLenum StencilOp(Pica::FramebufferRegs::StencilAction action) {
     return stencil_op_table[index];
 }
 
-inline GLvec4 ColorRGBA8(const u32 color) {
-    return {{
-        (color >> 0 & 0xFF) / 255.0f,
-        (color >> 8 & 0xFF) / 255.0f,
-        (color >> 16 & 0xFF) / 255.0f,
-        (color >> 24 & 0xFF) / 255.0f,
-    }};
+inline Common::Vec4f ColorRGBA8(const u32 color) {
+    const auto rgba =
+        Common::Vec4u{color >> 0 & 0xFF, color >> 8 & 0xFF, color >> 16 & 0xFF, color >> 24 & 0xFF};
+    return rgba / 255.0f;
 }
 
-inline std::array<GLfloat, 3> LightColor(const Pica::LightingRegs::LightColor& color) {
-    return {{
-        color.r / 255.0f,
-        color.g / 255.0f,
-        color.b / 255.0f,
-    }};
+inline Common::Vec3f LightColor(const Pica::LightingRegs::LightColor& color) {
+    return Common::Vec3u{color.r, color.g, color.b} / 255.0f;
 }
 
 } // namespace PicaToGL

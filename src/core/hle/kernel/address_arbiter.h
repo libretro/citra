@@ -22,12 +22,10 @@
 // applications use them as an underlying mechanism to implement thread-safe barriers, events, and
 // semaphores.
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Kernel namespace
-
 namespace Kernel {
 
 class Thread;
+class ResourceLimit;
 
 enum class ArbitrationType : u32 {
     Signal,
@@ -54,6 +52,7 @@ public:
         return HANDLE_TYPE;
     }
 
+    std::shared_ptr<ResourceLimit> resource_limit;
     std::string name; ///< Name of address arbiter object (optional)
 
     ResultCode ArbitrateAddress(std::shared_ptr<Thread> thread, ArbitrationType type, VAddr address,
@@ -68,11 +67,11 @@ private:
     void WaitThread(std::shared_ptr<Thread> thread, VAddr wait_address);
 
     /// Resume all threads found to be waiting on the address under this address arbiter
-    void ResumeAllThreads(VAddr address);
+    u64 ResumeAllThreads(VAddr address);
 
     /// Resume one thread found to be waiting on the address under this address arbiter and return
     /// the resumed thread.
-    std::shared_ptr<Thread> ResumeHighestPriorityThread(VAddr address);
+    bool ResumeHighestPriorityThread(VAddr address);
 
     /// Threads waiting for the address arbiter to be signaled.
     std::vector<std::shared_ptr<Thread>> waiting_threads;
@@ -80,31 +79,16 @@ private:
     std::shared_ptr<Callback> timeout_callback;
 
     void WakeUp(ThreadWakeupReason reason, std::shared_ptr<Thread> thread,
-                std::shared_ptr<WaitObject> object);
-
-    class DummyCallback : public WakeupCallback {
-    public:
-        void WakeUp(ThreadWakeupReason reason, std::shared_ptr<Thread> thread,
-                    std::shared_ptr<WaitObject> object) override {}
-    };
+                std::shared_ptr<WaitObject> object) override;
 
     friend class boost::serialization::access;
     template <class Archive>
     void serialize(Archive& ar, const unsigned int file_version) {
         ar& boost::serialization::base_object<Object>(*this);
-        if (file_version == 1) {
-            // This rigmarole is needed because in past versions, AddressArbiter inherited
-            // WakeupCallback But it turns out this breaks shared_from_this, so we split it out.
-            // Using a dummy class to deserialize a base_object allows compatibility to be
-            // maintained.
-            DummyCallback x;
-            ar& boost::serialization::base_object<WakeupCallback>(x);
-        }
         ar& name;
         ar& waiting_threads;
-        if (file_version > 1) {
-            ar& timeout_callback;
-        }
+        ar& timeout_callback;
+        ar& resource_limit;
     }
 };
 

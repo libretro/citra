@@ -4,10 +4,10 @@
 
 #pragma once
 
-#include <atomic>
 #include <memory>
 #include <boost/serialization/binary_object.hpp>
 #include "common/common_types.h"
+#include "core/hle/service/nfc/nfc_device.h"
 #include "core/hle/service/service.h"
 
 namespace Core {
@@ -20,45 +20,11 @@ class Event;
 
 namespace Service::NFC {
 
-namespace ErrCodes {
-enum {
-    CommandInvalidForState = 512,
-};
-} // namespace ErrCodes
-
-// TODO(FearlessTobi): Add more members to this struct
-struct AmiiboData {
-    std::array<u8, 7> uuid;
-    INSERT_PADDING_BYTES(0x4D);
-    u16_le char_id;
-    u8 char_variant;
-    u8 figure_type;
-    u16_be model_number;
-    u8 series;
-    INSERT_PADDING_BYTES(0x1C1);
-
-private:
-    template <class Archive>
-    void serialize(Archive& ar, const unsigned int) {
-        ar& boost::serialization::make_binary_object(this, sizeof(AmiiboData));
-    }
-    friend class boost::serialization::access;
-};
-static_assert(sizeof(AmiiboData) == 0x21C, "AmiiboData is an invalid size");
-
-enum class TagState : u8 {
+enum class CommunicationMode : u8 {
     NotInitialized = 0,
-    NotScanning = 1,
-    Scanning = 2,
-    TagInRange = 3,
-    TagOutOfRange = 4,
-    TagDataLoaded = 5,
-    Unknown6 = 6,
-};
-
-enum class CommunicationStatus : u8 {
-    AttemptInitialize = 1,
-    NfcInitialized = 2,
+    Ntag = 1,
+    Amiibo = 2,
+    TrainTag = 3,
 };
 
 class Module final {
@@ -73,7 +39,11 @@ public:
 
         std::shared_ptr<Module> GetModule() const;
 
-        void LoadAmiibo(const AmiiboData& amiibo_data);
+        bool IsSearchingForAmiibos();
+
+        bool IsTagActive();
+
+        bool LoadAmiibo(const std::string& fullpath);
 
         void RemoveAmiibo();
 
@@ -82,79 +52,88 @@ public:
          * NFC::Initialize service function
          *  Inputs:
          *      0 : Header code [0x00010040]
-         *      1 : (u8) unknown parameter. Can be either value 0x1 or 0x2
+         *      1 : (u8) CommunicationMode. Can be either value 0x1, 0x2 or 0x3
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          */
         void Initialize(Kernel::HLERequestContext& ctx);
 
         /**
-         * NFC::Shutdown service function
+         * NFC::Finalize service function
          *  Inputs:
          *      0 : Header code [0x00020040]
-         *      1 : (u8) unknown parameter
+         *      1 : (u8) CommunicationMode.
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          */
-        void Shutdown(Kernel::HLERequestContext& ctx);
+        void Finalize(Kernel::HLERequestContext& ctx);
 
         /**
-         * NFC::StartCommunication service function
+         * NFC::Connect service function
          *  Inputs:
          *      0 : Header code [0x00030000]
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          */
-        void StartCommunication(Kernel::HLERequestContext& ctx);
+        void Connect(Kernel::HLERequestContext& ctx);
 
         /**
-         * NFC::StopCommunication service function
+         * NFC::Disconnect service function
          *  Inputs:
          *      0 : Header code [0x00040000]
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          */
-        void StopCommunication(Kernel::HLERequestContext& ctx);
+        void Disconnect(Kernel::HLERequestContext& ctx);
 
         /**
-         * NFC::StartTagScanning service function
+         * NFC::StartDetection service function
          *  Inputs:
          *      0 : Header code [0x00050040]
          *      1 : (u16) unknown. This is normally 0x0
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          */
-        void StartTagScanning(Kernel::HLERequestContext& ctx);
+        void StartDetection(Kernel::HLERequestContext& ctx);
 
         /**
-         * NFC::StopTagScanning service function
+         * NFC::StopDetection service function
          *  Inputs:
          *      0 : Header code [0x00060000]
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          */
-        void StopTagScanning(Kernel::HLERequestContext& ctx);
+        void StopDetection(Kernel::HLERequestContext& ctx);
 
         /**
-         * NFC::LoadAmiiboData service function
+         * NFC::Mount service function
          *  Inputs:
          *      0 : Header code [0x00070000]
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          */
-        void LoadAmiiboData(Kernel::HLERequestContext& ctx);
+        void Mount(Kernel::HLERequestContext& ctx);
 
         /**
-         * NFC::ResetTagScanState service function
+         * NFC::Unmount service function
          *  Inputs:
          *      0 : Header code [0x00080000]
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          */
-        void ResetTagScanState(Kernel::HLERequestContext& ctx);
+        void Unmount(Kernel::HLERequestContext& ctx);
 
         /**
-         * NFC::GetTagInRangeEvent service function
+         * NFC::Flush service function
+         *  Inputs:
+         *      0 : Header code [0x00090002]
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         */
+        void Flush(Kernel::HLERequestContext& ctx);
+
+        /**
+         * NFC::GetActivateEvent service function
          *  Inputs:
          *      0 : Header code [0x000B0000]
          *  Outputs:
@@ -162,10 +141,10 @@ public:
          *      2 : Copy handle descriptor
          *      3 : Event Handle
          */
-        void GetTagInRangeEvent(Kernel::HLERequestContext& ctx);
+        void GetActivateEvent(Kernel::HLERequestContext& ctx);
 
         /**
-         * NFC::GetTagOutOfRangeEvent service function
+         * NFC::GetDeactivateEvent service function
          *  Inputs:
          *      0 : Header code [0x000C0000]
          *  Outputs:
@@ -173,27 +152,37 @@ public:
          *      2 : Copy handle descriptor
          *      3 : Event Handle
          */
-        void GetTagOutOfRangeEvent(Kernel::HLERequestContext& ctx);
+        void GetDeactivateEvent(Kernel::HLERequestContext& ctx);
 
         /**
-         * NFC::GetTagState service function
+         * NFC::GetStatus service function
          *  Inputs:
          *      0 : Header code [0x000D0000]
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          *      2 : (u8) Tag state
          */
-        void GetTagState(Kernel::HLERequestContext& ctx);
+        void GetStatus(Kernel::HLERequestContext& ctx);
 
         /**
-         * NFC::CommunicationGetStatus service function
+         * NFC::GetTargetConnectionStatus service function
          *  Inputs:
          *      0 : Header code [0x000F0000]
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          *      2 : (u8) Communication state
          */
-        void CommunicationGetStatus(Kernel::HLERequestContext& ctx);
+        void GetTargetConnectionStatus(Kernel::HLERequestContext& ctx);
+
+        /**
+         * NFC::GetTagInfo2 service function
+         *  Inputs:
+         *      0 : Header code [0x00100000]
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         *   2-26 : 0x60-byte struct
+         */
+        void GetTagInfo2(Kernel::HLERequestContext& ctx);
 
         /**
          * NFC::GetTagInfo service function
@@ -206,23 +195,102 @@ public:
         void GetTagInfo(Kernel::HLERequestContext& ctx);
 
         /**
-         * NFC::GetAmiiboConfig service function
+         * NFC::GetConnectResult service function
+         *  Inputs:
+         *      0 : Header code [0x00120000]
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         *      2 : Output NFC-adapter result-code
+         */
+        void GetConnectResult(Kernel::HLERequestContext& ctx);
+
+        /**
+         * NFC::OpenApplicationArea service function
+         *  Inputs:
+         *      0 : Header code [0x00130040]
+         *      1 : (u32) App ID
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         */
+        void OpenApplicationArea(Kernel::HLERequestContext& ctx);
+
+        /**
+         * NFC::CreateApplicationArea service function
+         *  Inputs:
+         *      0 : Header code [0x00140384]
+         *      1 : (u32) App ID
+         *      2 : Size
+         *   3-14 : 0x30-byte zeroed-out struct
+         *     15 : 0x20, PID translate-header for kernel
+         *     16 : PID written by kernel
+         *     17 : (Size << 14) | 2
+         *     18 : Pointer to input buffer
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         */
+        void CreateApplicationArea(Kernel::HLERequestContext& ctx);
+
+        /**
+         * NFC::ReadApplicationArea service function
+         *  Inputs:
+         *      0 : Header code [0x00150040]
+         *      1 : Size (unused? Hard-coded to be 0xD8)
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         */
+        void ReadApplicationArea(Kernel::HLERequestContext& ctx);
+
+        /**
+         * NFC::WriteApplicationArea service function
+         *  Inputs:
+         *      0 : Header code [0x00160242]
+         *      1 : Size
+         *    2-9 : AmiiboWriteRequest struct (see above)
+         *     10 : (Size << 14) | 2
+         *     11 : Pointer to input appdata buffer
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         */
+        void WriteApplicationArea(Kernel::HLERequestContext& ctx);
+
+        /**
+         * NFC::GetNfpRegisterInfo service function
+         *  Inputs:
+         *      0 : Header code [0x00170000]
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         *   2-43 : AmiiboSettings struct (see above)
+         */
+        void GetNfpRegisterInfo(Kernel::HLERequestContext& ctx);
+
+        /**
+         * NFC::GetNfpCommonInfo service function
          *  Inputs:
          *      0 : Header code [0x00180000]
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          *   2-17 : 0x40-byte config struct
          */
-        void GetAmiiboConfig(Kernel::HLERequestContext& ctx);
+        void GetNfpCommonInfo(Kernel::HLERequestContext& ctx);
 
         /**
-         * NFC::Unknown0x1A service function
+         * NFC::InitializeCreateInfo service function
+         *  Inputs:
+         *      0 : Header code [0x00180000]
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         *   2-16 : 0x3C-byte config struct
+         */
+        void InitializeCreateInfo(Kernel::HLERequestContext& ctx);
+
+        /**
+         * NFC::LoadAmiiboPartially service function
          *  Inputs:
          *      0 : Header code [0x001A0000]
          *  Outputs:
          *      1 : Result of function, 0 on success, otherwise error code
          */
-        void Unknown0x1A(Kernel::HLERequestContext& ctx);
+        void MountRom(Kernel::HLERequestContext& ctx);
 
         /**
          * NFC::GetIdentificationBlock service function
@@ -234,21 +302,77 @@ public:
          */
         void GetIdentificationBlock(Kernel::HLERequestContext& ctx);
 
+        /**
+         * NFC::Format service function
+         *  Inputs:
+         *      0 : Header code [0x040100C2]
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         */
+        void Format(Kernel::HLERequestContext& ctx);
+
+        /**
+         * NFC::GetAdminInfo service function
+         *  Inputs:
+         *      0 : Header code [0x04020000]
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         */
+        void GetAdminInfo(Kernel::HLERequestContext& ctx);
+
+        /**
+         * NFC::GetEmptyRegisterInfo service function
+         *  Inputs:
+         *      0 : Header code [0x04030000]
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         */
+        void GetEmptyRegisterInfo(Kernel::HLERequestContext& ctx);
+
+        /**
+         * NFC::SetRegisterInfo service function
+         *  Inputs:
+         *      0 : Header code [0x04040A40]
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         */
+        void SetRegisterInfo(Kernel::HLERequestContext& ctx);
+
+        /**
+         * NFC::DeleteRegisterInfo service function
+         *  Inputs:
+         *      0 : Header code [0x04050000]
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         */
+        void DeleteRegisterInfo(Kernel::HLERequestContext& ctx);
+
+        /**
+         * NFC::DeleteApplicationArea service function
+         *  Inputs:
+         *      0 : Header code [0x04060000]
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         */
+        void DeleteApplicationArea(Kernel::HLERequestContext& ctx);
+
+        /**
+         * NFC::ExistsApplicationArea service function
+         *  Inputs:
+         *      0 : Header code [0x04070000]
+         *  Outputs:
+         *      1 : Result of function, 0 on success, otherwise error code
+         */
+        void ExistsApplicationArea(Kernel::HLERequestContext& ctx);
+
     protected:
         std::shared_ptr<Module> nfc;
     };
 
 private:
-    // Sync nfc_tag_state with amiibo_in_range and signal events on state change.
-    void SyncTagState();
+    CommunicationMode nfc_mode = CommunicationMode::NotInitialized;
 
-    std::shared_ptr<Kernel::Event> tag_in_range_event;
-    std::shared_ptr<Kernel::Event> tag_out_of_range_event;
-    TagState nfc_tag_state = TagState::NotInitialized;
-    CommunicationStatus nfc_status = CommunicationStatus::NfcInitialized;
-
-    AmiiboData amiibo_data{};
-    bool amiibo_in_range = false;
+    std::shared_ptr<NfcDevice> device = nullptr;
 
     template <class Archive>
     void serialize(Archive& ar, const unsigned int);

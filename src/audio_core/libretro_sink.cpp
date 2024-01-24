@@ -7,7 +7,11 @@
 #include <libretro.h>
 #include "audio_core/libretro_sink.h"
 #include "audio_types.h"
-#include "core/settings.h"
+#include "common/settings.h"
+
+namespace LibRetro {
+static retro_audio_sample_batch_t audio_batch_cb;
+}
 
 namespace AudioCore {
 

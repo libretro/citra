@@ -1,3 +1,31 @@
+QPushButton#TogglableStatusBarButton {
+    color: #959595;
+    border: 1px solid transparent;
+    background-color: transparent;
+    padding: 0px 3px 0px 3px;
+    text-align: center;
+}
+
+QPushButton#TogglableStatusBarButton:checked {
+    color: palette(text);
+}
+
+QPushButton#TogglableStatusBarButton:hover {
+    border: 1px solid #76797C;
+}
+
+QPushButton#GraphicsAPIStatusBarButton {
+    color: #656565;
+    border: 1px solid transparent;
+    background-color: transparent;
+    padding: 0px 3px 0px 3px;
+    text-align: center;
+}
+
+QPushButton#GraphicsAPIStatusBarButton:hover {
+    border: 1px solid #76797C;
+}
+
 QToolTip {
     border: 1px solid #76797C;
     background-color: #5A7566;
@@ -270,6 +298,11 @@ QAbstractItemView:read-only {
     alternate-background-color: #232629;
 }
 
+/* Workaround for https://bugreports.qt.io/browse/QTBUG-115529 */
+QAbstractItemView:item {
+    border: 0px;
+}
+
 QWidget:focus {
     border: 1px solid #3daee9;
 }
@@ -522,13 +555,12 @@ QToolButton#qt_toolbar_ext_button {
 
 QPushButton {
     color: #eff0f1;
-    border-width: 1px;
-    border-color: #54575B;
-    border-style: solid;
-    padding: 6px 4px;
+    border: 1px solid #54575B;
     border-radius: 2px;
+    padding: 5px 0px 5px 0px;
     outline: none;
     min-width: 100px;
+    min-height: 13px;
     background-color: #232629;
 }
 
@@ -1236,4 +1268,19 @@ QPlainTextEdit:disabled {
 /* touchscreen mapping widget */
 TouchScreenPreview {
     qproperty-dotHighlightColor: #3daee9;
+}
+
+QPushButton#3DOptionStatusBarButton {
+    color: #A5A5A5;
+    font-weight: bold;
+    border: 1px solid transparent;
+    background-color: transparent;
+    padding: 0px 3px 0px 3px;
+    text-align: center;
+    min-width: 60px;
+    min-height: 20px;
+}
+
+QPushButton#3DOptionStatusBarButton:hover {
+    border: 1px solid #76797C;
 }

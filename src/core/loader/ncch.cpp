@@ -3,19 +3,19 @@
 // Refer to the license.txt file included.
 
 #include <algorithm>
-#include <cinttypes>
-#include <codecvt>
 #include <cstring>
-#include <locale>
 #include <memory>
 #include <vector>
 #include <fmt/format.h>
+#include "common/literals.h"
 #include "common/logging/log.h"
+#include "common/settings.h"
 #include "common/string_util.h"
 #include "common/swap.h"
 #include "core/core.h"
 #include "core/file_sys/ncch_container.h"
 #include "core/file_sys/title_metadata.h"
+#include "core/hle/kernel/kernel.h"
 #include "core/hle/kernel/process.h"
 #include "core/hle/kernel/resource_limit.h"
 #include "core/hle/service/am/am.h"
@@ -25,13 +25,13 @@
 #include "core/loader/ncch.h"
 #include "core/loader/smdh.h"
 #include "core/memory.h"
+#include "core/system_titles.h"
+#include "core/telemetry_session.h"
 #include "network/network.h"
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Loader namespace
 
 namespace Loader {
 
+using namespace Common::Literals;
 static const u64 UPDATE_MASK = 0x0000000e00000000;
 
 FileType AppLoader_NCCH::IdentifyType(FileUtil::IOFile& file) {
@@ -49,30 +49,50 @@ FileType AppLoader_NCCH::IdentifyType(FileUtil::IOFile& file) {
     return FileType::Error;
 }
 
-std::pair<std::optional<u32>, ResultStatus> AppLoader_NCCH::LoadKernelSystemMode() {
+std::pair<std::optional<u32>, ResultStatus> AppLoader_NCCH::LoadCoreVersion() {
     if (!is_loaded) {
         ResultStatus res = base_ncch.Load();
         if (res != ResultStatus::Success) {
-            return std::make_pair(std::optional<u32>{}, res);
+            return std::make_pair(std::nullopt, res);
         }
     }
 
-    // Set the system mode as the one from the exheader.
-    return std::make_pair(overlay_ncch->exheader_header.arm11_system_local_caps.system_mode.Value(),
-                          ResultStatus::Success);
+    // Provide the core version from the exheader.
+    auto& ncch_caps = overlay_ncch->exheader_header.arm11_system_local_caps;
+    return std::make_pair(ncch_caps.core_version, ResultStatus::Success);
 }
 
-std::pair<std::optional<u8>, ResultStatus> AppLoader_NCCH::LoadKernelN3dsMode() {
+std::pair<std::optional<Kernel::MemoryMode>, ResultStatus> AppLoader_NCCH::LoadKernelMemoryMode() {
     if (!is_loaded) {
         ResultStatus res = base_ncch.Load();
         if (res != ResultStatus::Success) {
-            return std::make_pair(std::optional<u8>{}, res);
+            return std::make_pair(std::nullopt, res);
         }
     }
 
-    // Set the system mode as the one from the exheader.
-    return std::make_pair(overlay_ncch->exheader_header.arm11_system_local_caps.n3ds_mode,
-                          ResultStatus::Success);
+    // Provide the memory mode from the exheader.
+    auto& ncch_caps = overlay_ncch->exheader_header.arm11_system_local_caps;
+    auto mode = static_cast<Kernel::MemoryMode>(ncch_caps.system_mode.Value());
+    return std::make_pair(mode, ResultStatus::Success);
+}
+
+std::pair<std::optional<Kernel::New3dsHwCapabilities>, ResultStatus>
+AppLoader_NCCH::LoadNew3dsHwCapabilities() {
+    if (!is_loaded) {
+        ResultStatus res = base_ncch.Load();
+        if (res != ResultStatus::Success) {
+            return std::make_pair(std::nullopt, res);
+        }
+    }
+
+    // Provide the capabilities from the exheader.
+    auto& ncch_caps = overlay_ncch->exheader_header.arm11_system_local_caps;
+    auto caps = Kernel::New3dsHwCapabilities{
+        ncch_caps.enable_l2_cache != 0,
+        ncch_caps.enable_804MHz_cpu != 0,
+        static_cast<Kernel::New3dsMemoryMode>(ncch_caps.n3ds_mode),
+    };
+    return std::make_pair(std::move(caps), ResultStatus::Success);
 }
 
 ResultStatus AppLoader_NCCH::LoadExec(std::shared_ptr<Kernel::Process>& process) {
@@ -85,6 +105,11 @@ ResultStatus AppLoader_NCCH::LoadExec(std::shared_ptr<Kernel::Process>& process)
     u64_le program_id;
     if (ResultStatus::Success == ReadCode(code) &&
         ResultStatus::Success == ReadProgramId(program_id)) {
+        if (IsGbaVirtualConsole(code)) {
+            LOG_ERROR(Loader, "Encountered unsupported GBA Virtual Console code section.");
+            return ResultStatus::ErrorGbaTitle;
+        }
+
         std::string process_name = Common::StringFromFixedZeroTerminatedBuffer(
             (const char*)overlay_ncch->exheader_header.codeset_info.name, 8);
 
@@ -94,13 +119,13 @@ ResultStatus AppLoader_NCCH::LoadExec(std::shared_ptr<Kernel::Process>& process)
         codeset->CodeSegment().offset = 0;
         codeset->CodeSegment().addr = overlay_ncch->exheader_header.codeset_info.text.address;
         codeset->CodeSegment().size =
-            overlay_ncch->exheader_header.codeset_info.text.num_max_pages * Memory::PAGE_SIZE;
+            overlay_ncch->exheader_header.codeset_info.text.num_max_pages * Memory::CITRA_PAGE_SIZE;
 
         codeset->RODataSegment().offset =
             codeset->CodeSegment().offset + codeset->CodeSegment().size;
         codeset->RODataSegment().addr = overlay_ncch->exheader_header.codeset_info.ro.address;
         codeset->RODataSegment().size =
-            overlay_ncch->exheader_header.codeset_info.ro.num_max_pages * Memory::PAGE_SIZE;
+            overlay_ncch->exheader_header.codeset_info.ro.num_max_pages * Memory::CITRA_PAGE_SIZE;
 
         // TODO(yuriks): Not sure if the bss size is added to the page-aligned .data size or just
         //               to the regular size. Playing it safe for now.
@@ -111,7 +136,8 @@ ResultStatus AppLoader_NCCH::LoadExec(std::shared_ptr<Kernel::Process>& process)
             codeset->RODataSegment().offset + codeset->RODataSegment().size;
         codeset->DataSegment().addr = overlay_ncch->exheader_header.codeset_info.data.address;
         codeset->DataSegment().size =
-            overlay_ncch->exheader_header.codeset_info.data.num_max_pages * Memory::PAGE_SIZE +
+            overlay_ncch->exheader_header.codeset_info.data.num_max_pages *
+                Memory::CITRA_PAGE_SIZE +
             bss_page_size;
 
         // Apply patches now that the entire codeset (including .bss) has been allocated
@@ -122,13 +148,41 @@ ResultStatus AppLoader_NCCH::LoadExec(std::shared_ptr<Kernel::Process>& process)
         codeset->entrypoint = codeset->CodeSegment().addr;
         codeset->memory = std::move(code);
 
-        process = Core::System::GetInstance().Kernel().CreateProcess(std::move(codeset));
+        auto& system = Core::System::GetInstance();
+        process = system.Kernel().CreateProcess(std::move(codeset));
 
         // Attach a resource limit to the process based on the resource limit category
-        process->resource_limit =
-            Core::System::GetInstance().Kernel().ResourceLimit().GetForCategory(
-                static_cast<Kernel::ResourceLimitCategory>(
-                    overlay_ncch->exheader_header.arm11_system_local_caps.resource_limit_category));
+        const auto category = static_cast<Kernel::ResourceLimitCategory>(
+            overlay_ncch->exheader_header.arm11_system_local_caps.resource_limit_category);
+        process->resource_limit = system.Kernel().ResourceLimit().GetForCategory(category);
+
+        // When running N3DS-unaware titles pm will lie about the amount of memory available.
+        // This means RESLIMIT_COMMIT = APPMEMALLOC doesn't correspond to the actual size of
+        // APPLICATION. See:
+        // https://github.com/LumaTeam/Luma3DS/blob/e2778a45/sysmodules/pm/source/launch.c#L237
+        auto& ncch_caps = overlay_ncch->exheader_header.arm11_system_local_caps;
+        const auto o3ds_mode = static_cast<Kernel::MemoryMode>(ncch_caps.system_mode.Value());
+        const auto n3ds_mode = static_cast<Kernel::New3dsMemoryMode>(ncch_caps.n3ds_mode);
+        const bool is_new_3ds = Settings::values.is_new_3ds.GetValue();
+        if (is_new_3ds && n3ds_mode == Kernel::New3dsMemoryMode::Legacy &&
+            category == Kernel::ResourceLimitCategory::Application) {
+            u64 new_limit = 0;
+            switch (o3ds_mode) {
+            case Kernel::MemoryMode::Prod:
+                new_limit = 64_MiB;
+                break;
+            case Kernel::MemoryMode::Dev1:
+                new_limit = 96_MiB;
+                break;
+            case Kernel::MemoryMode::Dev2:
+                new_limit = 80_MiB;
+                break;
+            default:
+                break;
+            }
+            process->resource_limit->SetLimitValue(Kernel::ResourceLimitType::Commit,
+                                                   static_cast<s32>(new_limit));
+        }
 
         // Set the default CPU core for this process
         process->ideal_processor =
@@ -145,10 +199,17 @@ ResultStatus AppLoader_NCCH::LoadExec(std::shared_ptr<Kernel::Process>& process)
         u32 stack_size = overlay_ncch->exheader_header.codeset_info.stack_size;
 
         // On real HW this is done with FS:Reg, but we can be lazy
-        auto fs_user =
-            Core::System::GetInstance().ServiceManager().GetService<Service::FS::FS_USER>(
-                "fs:USER");
-        fs_user->Register(process->process_id, process->codeset->program_id, filepath);
+        auto fs_user = system.ServiceManager().GetService<Service::FS::FS_USER>("fs:USER");
+        fs_user->RegisterProgramInfo(process->process_id, process->codeset->program_id, filepath);
+
+        Service::FS::FS_USER::ProductInfo product_info{};
+        std::memcpy(product_info.product_code.data(), overlay_ncch->ncch_header.product_code,
+                    product_info.product_code.size());
+        std::memcpy(&product_info.remaster_version,
+                    overlay_ncch->exheader_header.codeset_info.flags.remaster_version,
+                    sizeof(product_info.remaster_version));
+        product_info.maker_code = overlay_ncch->ncch_header.maker_code;
+        fs_user->RegisterProductInfo(process->process_id, product_info);
 
         process->Run(priority, stack_size);
         return ResultStatus::Success;
@@ -156,24 +217,41 @@ ResultStatus AppLoader_NCCH::LoadExec(std::shared_ptr<Kernel::Process>& process)
     return ResultStatus::Error;
 }
 
-void AppLoader_NCCH::ParseRegionLockoutInfo() {
+void AppLoader_NCCH::ParseRegionLockoutInfo(u64 program_id) {
+    if (Settings::values.region_value.GetValue() != Settings::REGION_VALUE_AUTO_SELECT) {
+        return;
+    }
+
+    preferred_regions.clear();
+
     std::vector<u8> smdh_buffer;
     if (ReadIcon(smdh_buffer) == ResultStatus::Success && smdh_buffer.size() >= sizeof(SMDH)) {
         SMDH smdh;
-        memcpy(&smdh, smdh_buffer.data(), sizeof(SMDH));
+        std::memcpy(&smdh, smdh_buffer.data(), sizeof(SMDH));
         u32 region_lockout = smdh.region_lockout;
         constexpr u32 REGION_COUNT = 7;
-        std::vector<u32> regions;
         for (u32 region = 0; region < REGION_COUNT; ++region) {
             if (region_lockout & 1) {
-                regions.push_back(region);
+                preferred_regions.push_back(region);
             }
             region_lockout >>= 1;
         }
-        auto cfg = Service::CFG::GetModule(Core::System::GetInstance());
-        ASSERT_MSG(cfg, "CFG Module missing!");
-        cfg->SetPreferredRegionCodes(regions);
+    } else {
+        const auto region = Core::GetSystemTitleRegion(program_id);
+        if (region.has_value()) {
+            preferred_regions.push_back(region.value());
+        }
     }
+}
+
+bool AppLoader_NCCH::IsGbaVirtualConsole(std::span<const u8> code) {
+    if (code.size() < 0x10) [[unlikely]] {
+        return false;
+    }
+
+    u32 gbaVcHeader[2];
+    std::memcpy(gbaVcHeader, code.data() + code.size() - 0x10, sizeof(gbaVcHeader));
+    return gbaVcHeader[0] == MakeMagic('.', 'C', 'A', 'A') && gbaVcHeader[1] == 1;
 }
 
 ResultStatus AppLoader_NCCH::Load(std::shared_ptr<Kernel::Process>& process) {
@@ -217,7 +295,7 @@ ResultStatus AppLoader_NCCH::Load(std::shared_ptr<Kernel::Process>& process) {
 
     system.ArchiveManager().RegisterSelfNCCH(*this);
 
-    ParseRegionLockoutInfo();
+    ParseRegionLockoutInfo(ncch_program_id);
 
     return ResultStatus::Success;
 }
@@ -297,7 +375,7 @@ ResultStatus AppLoader_NCCH::ReadTitle(std::string& title) {
         return ResultStatus::ErrorInvalidFormat;
     }
 
-    memcpy(&smdh, data.data(), sizeof(Loader::SMDH));
+    std::memcpy(&smdh, data.data(), sizeof(Loader::SMDH));
 
     const auto& short_title = smdh.GetShortTitle(SMDH::TitleLanguage::English);
     auto title_end = std::find(short_title.begin(), short_title.end(), u'\0');

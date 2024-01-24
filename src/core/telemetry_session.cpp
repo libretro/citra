@@ -9,9 +9,11 @@
 #include "common/file_util.h"
 #include "common/logging/log.h"
 #include "common/scm_rev.h"
+#include "common/settings.h"
 #include "core/core.h"
-#include "core/settings.h"
+#include "core/loader/loader.h"
 #include "core/telemetry_session.h"
+#include "network/network_settings.h"
 
 #ifdef ENABLE_WEB_SERVICE
 #include "web_service/telemetry_json.h"
@@ -70,7 +72,7 @@ u64 RegenerateTelemetryId() {
 
 bool VerifyLogin(const std::string& username, const std::string& token) {
 #ifdef ENABLE_WEB_SERVICE
-    return WebService::VerifyLogin(Settings::values.web_api_url, username, token);
+    return WebService::VerifyLogin(NetSettings::values.web_api_url, username, token);
 #else
     return false;
 #endif
@@ -86,16 +88,16 @@ TelemetrySession::~TelemetrySession() {
     AddField(Telemetry::FieldType::Session, "Shutdown_Time", shutdown_time);
 
 #ifdef ENABLE_WEB_SERVICE
-    auto backend = std::make_unique<WebService::TelemetryJson>(Settings::values.web_api_url,
-                                                               Settings::values.citra_username,
-                                                               Settings::values.citra_token);
+    auto backend = std::make_unique<WebService::TelemetryJson>(NetSettings::values.web_api_url,
+                                                               NetSettings::values.citra_username,
+                                                               NetSettings::values.citra_token);
 #else
     auto backend = std::make_unique<Telemetry::NullVisitor>();
 #endif
 
     // Complete the session, submitting to the web service backend if necessary
     field_collection.Accept(*backend);
-    if (Settings::values.enable_telemetry) {
+    if (NetSettings::values.enable_telemetry) {
         backend->Complete();
     }
 }
@@ -123,40 +125,45 @@ void TelemetrySession::AddInitialInfo(Loader::AppLoader& app_loader) {
     Telemetry::AppendOSInfo(field_collection);
 
     // Log user configuration information
-    AddField(Telemetry::FieldType::UserConfig, "Audio_SinkId", Settings::values.sink_id);
+    AddField(Telemetry::FieldType::UserConfig, "Audio_SinkId",
+             static_cast<int>(Settings::values.output_type.GetValue()));
     AddField(Telemetry::FieldType::UserConfig, "Audio_EnableAudioStretching",
-             Settings::values.enable_audio_stretching);
-    AddField(Telemetry::FieldType::UserConfig, "Core_UseCpuJit", Settings::values.use_cpu_jit);
+             Settings::values.enable_audio_stretching.GetValue());
+    AddField(Telemetry::FieldType::UserConfig, "Core_UseCpuJit",
+             Settings::values.use_cpu_jit.GetValue());
     AddField(Telemetry::FieldType::UserConfig, "Renderer_ResolutionFactor",
-             Settings::values.resolution_factor);
-    AddField(Telemetry::FieldType::UserConfig, "Renderer_FrameLimit", Settings::values.frame_limit);
-    AddField(Telemetry::FieldType::UserConfig, "Renderer_UseFrameLimitAlternate",
-             Settings::values.use_frame_limit_alternate);
-    AddField(Telemetry::FieldType::UserConfig, "Renderer_FrameLimitAlternate",
-             Settings::values.frame_limit_alternate);
-    AddField(Telemetry::FieldType::UserConfig, "Renderer_UseHwRenderer",
-             Settings::values.use_hw_renderer);
+             Settings::values.resolution_factor.GetValue());
+    AddField(Telemetry::FieldType::UserConfig, "Renderer_FrameLimit",
+             Settings::values.frame_limit.GetValue());
+    AddField(Telemetry::FieldType::UserConfig, "Renderer_Backend",
+             static_cast<int>(Settings::values.graphics_api.GetValue()));
     AddField(Telemetry::FieldType::UserConfig, "Renderer_UseHwShader",
-             Settings::values.use_hw_shader);
+             Settings::values.use_hw_shader.GetValue());
     AddField(Telemetry::FieldType::UserConfig, "Renderer_ShadersAccurateMul",
-             Settings::values.shaders_accurate_mul);
+             Settings::values.shaders_accurate_mul.GetValue());
     AddField(Telemetry::FieldType::UserConfig, "Renderer_UseShaderJit",
-             Settings::values.use_shader_jit);
-    AddField(Telemetry::FieldType::UserConfig, "Renderer_UseVsync", Settings::values.use_vsync_new);
-    AddField(Telemetry::FieldType::UserConfig, "Renderer_FilterMode", Settings::values.filter_mode);
+             Settings::values.use_shader_jit.GetValue());
+    AddField(Telemetry::FieldType::UserConfig, "Renderer_UseVsync",
+             Settings::values.use_vsync_new.GetValue());
+    AddField(Telemetry::FieldType::UserConfig, "Renderer_FilterMode",
+             Settings::values.filter_mode.GetValue());
     AddField(Telemetry::FieldType::UserConfig, "Renderer_Render3d",
-             static_cast<int>(Settings::values.render_3d));
+             static_cast<int>(Settings::values.render_3d.GetValue()));
     AddField(Telemetry::FieldType::UserConfig, "Renderer_Factor3d",
-             Settings::values.factor_3d.load());
-    AddField(Telemetry::FieldType::UserConfig, "System_IsNew3ds", Settings::values.is_new_3ds);
-    AddField(Telemetry::FieldType::UserConfig, "System_RegionValue", Settings::values.region_value);
+             Settings::values.factor_3d.GetValue());
+    AddField(Telemetry::FieldType::UserConfig, "Renderer_MonoRenderOption",
+             static_cast<int>(Settings::values.mono_render_option.GetValue()));
+    AddField(Telemetry::FieldType::UserConfig, "System_IsNew3ds",
+             Settings::values.is_new_3ds.GetValue());
+    AddField(Telemetry::FieldType::UserConfig, "System_RegionValue",
+             Settings::values.region_value.GetValue());
 }
 
 bool TelemetrySession::SubmitTestcase() {
 #ifdef ENABLE_WEB_SERVICE
-    auto backend = std::make_unique<WebService::TelemetryJson>(Settings::values.web_api_url,
-                                                               Settings::values.citra_username,
-                                                               Settings::values.citra_token);
+    auto backend = std::make_unique<WebService::TelemetryJson>(NetSettings::values.web_api_url,
+                                                               NetSettings::values.citra_username,
+                                                               NetSettings::values.citra_token);
     field_collection.Accept(*backend);
     return backend->SubmitTestcase();
 #else

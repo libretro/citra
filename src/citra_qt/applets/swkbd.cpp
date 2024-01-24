@@ -2,6 +2,7 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <unordered_map>
 #include <QDialogButtonBox>
 #include <QLabel>
 #include <QLineEdit>
@@ -54,12 +55,12 @@ QtKeyboardDialog::QtKeyboardDialog(QWidget* parent, QtKeyboard* keyboard_)
     case ButtonConfig::None:
         break;
     }
-    connect(buttons, &QDialogButtonBox::accepted, this, [=] { Submit(); });
-    connect(buttons, &QDialogButtonBox::rejected, this, [=] {
+    connect(buttons, &QDialogButtonBox::accepted, this, [this] { Submit(); });
+    connect(buttons, &QDialogButtonBox::rejected, this, [this] {
         button = QtKeyboard::cancel_id;
         accept();
     });
-    connect(buttons, &QDialogButtonBox::helpRequested, this, [=] {
+    connect(buttons, &QDialogButtonBox::helpRequested, this, [this] {
         button = QtKeyboard::forgot_id;
         accept();
     });

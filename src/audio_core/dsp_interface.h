@@ -5,7 +5,7 @@
 #pragma once
 
 #include <memory>
-#include <vector>
+#include <span>
 #include <boost/serialization/access.hpp>
 #include "audio_core/audio_types.h"
 #include "audio_core/time_stretch.h"
@@ -13,17 +13,22 @@
 #include "common/ring_buffer.h"
 #include "core/memory.h"
 
+namespace Core {
+class System;
+} // namespace Core
+
 namespace Service::DSP {
-class DSP_DSP;
+enum class InterruptType : u32;
 } // namespace Service::DSP
 
 namespace AudioCore {
 
 class Sink;
+enum class SinkType : u32;
 
 class DspInterface {
 public:
-    DspInterface();
+    DspInterface(Core::System& system_);
     virtual ~DspInterface();
 
     DspInterface(const DspInterface&) = delete;
@@ -64,7 +69,7 @@ public:
      * @param length the number of bytes to read. The max is 65,535 (max of u16).
      * @returns a vector of bytes from the specified pipe. On error, will be empty.
      */
-    virtual std::vector<u8> PipeRead(DspPipe pipe_number, u32 length) = 0;
+    virtual std::vector<u8> PipeRead(DspPipe pipe_number, std::size_t length) = 0;
 
     /**
      * How much data is left in pipe
@@ -79,22 +84,23 @@ public:
      * @param pipe_number The Pipe ID
      * @param buffer The data to write to the pipe.
      */
-    virtual void PipeWrite(DspPipe pipe_number, const std::vector<u8>& buffer) = 0;
+    virtual void PipeWrite(DspPipe pipe_number, std::span<const u8> buffer) = 0;
 
     /// Returns a reference to the array backing DSP memory
     virtual std::array<u8, Memory::DSP_RAM_SIZE>& GetDspMemory() = 0;
 
-    /// Sets the dsp class that we trigger interrupts for
-    virtual void SetServiceToInterrupt(std::weak_ptr<Service::DSP::DSP_DSP> dsp) = 0;
+    /// Sets the handler for the interrupts we trigger
+    virtual void SetInterruptHandler(
+        std::function<void(Service::DSP::InterruptType type, DspPipe pipe)> handler) = 0;
 
     /// Loads the DSP program
-    virtual void LoadComponent(const std::vector<u8>& buffer) = 0;
+    virtual void LoadComponent(std::span<const u8> buffer) = 0;
 
     /// Unloads the DSP program
     virtual void UnloadComponent() = 0;
 
-    /// Select the sink to use based on sink id.
-    void SetSink(const std::string& sink_id, const std::string& audio_device);
+    /// Select the sink to use based on sink type.
+    void SetSink(SinkType sink_type, std::string_view audio_device);
     /// Get the current sink
     Sink& GetSink();
     /// Enable/Disable audio stretching.
@@ -108,7 +114,10 @@ private:
     void FlushResidualStretcherAudio();
     void OutputCallback(s16* buffer, std::size_t num_frames);
 
-    std::atomic<bool> perform_time_stretching = false;
+    Core::System& system;
+
+    std::atomic<bool> enable_time_stretching = false;
+    std::atomic<bool> performing_time_stretching = false;
     std::atomic<bool> flushing_time_stretcher = false;
     Common::RingBuffer<s16, 0x2000, 2> fifo;
     std::array<s16, 2> last_frame{};

@@ -9,11 +9,10 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <QKeySequence>
 #include <QWidget>
 #include "common/param_package.h"
-#include "core/settings.h"
+#include "common/settings.h"
 #include "input_common/main.h"
 
 class QKeyEvent;

@@ -8,23 +8,25 @@
 namespace Service::NS {
 
 NS_S::NS_S(std::shared_ptr<Service::APT::Module> apt)
-    : Service::APT::Module::NSInterface(std::move(apt), "ns:s", 2) {
+    : Service::APT::Module::NSInterface(std::move(apt), "ns:s", 3) {
     static const FunctionInfo functions[] = {
-        {0x000100C0, nullptr, "LaunchFIRM"},
-        {0x000200C0, nullptr, "LaunchTitle"},
-        {0x00030000, nullptr, "TerminateApplication"},
-        {0x00040040, nullptr, "TerminateProcess"},
-        {0x000500C0, nullptr, "LaunchApplicationFIRM"},
-        {0x00060042, &NS_S::SetWirelessRebootInfo, "SetWirelessRebootInfo"},
-        {0x00070042, nullptr, "CardUpdateInitialize"},
-        {0x00080000, nullptr, "CardUpdateShutdown"},
-        {0x000D0140, nullptr, "SetTWLBannerHMAC"},
-        {0x000E0000, nullptr, "ShutdownAsync"},
-        {0x00100180, nullptr, "RebootSystem"},
-        {0x00110100, nullptr, "TerminateTitle"},
-        {0x001200C0, nullptr, "SetApplicationCpuTimeLimit"},
-        {0x00150140, nullptr, "LaunchApplication"},
-        {0x00160000, nullptr, "RebootSystemClean"},
+        // clang-format off
+        {0x0001, nullptr, "LaunchFIRM"},
+        {0x0002, nullptr, "LaunchTitle"},
+        {0x0003, nullptr, "TerminateApplication"},
+        {0x0004, nullptr, "TerminateProcess"},
+        {0x0005, nullptr, "LaunchApplicationFIRM"},
+        {0x0006, &NS_S::SetWirelessRebootInfo, "SetWirelessRebootInfo"},
+        {0x0007, nullptr, "CardUpdateInitialize"},
+        {0x0008, nullptr, "CardUpdateShutdown"},
+        {0x000D, nullptr, "SetTWLBannerHMAC"},
+        {0x000E, &NS_S::ShutdownAsync, "ShutdownAsync"},
+        {0x0010, &NS_S::RebootSystem, "RebootSystem"},
+        {0x0011, nullptr, "TerminateTitle"},
+        {0x0012, nullptr, "SetApplicationCpuTimeLimit"},
+        {0x0015, nullptr, "LaunchApplication"},
+        {0x0016, &NS_S::RebootSystemClean, "RebootSystemClean"},
+        // clang-format on
     };
     RegisterHandlers(functions);
 }

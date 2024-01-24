@@ -3,14 +3,13 @@
 // Refer to the license.txt file included.
 
 #include <algorithm>
-#include <cinttypes>
-#include <map>
 #include <memory>
 #include <utility>
 #include <vector>
 #include "common/assert.h"
 #include "common/common_types.h"
 #include "common/logging/log.h"
+#include "common/settings.h"
 #include "core/core.h"
 #include "core/hle/kernel/config_mem.h"
 #include "core/hle/kernel/memory.h"
@@ -19,9 +18,6 @@
 #include "core/hle/kernel/vm_manager.h"
 #include "core/hle/result.h"
 #include "core/memory.h"
-#include "core/settings.h"
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace Kernel {
 
@@ -41,29 +37,21 @@ static const u32 memory_region_sizes[8][3] = {
     {0x0B200000, 0x02E00000, 0x02000000}, // 7
 };
 
-namespace MemoryMode {
-enum N3DSMode : u8 {
-    Mode6 = 1,
-    Mode7 = 2,
-    Mode6_2 = 3,
-};
-}
-
-void KernelSystem::MemoryInit(u32 mem_type, u8 n3ds_mode) {
-    ASSERT(mem_type != 1);
-
-    const bool is_new_3ds = Settings::values.is_new_3ds;
-    u32 reported_mem_type = mem_type;
+void KernelSystem::MemoryInit(MemoryMode memory_mode, New3dsMemoryMode n3ds_mode,
+                              u64 override_init_time) {
+    const bool is_new_3ds = Settings::values.is_new_3ds.GetValue();
+    u32 mem_type_index = static_cast<u32>(memory_mode);
+    u32 reported_mem_type = static_cast<u32>(memory_mode);
     if (is_new_3ds) {
-        if (n3ds_mode == MemoryMode::Mode6 || n3ds_mode == MemoryMode::Mode6_2) {
-            mem_type = 6;
+        if (n3ds_mode == New3dsMemoryMode::NewProd || n3ds_mode == New3dsMemoryMode::NewDev2) {
+            mem_type_index = 6;
             reported_mem_type = 6;
-        } else if (n3ds_mode == MemoryMode::Mode7) {
-            mem_type = 7;
+        } else if (n3ds_mode == New3dsMemoryMode::NewDev1) {
+            mem_type_index = 7;
             reported_mem_type = 7;
         } else {
             // On the N3ds, all O3ds configurations (<=5) are forced to 6 instead.
-            mem_type = 6;
+            mem_type_index = 6;
         }
     }
 
@@ -71,7 +59,7 @@ void KernelSystem::MemoryInit(u32 mem_type, u8 n3ds_mode) {
     // the sizes specified in the memory_region_sizes table.
     VAddr base = 0;
     for (int i = 0; i < 3; ++i) {
-        memory_regions[i]->Reset(base, memory_region_sizes[mem_type][i]);
+        memory_regions[i]->Reset(base, memory_region_sizes[mem_type_index][i]);
 
         base += memory_regions[i]->size;
     }
@@ -86,7 +74,7 @@ void KernelSystem::MemoryInit(u32 mem_type, u8 n3ds_mode) {
     config_mem.sys_mem_alloc = memory_regions[1]->size;
     config_mem.base_mem_alloc = memory_regions[2]->size;
 
-    shared_page_handler = std::make_shared<SharedPage::Handler>(timing);
+    shared_page_handler = std::make_shared<SharedPage::Handler>(timing, override_init_time);
 }
 
 std::shared_ptr<MemoryRegionInfo> KernelSystem::GetMemoryRegion(MemoryRegion region) {
@@ -235,6 +223,25 @@ std::optional<u32> MemoryRegionInfo::LinearAllocate(u32 size) {
         ASSERT(interval.bounds() == boost::icl::interval_bounds::right_open());
         if (interval.upper() - interval.lower() >= size) {
             Interval allocated(interval.lower(), interval.lower() + size);
+            free_blocks -= allocated;
+            used += size;
+            return allocated.lower();
+        }
+    }
+
+    // No sufficient block found
+    return std::nullopt;
+}
+
+std::optional<u32> MemoryRegionInfo::RLinearAllocate(u32 size) {
+    ASSERT(!is_locked);
+
+    // Find the first sufficient continuous block from the upper address
+    for (auto iter = free_blocks.rbegin(); iter != free_blocks.rend(); ++iter) {
+        auto interval = *iter;
+        ASSERT(interval.bounds() == boost::icl::interval_bounds::right_open());
+        if (interval.upper() - interval.lower() >= size) {
+            Interval allocated(interval.upper() - size, interval.upper());
             free_blocks -= allocated;
             used += size;
             return allocated.lower();

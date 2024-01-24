@@ -16,9 +16,6 @@
 
 using Kernel::CodeSet;
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// ELF Header Constants
-
 // File type
 enum ElfType {
     ET_NONE = 0,
@@ -108,9 +105,6 @@ typedef unsigned int Elf32_Off;
 typedef signed int Elf32_Sword;
 typedef unsigned int Elf32_Word;
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// ELF file header
-
 struct Elf32_Ehdr {
     unsigned char e_ident[EI_NIDENT];
     Elf32_Half e_type;
@@ -169,9 +163,6 @@ struct Elf32_Rel {
     Elf32_Addr r_offset;
     Elf32_Word r_info;
 };
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// ElfReader class
 
 typedef int SectionID;
 
@@ -336,7 +327,7 @@ std::shared_ptr<CodeSet> ElfReader::LoadInto(u32 vaddr) {
             codeset_segment->addr = segment_addr;
             codeset_segment->size = aligned_size;
 
-            memcpy(&program_image[current_image_position], GetSegmentPtr(i), p->p_filesz);
+            std::memcpy(&program_image[current_image_position], GetSegmentPtr(i), p->p_filesz);
             current_image_position += aligned_size;
         }
     }
@@ -358,9 +349,6 @@ SectionID ElfReader::GetSectionByName(const char* name, int firstSection) const 
     }
     return -1;
 }
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Loader namespace
 
 namespace Loader {
 
@@ -400,7 +388,7 @@ ResultStatus AppLoader_ELF::Load(std::shared_ptr<Kernel::Process>& process) {
 
     // Attach the default resource limit (APPLICATION) to the process
     process->resource_limit = Core::System::GetInstance().Kernel().ResourceLimit().GetForCategory(
-        Kernel::ResourceLimitCategory::APPLICATION);
+        Kernel::ResourceLimitCategory::Application);
 
     process->Run(48, Kernel::DEFAULT_STACK_SIZE);
 

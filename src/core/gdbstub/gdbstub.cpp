@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <climits>
 #include <csignal>
 #include <cstdarg>
 #include <cstdio>
@@ -35,8 +34,8 @@
 #include "core/arm/arm_interface.h"
 #include "core/core.h"
 #include "core/gdbstub/gdbstub.h"
+#include "core/gdbstub/hio.h"
 #include "core/hle/kernel/process.h"
-#include "core/loader/loader.h"
 #include "core/memory.h"
 
 namespace GDBStub {
@@ -180,9 +179,9 @@ static u32 RegRead(std::size_t id, Kernel::Thread* thread = nullptr) {
     }
 
     if (id <= PC_REGISTER) {
-        return thread->context->GetCpuRegister(id);
+        return thread->context.cpu_registers[id];
     } else if (id == CPSR_REGISTER) {
-        return thread->context->GetCpsr();
+        return thread->context.cpsr;
     } else {
         return 0;
     }
@@ -194,9 +193,9 @@ static void RegWrite(std::size_t id, u32 val, Kernel::Thread* thread = nullptr) 
     }
 
     if (id <= PC_REGISTER) {
-        return thread->context->SetCpuRegister(id, val);
+        thread->context.cpu_registers[id] = val;
     } else if (id == CPSR_REGISTER) {
-        return thread->context->SetCpsr(val);
+        thread->context.cpsr = val;
     }
 }
 
@@ -206,11 +205,11 @@ static u64 FpuRead(std::size_t id, Kernel::Thread* thread = nullptr) {
     }
 
     if (id >= D0_REGISTER && id < FPSCR_REGISTER) {
-        u64 ret = thread->context->GetFpuRegister(2 * (id - D0_REGISTER));
-        ret |= static_cast<u64>(thread->context->GetFpuRegister(2 * (id - D0_REGISTER) + 1)) << 32;
+        u64 ret = thread->context.fpu_registers[2 * (id - D0_REGISTER)];
+        ret |= static_cast<u64>(thread->context.fpu_registers[2 * (id - D0_REGISTER) + 1]) << 32;
         return ret;
     } else if (id == FPSCR_REGISTER) {
-        return thread->context->GetFpscr();
+        return thread->context.fpscr;
     } else {
         return 0;
     }
@@ -222,10 +221,10 @@ static void FpuWrite(std::size_t id, u64 val, Kernel::Thread* thread = nullptr) 
     }
 
     if (id >= D0_REGISTER && id < FPSCR_REGISTER) {
-        thread->context->SetFpuRegister(2 * (id - D0_REGISTER), static_cast<u32>(val));
-        thread->context->SetFpuRegister(2 * (id - D0_REGISTER) + 1, static_cast<u32>(val >> 32));
+        thread->context.fpu_registers[2 * (id - D0_REGISTER)] = static_cast<u32>(val);
+        thread->context.fpu_registers[2 * (id - D0_REGISTER) + 1] = static_cast<u32>(val >> 32);
     } else if (id == FPSCR_REGISTER) {
-        return thread->context->SetFpscr(static_cast<u32>(val));
+        thread->context.fpscr = static_cast<u32>(val);
     }
 }
 
@@ -261,13 +260,7 @@ static u8 NibbleToHex(u8 n) {
     }
 }
 
-/**
- * Converts input hex string characters into an array of equivalent of u8 bytes.
- *
- * @param src Pointer to array of output hex string characters.
- * @param len Length of src array.
- */
-static u32 HexToInt(const u8* src, std::size_t len) {
+u32 HexToInt(const u8* src, std::size_t len) {
     u32 output = 0;
     while (len-- > 0) {
         output = (output << 4) | HexCharToValue(src[0]);
@@ -492,17 +485,12 @@ static void SendPacket(const char packet) {
     }
 }
 
-/**
- * Send reply to gdb client.
- *
- * @param reply Reply to be sent to client.
- */
-static void SendReply(const char* reply) {
+void SendReply(const char* reply) {
     if (!IsConnected()) {
         return;
     }
 
-    memset(command_buffer, 0, sizeof(command_buffer));
+    std::memset(command_buffer, 0, sizeof(command_buffer));
 
     command_length = static_cast<u32>(strlen(reply));
     if (command_length + 4 > sizeof(command_buffer)) {
@@ -510,7 +498,7 @@ static void SendReply(const char* reply) {
         return;
     }
 
-    memcpy(command_buffer + 1, reply, command_length);
+    std::memcpy(command_buffer + 1, reply, command_length);
 
     u8 checksum = CalculateChecksum(command_buffer, command_length + 1);
     command_buffer[0] = GDB_STUB_START;
@@ -521,7 +509,8 @@ static void SendReply(const char* reply) {
     u8* ptr = command_buffer;
     u32 left = command_length + 4;
     while (left > 0) {
-        int sent_size = send(gdbserver_socket, reinterpret_cast<char*>(ptr), left, 0);
+        s32 sent_size =
+            static_cast<s32>(send(gdbserver_socket, reinterpret_cast<char*>(ptr), left, 0));
         if (sent_size < 0) {
             LOG_ERROR(Debug_GDBStub, "gdb: send failed");
             return Shutdown();
@@ -534,9 +523,8 @@ static void SendReply(const char* reply) {
 
 /// Handle query command from gdb client.
 static void HandleQuery() {
-    LOG_DEBUG(Debug_GDBStub, "gdb: query '{}'\n", command_buffer + 1);
-
     const char* query = reinterpret_cast<const char*>(command_buffer + 1);
+    LOG_DEBUG(Debug_GDBStub, "gdb: query '{}'\n", query);
 
     if (strcmp(query, "TStatus") == 0) {
         SendReply("T0");
@@ -651,10 +639,10 @@ static void SendSignal(Kernel::Thread* thread, u32 signal, bool full = true) {
 /// Read command from gdb client.
 static void ReadCommand() {
     command_length = 0;
-    memset(command_buffer, 0, sizeof(command_buffer));
+    std::memset(command_buffer, 0, sizeof(command_buffer));
 
     u8 c = ReadByte();
-    if (c == '+') {
+    if (c == GDB_STUB_ACK) {
         // ignore ack
         return;
     } else if (c == 0x03) {
@@ -685,7 +673,8 @@ static void ReadCommand() {
         LOG_ERROR(
             Debug_GDBStub,
             "gdb: invalid checksum: calculated {:02x} and read {:02x} for ${}# (length: {})\n",
-            checksum_calculated, checksum_received, command_buffer, command_length);
+            checksum_calculated, checksum_received, reinterpret_cast<const char*>(command_buffer),
+            command_length);
 
         command_length = 0;
 
@@ -705,7 +694,7 @@ static bool IsDataAvailable() {
     fd_set fd_socket;
 
     FD_ZERO(&fd_socket);
-    FD_SET(gdbserver_socket, &fd_socket);
+    FD_SET(static_cast<u32>(gdbserver_socket), &fd_socket);
 
     struct timeval t;
     t.tv_sec = 0;
@@ -722,7 +711,7 @@ static bool IsDataAvailable() {
 /// Send requested register to gdb client.
 static void ReadRegister() {
     static u8 reply[64];
-    memset(reply, 0, sizeof(reply));
+    std::memset(reply, 0, sizeof(reply));
 
     u32 id = HexCharToValue(command_buffer[1]);
     if (command_buffer[2] != '\0') {
@@ -748,7 +737,7 @@ static void ReadRegister() {
 /// Send all registers to the gdb client.
 static void ReadRegisters() {
     static u8 buffer[GDB_BUFFER_SIZE - 4];
-    memset(buffer, 0, sizeof(buffer));
+    std::memset(buffer, 0, sizeof(buffer));
 
     u8* bufptr = buffer;
 
@@ -843,24 +832,28 @@ static void ReadMemory() {
     u32 len =
         HexToInt(start_offset, static_cast<u32>((command_buffer + command_length) - start_offset));
 
-    LOG_DEBUG(Debug_GDBStub, "gdb: addr: {:08x} len: {:08x}\n", addr, len);
+    LOG_DEBUG(Debug_GDBStub, "ReadMemory addr: {:08x} len: {:08x}", addr, len);
 
     if (len * 2 > sizeof(reply)) {
         SendReply("E01");
     }
 
-    if (!Memory::IsValidVirtualAddress(*Core::System::GetInstance().Kernel().GetCurrentProcess(),
-                                       addr)) {
+    auto& memory = Core::System::GetInstance().Memory();
+    if (!memory.IsValidVirtualAddress(*Core::System::GetInstance().Kernel().GetCurrentProcess(),
+                                      addr)) {
         return SendReply("E00");
     }
 
     std::vector<u8> data(len);
-    Core::System::GetInstance().Memory().ReadBlock(
-        *Core::System::GetInstance().Kernel().GetCurrentProcess(), addr, data.data(), len);
+    memory.ReadBlock(addr, data.data(), len);
 
     MemToGdbHex(reply, data.data(), len);
     reply[len * 2] = '\0';
-    SendReply(reinterpret_cast<char*>(reply));
+
+    auto reply_str = reinterpret_cast<char*>(reply);
+
+    LOG_DEBUG(Debug_GDBStub, "ReadMemory result: {}", reply_str);
+    SendReply(reply_str);
 }
 
 /// Modify location in memory with data received from the gdb client.
@@ -873,16 +866,16 @@ static void WriteMemory() {
     auto len_pos = std::find(start_offset, command_buffer + command_length, ':');
     u32 len = HexToInt(start_offset, static_cast<u32>(len_pos - start_offset));
 
-    if (!Memory::IsValidVirtualAddress(*Core::System::GetInstance().Kernel().GetCurrentProcess(),
-                                       addr)) {
+    auto& memory = Core::System::GetInstance().Memory();
+    if (!memory.IsValidVirtualAddress(*Core::System::GetInstance().Kernel().GetCurrentProcess(),
+                                      addr)) {
         return SendReply("E00");
     }
 
     std::vector<u8> data(len);
 
     GdbHexToMem(data.data(), len_pos + 1, len);
-    Core::System::GetInstance().Memory().WriteBlock(
-        *Core::System::GetInstance().Kernel().GetCurrentProcess(), addr, data.data(), len);
+    memory.WriteBlock(addr, data.data(), len);
     Core::GetRunningCore().ClearInstructionCache();
     SendReply("OK");
 }
@@ -1042,11 +1035,16 @@ static void RemoveBreakpoint() {
     SendReply("OK");
 }
 
-void HandlePacket() {
+void HandlePacket(Core::System& system) {
     if (!IsConnected()) {
         if (defer_start) {
             ToggleServer(true);
         }
+        return;
+    }
+
+    if (HandlePendingHioRequestPacket()) {
+        // Don't do anything else while we wait for the client to respond
         return;
     }
 
@@ -1059,7 +1057,7 @@ void HandlePacket() {
         return;
     }
 
-    LOG_DEBUG(Debug_GDBStub, "Packet: {}", command_buffer);
+    LOG_DEBUG(Debug_GDBStub, "Packet: {0:d} ('{0:c}')", command_buffer[0]);
 
     switch (command_buffer[0]) {
     case 'q':
@@ -1072,9 +1070,14 @@ void HandlePacket() {
         SendSignal(current_thread, latest_signal);
         break;
     case 'k':
-        Shutdown();
         LOG_INFO(Debug_GDBStub, "killed by gdb");
+        ToggleServer(false);
+        // Continue execution so we don't hang forever after shutting down the server
+        Continue();
         return;
+    case 'F':
+        HandleHioReply(system, command_buffer, command_length);
+        break;
     case 'g':
         ReadRegisters();
         break;
@@ -1251,6 +1254,10 @@ bool GetCpuHaltFlag() {
     return halt_loop;
 }
 
+void SetCpuHaltFlag(bool halt) {
+    halt_loop = halt;
+}
+
 bool GetCpuStepFlag() {
     return step_loop;
 }
@@ -1265,6 +1272,7 @@ void SendTrap(Kernel::Thread* thread, int trap) {
     }
 
     current_thread = thread;
+
     SendSignal(thread, trap);
 
     halt_loop = true;

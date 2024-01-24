@@ -1,16 +1,22 @@
 # Build directory
-[Bb]uild/
+[Bb]uild*/
 doc-build/
+build-*/
 
 # Generated source files
+src/common/scm_rev.cpp
 .travis.descriptor.json
 
 # Project/editor files
 *.swp
+*.kdev4
 .idea/
 .vs/
 .vscode/
 .cache/
+.kdev4/
+cmake-build-debug/
+cmake-build-release/
 CMakeLists.txt.user*
 *.dll
 *.dll.manifest
@@ -44,6 +50,7 @@ Thumbs.db
 repo/
 
 # GitHub Actions generated files
+.ccache/
 node_modules/
 
 # RA artifacts
@@ -54,3 +61,5 @@ src/video_core/shaders/
 # Android
 obj/
 libs/
+
+VULKAN_SDK/

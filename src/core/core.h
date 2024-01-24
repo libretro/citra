@@ -4,25 +4,22 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <boost/serialization/version.hpp>
 #include "common/common_types.h"
-#include "core/custom_tex_cache.h"
-#include "core/frontend/applets/mii_selector.h"
-#include "core/frontend/applets/swkbd.h"
-#include "core/frontend/image_interface.h"
-#include "core/loader/loader.h"
-#include "core/memory.h"
+#include "core/arm/arm_interface.h"
+#include "core/movie.h"
 #include "core/perf_stats.h"
-#include "core/telemetry_session.h"
-
-class ARM_Interface;
 
 namespace Frontend {
 class EmuWindow;
-}
+class ImageInterface;
+class MiiSelector;
+class SoftwareKeyboard;
+} // namespace Frontend
 
 namespace Memory {
 class MemorySystem;
@@ -32,8 +29,8 @@ namespace AudioCore {
 class DspInterface;
 }
 
-namespace RPC {
-class RPCServer;
+namespace Core::RPC {
+class Server;
 }
 
 namespace Service {
@@ -47,7 +44,9 @@ class ArchiveManager;
 
 namespace Kernel {
 class KernelSystem;
-}
+struct New3dsHwCapabilities;
+enum class MemoryMode : u8;
+} // namespace Kernel
 
 namespace Cheats {
 class CheatEngine;
@@ -57,10 +56,20 @@ namespace VideoDumper {
 class Backend;
 }
 
+namespace VideoCore {
+class CustomTexManager;
 class RendererBase;
+} // namespace VideoCore
+
+namespace Loader {
+class AppLoader;
+}
 
 namespace Core {
 
+class ARM_Interface;
+class TelemetrySession;
+class ExclusiveMonitor;
 class Timing;
 
 class System {
@@ -81,19 +90,17 @@ public:
         ErrorSystemMode,            ///< Error determining the system mode
         ErrorLoader,                ///< Error loading the specified application
         ErrorLoader_ErrorEncrypted, ///< Error loading the specified application due to encryption
-        ErrorLoader_ErrorInvalidFormat,     ///< Error loading the specified application due to an
-                                            /// invalid format
-        ErrorSystemFiles,                   ///< Error in finding system files
-        ErrorVideoCore,                     ///< Error in the video core
-        ErrorVideoCore_ErrorGenericDrivers, ///< Error in the video core due to the user having
-                                            /// generic drivers installed
-        ErrorVideoCore_ErrorBelowGL33,      ///< Error in the video core due to the user not having
-                                            /// OpenGL 3.3 or higher
-        ErrorSavestate,                     ///< Error saving or loading
-        ShutdownRequested,                  ///< Emulated program requested a system shutdown
-        ErrorUnknown                        ///< Any other error
+        ErrorLoader_ErrorInvalidFormat, ///< Error loading the specified application due to an
+                                        /// invalid format
+        ErrorLoader_ErrorGbaTitle, ///< Error loading the specified application as it is GBA Virtual
+                                   ///< Console
+        ErrorSystemFiles,          ///< Error in finding system files
+        ErrorSavestate,            ///< Error saving or loading
+        ShutdownRequested,         ///< Emulated program requested a system shutdown
+        ErrorUnknown               ///< Any other error
     };
 
+    explicit System();
     ~System();
 
     /**
@@ -125,7 +132,8 @@ public:
     bool SendSignal(Signal signal, u32 param = 0);
 
     /// Request reset of the system
-    void RequestReset() {
+    void RequestReset(const std::string& chainload = "") {
+        m_chainloadpath = chainload;
         SendSignal(Signal::Reset);
     }
 
@@ -141,7 +149,8 @@ public:
      * @param filepath String path to the executable application to load on the host file system.
      * @returns ResultStatus code, indicating if the operation succeeded.
      */
-    [[nodiscard]] ResultStatus Load(Frontend::EmuWindow& emu_window, const std::string& filepath);
+    [[nodiscard]] ResultStatus Load(Frontend::EmuWindow& emu_window, const std::string& filepath,
+                                    Frontend::EmuWindow* secondary_window = {});
 
     /**
      * Indicates if the emulated system is powered on (all subsystems initialized and able to run an
@@ -149,10 +158,7 @@ public:
      * @returns True if the emulated system is powered on, otherwise false.
      */
     [[nodiscard]] bool IsPoweredOn() const {
-        return cpu_cores.size() > 0 &&
-               std::all_of(cpu_cores.begin(), cpu_cores.end(),
-                           [](std::shared_ptr<ARM_Interface> ptr) { return ptr != nullptr; });
-        ;
+        return is_powered_on;
     }
 
     /**
@@ -167,6 +173,8 @@ public:
     void PrepareReschedule();
 
     [[nodiscard]] PerfStats::Results GetAndResetPerfStats();
+
+    [[nodiscard]] PerfStats::Results GetLastPerfStats();
 
     /**
      * Gets a reference to the emulated CPU.
@@ -184,6 +192,10 @@ public:
      */
 
     [[nodiscard]] ARM_Interface& GetCore(u32 core_id) {
+        return *cpu_cores[core_id];
+    };
+
+    [[nodiscard]] const ARM_Interface& GetCore(u32 core_id) const {
         return *cpu_cores[core_id];
     };
 
@@ -205,7 +217,7 @@ public:
         return *dsp_core;
     }
 
-    [[nodiscard]] RendererBase& Renderer();
+    [[nodiscard]] VideoCore::RendererBase& Renderer();
 
     /**
      * Gets a reference to the service manager.
@@ -231,6 +243,9 @@ public:
     /// Gets a const reference to the kernel
     [[nodiscard]] const Kernel::KernelSystem& Kernel() const;
 
+    /// Get kernel is running
+    [[nodiscard]] bool KernelRunning();
+
     /// Gets a reference to the timing system
     [[nodiscard]] Timing& CoreTiming();
 
@@ -250,16 +265,24 @@ public:
     [[nodiscard]] const Cheats::CheatEngine& CheatEngine() const;
 
     /// Gets a reference to the custom texture cache system
-    [[nodiscard]] Core::CustomTexCache& CustomTexCache();
+    [[nodiscard]] VideoCore::CustomTexManager& CustomTexManager();
 
     /// Gets a const reference to the custom texture cache system
-    [[nodiscard]] const Core::CustomTexCache& CustomTexCache() const;
+    [[nodiscard]] const VideoCore::CustomTexManager& CustomTexManager() const;
 
-    /// Gets a reference to the video dumper backend
-    [[nodiscard]] VideoDumper::Backend& VideoDumper();
+    /// Gets a reference to the movie recorder
+    [[nodiscard]] Core::Movie& Movie();
 
-    /// Gets a const reference to the video dumper backend
-    [[nodiscard]] const VideoDumper::Backend& VideoDumper() const;
+    /// Gets a const reference to the movie recorder
+    [[nodiscard]] const Core::Movie& Movie() const;
+
+    /// Video Dumper interface
+
+    void RegisterVideoDumper(std::shared_ptr<VideoDumper::Backend> video_dumper);
+
+    [[nodiscard]] std::shared_ptr<VideoDumper::Backend> GetVideoDumper() const {
+        return video_dumper;
+    }
 
     std::unique_ptr<PerfStats> perf_stats;
     FrameLimiter frame_limiter;
@@ -301,15 +324,37 @@ public:
         return registered_image_interface;
     }
 
+    /// Function for checking OS microphone permissions.
+
+    void RegisterMicPermissionCheck(const std::function<bool()>& permission_func) {
+        mic_permission_func = permission_func;
+    }
+
+    [[nodiscard]] bool HasMicPermission() {
+        return !mic_permission_func || mic_permission_granted ||
+               (mic_permission_granted = mic_permission_func());
+    }
+
     void SaveState(u32 slot) const;
 
     void LoadState(u32 slot);
 
-#ifdef __LIBRETRO__
+#ifdef HAVE_LIBRETRO
     std::vector<u8> SaveStateBuffer() const;
 
     bool LoadStateBuffer(std::vector<u8> buffer);
 #endif
+    /// Self delete ncch
+    bool SetSelfDelete(const std::string& file) {
+        if (m_filepath == file) {
+            self_delete_pending = true;
+            return true;
+        }
+        return false;
+    }
+
+    /// Applies any changes to settings to this core instance.
+    void ApplySettings();
 
 private:
     /**
@@ -319,7 +364,10 @@ private:
      * @param system_mode The system mode.
      * @return ResultStatus code, indicating if the operation succeeded.
      */
-    [[nodiscard]] ResultStatus Init(Frontend::EmuWindow& emu_window, u32 system_mode, u8 n3ds_mode,
+    [[nodiscard]] ResultStatus Init(Frontend::EmuWindow& emu_window,
+                                    Frontend::EmuWindow* secondary_window,
+                                    Kernel::MemoryMode memory_mode,
+                                    const Kernel::New3dsHwCapabilities& n3ds_hw_caps,
                                     u32 num_cores);
 
     /// Reschedule the core emulation
@@ -348,21 +396,24 @@ private:
     std::shared_ptr<Frontend::MiiSelector> registered_mii_selector;
     std::shared_ptr<Frontend::SoftwareKeyboard> registered_swkbd;
 
+    /// Movie recorder
+    Core::Movie movie;
+
     /// Cheats manager
     std::unique_ptr<Cheats::CheatEngine> cheat_engine;
 
     /// Video dumper backend
-    std::unique_ptr<VideoDumper::Backend> video_dumper;
+    std::shared_ptr<VideoDumper::Backend> video_dumper;
 
     /// Custom texture cache system
-    std::unique_ptr<Core::CustomTexCache> custom_tex_cache;
+    std::unique_ptr<VideoCore::CustomTexManager> custom_tex_manager;
 
     /// Image interface
     std::shared_ptr<Frontend::ImageInterface> registered_image_interface;
 
+#ifdef ENABLE_SCRIPTING
     /// RPC Server for scripting support
-#ifdef HAVE_RPC
-    std::unique_ptr<RPC::RPCServer> rpc_server;
+    std::unique_ptr<RPC::Server> rpc_server;
 #endif
 
     std::unique_ptr<Service::FS::ArchiveManager> archive_manager;
@@ -371,21 +422,29 @@ private:
     std::unique_ptr<Kernel::KernelSystem> kernel;
     std::unique_ptr<Timing> timing;
 
+    std::unique_ptr<Core::ExclusiveMonitor> exclusive_monitor;
+
 private:
     static System s_instance;
 
-    bool initalized = false;
+    std::atomic_bool is_powered_on{};
 
     ResultStatus status = ResultStatus::Success;
     std::string status_details = "";
     /// Saved variables for reset
     Frontend::EmuWindow* m_emu_window;
+    Frontend::EmuWindow* m_secondary_window;
     std::string m_filepath;
+    std::string m_chainloadpath;
     u64 title_id;
+    bool self_delete_pending;
 
     std::mutex signal_mutex;
     Signal current_signal;
     u32 signal_param;
+
+    std::function<bool()> mic_permission_func;
+    bool mic_permission_granted = false;
 
     friend class boost::serialization::access;
     template <typename Archive>
@@ -402,10 +461,6 @@ private:
 
 [[nodiscard]] inline u32 GetNumCores() {
     return System::GetInstance().GetNumCores();
-}
-
-[[nodiscard]] inline AudioCore::DspInterface& DSP() {
-    return System::GetInstance().DSP();
 }
 
 } // namespace Core

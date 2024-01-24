@@ -13,23 +13,14 @@
 #include <thread>
 #include <vector>
 #include "common/common_types.h"
+#include "common/dynamic_library/ffmpeg.h"
 #include "common/thread.h"
 #include "common/threadsafe_queue.h"
 #include "core/dumping/backend.h"
 
-extern "C" {
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libavutil/opt.h>
-#include <libswresample/swresample.h>
-#include <libswscale/swscale.h>
-}
-
 namespace VideoDumper {
 
 using VariableAudioFrame = std::vector<s16>;
-
-void InitFFmpegLibraries();
 
 class FFmpegMuxer;
 
@@ -46,18 +37,24 @@ public:
 protected:
     ~FFmpegStream();
 
-    void WritePacket(AVPacket& packet);
+    void WritePacket(AVPacket* packet);
     void SendFrame(AVFrame* frame);
 
     struct AVCodecContextDeleter {
         void operator()(AVCodecContext* codec_context) const {
-            avcodec_free_context(&codec_context);
+            DynamicLibrary::FFmpeg::avcodec_free_context(&codec_context);
         }
     };
 
     struct AVFrameDeleter {
         void operator()(AVFrame* frame) const {
-            av_frame_free(&frame);
+            DynamicLibrary::FFmpeg::av_frame_free(&frame);
+        }
+    };
+
+    struct AVPacketDeleter {
+        void operator()(AVPacket* packet) const {
+            av_packet_free(&packet);
         }
     };
 
@@ -69,7 +66,7 @@ protected:
 
 /**
  * A FFmpegStream used for video data.
- * Rescales, encodes and writes a frame.
+ * Filters (scales), encodes and writes a frame.
  */
 class FFmpegVideoStream : public FFmpegStream {
 public:
@@ -80,21 +77,39 @@ public:
     void ProcessFrame(VideoFrame& frame);
 
 private:
-    struct SwsContextDeleter {
-        void operator()(SwsContext* sws_context) const {
-            sws_freeContext(sws_context);
-        }
-    };
+    bool InitHWContext(const AVCodec* codec);
+    bool InitFilters();
 
     u64 frame_count{};
 
     std::unique_ptr<AVFrame, AVFrameDeleter> current_frame{};
-    std::unique_ptr<AVFrame, AVFrameDeleter> scaled_frame{};
-    std::unique_ptr<SwsContext, SwsContextDeleter> sws_context{};
+    std::unique_ptr<AVFrame, AVFrameDeleter> filtered_frame{};
+    std::unique_ptr<AVFrame, AVFrameDeleter> hw_frame{};
     Layout::FramebufferLayout layout;
 
-    /// The pixel format the frames are stored in
+    /// The pixel format the input frames are stored in
     static constexpr AVPixelFormat pixel_format = AVPixelFormat::AV_PIX_FMT_BGRA;
+
+    // Software pixel format. For normal encoders, this is the format they accept. For HW-acceled
+    // encoders, this is the format the HW frames context accepts.
+    AVPixelFormat sw_pixel_format = AV_PIX_FMT_NONE;
+
+    /// Whether the encoder we are using requires HW frames to be supplied.
+    bool requires_hw_frames = false;
+
+    // Filter related
+    struct AVFilterGraphDeleter {
+        void operator()(AVFilterGraph* filter_graph) const {
+            DynamicLibrary::FFmpeg::avfilter_graph_free(&filter_graph);
+        }
+    };
+    std::unique_ptr<AVFilterGraph, AVFilterGraphDeleter> filter_graph{};
+    // These don't need to be freed apparently
+    AVFilterContext* source_context;
+    AVFilterContext* sink_context;
+
+    /// The filter graph to use. This graph means 'change FPS to 60, convert format if needed'
+    static constexpr std::string_view filter_graph_desc = "fps=60";
 };
 
 /**
@@ -114,18 +129,18 @@ public:
 private:
     struct SwrContextDeleter {
         void operator()(SwrContext* swr_context) const {
-            swr_free(&swr_context);
+            DynamicLibrary::FFmpeg::swr_free(&swr_context);
         }
     };
 
-    u64 frame_size{};
+    int frame_size{};
     u64 frame_count{};
 
     std::unique_ptr<AVFrame, AVFrameDeleter> audio_frame{};
     std::unique_ptr<SwrContext, SwrContextDeleter> swr_context{};
 
     u8** resampled_data{};
-    u64 offset{}; // Number of output samples that are currently in resampled_data.
+    int offset{}; // Number of output samples that are currently in resampled_data.
 };
 
 /**
@@ -147,8 +162,8 @@ public:
 private:
     struct AVFormatContextDeleter {
         void operator()(AVFormatContext* format_context) const {
-            avio_closep(&format_context->pb);
-            avformat_free_context(format_context);
+            DynamicLibrary::FFmpeg::avio_closep(&format_context->pb);
+            DynamicLibrary::FFmpeg::avformat_free_context(format_context);
         }
     };
 
@@ -235,5 +250,7 @@ std::vector<EncoderInfo> ListEncoders(AVMediaType type);
 std::vector<OptionInfo> GetEncoderGenericOptions();
 std::vector<FormatInfo> ListFormats();
 std::vector<OptionInfo> GetFormatGenericOptions();
+std::vector<std::string> GetPixelFormats();
+std::vector<std::string> GetSampleFormats();
 
 } // namespace VideoDumper

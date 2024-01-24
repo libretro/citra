@@ -5,23 +5,22 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <vector>
-#include "core/frontend/mic.h"
+#include "audio_core/input.h"
 
 namespace AudioCore {
 
-class CubebInput final : public Frontend::Mic::Interface {
+class CubebInput final : public Input {
 public:
     explicit CubebInput(std::string device_id);
     ~CubebInput() override;
 
-    void StartSampling(const Frontend::Mic::Parameters& params) override;
-
+    void StartSampling(const InputParameters& params) override;
     void StopSampling() override;
-
+    bool IsSampling() override;
     void AdjustSampleRate(u32 sample_rate) override;
-
-    Frontend::Mic::Samples Read() override;
+    Samples Read() override;
 
 private:
     struct Impl;
@@ -30,12 +29,5 @@ private:
 };
 
 std::vector<std::string> ListCubebInputDevices();
-
-class CubebFactory final : public Frontend::Mic::RealMicFactory {
-public:
-    ~CubebFactory() override;
-
-    std::unique_ptr<Frontend::Mic::Interface> Create(std::string mic_device_name) override;
-};
 
 } // namespace AudioCore

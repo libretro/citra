@@ -2,6 +2,9 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include "common/arch.h"
+#if CITRA_ARCH(x86_64)
+
 #include <cstring>
 #include "common/common_types.h"
 #include "common/x64/cpu_detect.h"
@@ -53,7 +56,7 @@ static CPUCaps Detect() {
     // Citra at all anyway
 
     int cpu_id[4];
-    memset(caps.brand_string, 0, sizeof(caps.brand_string));
+    std::memset(caps.brand_string, 0, sizeof(caps.brand_string));
 
     // Detect CPU's CPUID capabilities and grab CPU string
     __cpuid(cpu_id, 0x00000000);
@@ -144,3 +147,5 @@ const CPUCaps& GetCPUCaps() {
 }
 
 } // namespace Common
+
+#endif // CITRA_ARCH(x86_64)

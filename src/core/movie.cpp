@@ -10,12 +10,11 @@
 #include <boost/optional.hpp>
 #include <cryptopp/hex.h>
 #include <cryptopp/osrng.h>
+#include "common/archives.h"
 #include "common/bit_field.h"
-#include "common/common_types.h"
 #include "common/file_util.h"
 #include "common/logging/log.h"
 #include "common/scm_rev.h"
-#include "common/string_util.h"
 #include "common/swap.h"
 #include "common/timer.h"
 #include "core/core.h"
@@ -23,11 +22,10 @@
 #include "core/hle/service/ir/extra_hid.h"
 #include "core/hle/service/ir/ir_rst.h"
 #include "core/hw/gpu.h"
+#include "core/loader/loader.h"
 #include "core/movie.h"
 
 namespace Core {
-
-/*static*/ Movie Movie::s_instance;
 
 enum class ControllerStateType : u8 {
     PadAndCircle,
@@ -45,7 +43,7 @@ struct ControllerState {
     union {
         struct {
             union {
-                u16_le hex;
+                u16_le hex = 0;
 
                 BitField<0, 1, u16> a;
                 BitField<1, 1, u16> b;
@@ -96,7 +94,7 @@ struct ControllerState {
 
         struct {
             union {
-                u32_le hex;
+                u32_le hex = 0;
 
                 BitField<0, 5, u32> battery_level;
                 BitField<5, 1, u32> zl_not_held;
@@ -129,14 +127,14 @@ struct CTMHeader {
 static_assert(sizeof(CTMHeader) == 256, "CTMHeader should be 256 bytes");
 #pragma pack(pop)
 
-static u64 GetInputCount(const std::vector<u8>& input) {
+static u64 GetInputCount(std::span<const u8> input) {
     u64 input_count = 0;
     for (std::size_t pos = 0; pos < input.size(); pos += sizeof(ControllerState)) {
         if (input.size() < pos + sizeof(ControllerState)) {
             break;
         }
 
-        ControllerState state;
+        ControllerState state{};
         std::memcpy(&state, input.data() + pos, sizeof(ControllerState));
         if (state.type == ControllerStateType::PadAndCircle) {
             input_count++;
@@ -145,43 +143,40 @@ static u64 GetInputCount(const std::vector<u8>& input) {
     return input_count;
 }
 
+Movie::Movie(const Core::System& system_) : system{system_} {}
+
+Movie::~Movie() = default;
+
 template <class Archive>
 void Movie::serialize(Archive& ar, const unsigned int file_version) {
     // Only serialize what's needed to make savestates useful for TAS:
     u64 _current_byte = static_cast<u64>(current_byte);
     ar& _current_byte;
     current_byte = static_cast<std::size_t>(_current_byte);
-
-    if (file_version > 0) {
-        ar& current_input;
-    }
+    ar& current_input;
 
     std::vector<u8> recorded_input_ = recorded_input;
     ar& recorded_input_;
 
     ar& init_time;
 
-    if (file_version > 0) {
-        if (Archive::is_loading::value) {
-            u64 savestate_movie_id;
-            ar& savestate_movie_id;
-            if (id != savestate_movie_id) {
-                if (savestate_movie_id == 0) {
-                    throw std::runtime_error("You must close your movie to load this state");
-                } else {
-                    throw std::runtime_error("You must load the same movie to load this state");
-                }
+    if (Archive::is_loading::value) {
+        u64 savestate_movie_id;
+        ar& savestate_movie_id;
+        if (id != savestate_movie_id) {
+            if (savestate_movie_id == 0) {
+                throw std::runtime_error("You must close your movie to load this state");
+            } else {
+                throw std::runtime_error("You must load the same movie to load this state");
             }
-        } else {
-            ar& id;
         }
+    } else {
+        ar& id;
     }
 
     // Whether the state was made in MovieFinished state
     bool post_movie = play_mode == PlayMode::MovieFinished;
-    if (file_version > 0) {
-        ar& post_movie;
-    }
+    ar& post_movie;
 
     if (Archive::is_loading::value && id != 0) {
         if (!read_only) {
@@ -223,10 +218,10 @@ Movie::PlayMode Movie::GetPlayMode() const {
 }
 
 u64 Movie::GetCurrentInputIndex() const {
-    return nearbyint(current_input / 234.0 * GPU::SCREEN_REFRESH_RATE);
+    return static_cast<u64>(std::nearbyint(current_input / 234.0 * GPU::SCREEN_REFRESH_RATE));
 }
 u64 Movie::GetTotalInputCount() const {
-    return nearbyint(total_input / 234.0 * GPU::SCREEN_REFRESH_RATE);
+    return static_cast<u64>(std::nearbyint(total_input / 234.0 * GPU::SCREEN_REFRESH_RATE));
 }
 
 void Movie::CheckInputEnd() {
@@ -238,7 +233,7 @@ void Movie::CheckInputEnd() {
 }
 
 void Movie::Play(Service::HID::PadState& pad_state, s16& circle_pad_x, s16& circle_pad_y) {
-    ControllerState s;
+    ControllerState s{};
     std::memcpy(&s, &recorded_input[current_byte], sizeof(ControllerState));
     current_byte += sizeof(ControllerState);
     current_input++;
@@ -270,7 +265,7 @@ void Movie::Play(Service::HID::PadState& pad_state, s16& circle_pad_x, s16& circ
 }
 
 void Movie::Play(Service::HID::TouchDataEntry& touch_data) {
-    ControllerState s;
+    ControllerState s{};
     std::memcpy(&s, &recorded_input[current_byte], sizeof(ControllerState));
     current_byte += sizeof(ControllerState);
 
@@ -287,7 +282,7 @@ void Movie::Play(Service::HID::TouchDataEntry& touch_data) {
 }
 
 void Movie::Play(Service::HID::AccelerometerDataEntry& accelerometer_data) {
-    ControllerState s;
+    ControllerState s{};
     std::memcpy(&s, &recorded_input[current_byte], sizeof(ControllerState));
     current_byte += sizeof(ControllerState);
 
@@ -304,7 +299,7 @@ void Movie::Play(Service::HID::AccelerometerDataEntry& accelerometer_data) {
 }
 
 void Movie::Play(Service::HID::GyroscopeDataEntry& gyroscope_data) {
-    ControllerState s;
+    ControllerState s{};
     std::memcpy(&s, &recorded_input[current_byte], sizeof(ControllerState));
     current_byte += sizeof(ControllerState);
 
@@ -321,7 +316,7 @@ void Movie::Play(Service::HID::GyroscopeDataEntry& gyroscope_data) {
 }
 
 void Movie::Play(Service::IR::PadState& pad_state, s16& c_stick_x, s16& c_stick_y) {
-    ControllerState s;
+    ControllerState s{};
     std::memcpy(&s, &recorded_input[current_byte], sizeof(ControllerState));
     current_byte += sizeof(ControllerState);
 
@@ -339,7 +334,7 @@ void Movie::Play(Service::IR::PadState& pad_state, s16& c_stick_x, s16& c_stick_
 }
 
 void Movie::Play(Service::IR::ExtraHIDResponse& extra_hid_response) {
-    ControllerState s;
+    ControllerState s{};
     std::memcpy(&s, &recorded_input[current_byte], sizeof(ControllerState));
     current_byte += sizeof(ControllerState);
 
@@ -371,7 +366,7 @@ void Movie::Record(const Service::HID::PadState& pad_state, const s16& circle_pa
                    const s16& circle_pad_y) {
     current_input++;
 
-    ControllerState s;
+    ControllerState s{};
     s.type = ControllerStateType::PadAndCircle;
 
     s.pad_and_circle.a.Assign(static_cast<u16>(pad_state.a));
@@ -396,7 +391,7 @@ void Movie::Record(const Service::HID::PadState& pad_state, const s16& circle_pa
 }
 
 void Movie::Record(const Service::HID::TouchDataEntry& touch_data) {
-    ControllerState s;
+    ControllerState s{};
     s.type = ControllerStateType::Touch;
 
     s.touch.x = touch_data.x;
@@ -407,7 +402,7 @@ void Movie::Record(const Service::HID::TouchDataEntry& touch_data) {
 }
 
 void Movie::Record(const Service::HID::AccelerometerDataEntry& accelerometer_data) {
-    ControllerState s;
+    ControllerState s{};
     s.type = ControllerStateType::Accelerometer;
 
     s.accelerometer.x = accelerometer_data.x;
@@ -418,7 +413,7 @@ void Movie::Record(const Service::HID::AccelerometerDataEntry& accelerometer_dat
 }
 
 void Movie::Record(const Service::HID::GyroscopeDataEntry& gyroscope_data) {
-    ControllerState s;
+    ControllerState s{};
     s.type = ControllerStateType::Gyroscope;
 
     s.gyroscope.x = gyroscope_data.x;
@@ -430,7 +425,7 @@ void Movie::Record(const Service::HID::GyroscopeDataEntry& gyroscope_data) {
 
 void Movie::Record(const Service::IR::PadState& pad_state, const s16& c_stick_x,
                    const s16& c_stick_y) {
-    ControllerState s;
+    ControllerState s{};
     s.type = ControllerStateType::IrRst;
 
     s.ir_rst.x = c_stick_x;
@@ -442,7 +437,7 @@ void Movie::Record(const Service::IR::PadState& pad_state, const s16& c_stick_x,
 }
 
 void Movie::Record(const Service::IR::ExtraHIDResponse& extra_hid_response) {
-    ControllerState s;
+    ControllerState s{};
     s.type = ControllerStateType::ExtraHidResponse;
 
     s.extra_hid_response.battery_level.Assign(extra_hid_response.buttons.battery_level);
@@ -475,8 +470,7 @@ Movie::ValidationResult Movie::ValidateHeader(const CTMHeader& header) const {
     return ValidationResult::OK;
 }
 
-Movie::ValidationResult Movie::ValidateInput(const std::vector<u8>& input,
-                                             u64 expected_count) const {
+Movie::ValidationResult Movie::ValidateInput(std::span<const u8> input, u64 expected_count) const {
     return GetInputCount(input) == expected_count ? ValidationResult::OK
                                                   : ValidationResult::InputCountDismatch;
 }
@@ -565,7 +559,7 @@ void Movie::StartRecording(const std::string& movie_file, const std::string& aut
 
     // Get program ID
     program_id = 0;
-    Core::System::GetInstance().GetAppLoader().ReadProgramId(program_id);
+    system.GetAppLoader().ReadProgramId(program_id);
 
     LOG_INFO(Movie, "Enabling Movie recording, ID: {:016X}", id);
 }
@@ -601,9 +595,17 @@ void Movie::PrepareForPlayback(const std::string& movie_file) {
 }
 
 void Movie::PrepareForRecording() {
-    init_time = (Settings::values.init_clock == Settings::InitClock::SystemTime
-                     ? Common::Timer::GetTimeSinceJan1970().count()
-                     : Settings::values.init_time);
+    if (Settings::values.init_clock.GetValue() == Settings::InitClock::SystemTime) {
+        long long init_time_offset = Settings::values.init_time_offset.GetValue();
+        long long days_offset = init_time_offset / 86400;
+        unsigned long long seconds_offset =
+            std::abs(init_time_offset) - std::abs(days_offset * 86400);
+
+        init_time =
+            Common::Timer::GetTimeSinceJan1970().count() + seconds_offset + (days_offset * 86400);
+    } else {
+        init_time = Settings::values.init_time.GetValue();
+    }
 }
 
 Movie::ValidationResult Movie::ValidateMovie(const std::string& movie_file) const {

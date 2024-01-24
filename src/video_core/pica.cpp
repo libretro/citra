@@ -32,16 +32,15 @@ void Shutdown() {
 
 template <typename T>
 void Zero(T& o) {
-    static_assert(std::is_trivially_copyable_v<T>,
-                  "It's undefined behavior to memset a non-trivially copyable type");
-    memset(&o, 0, sizeof(o));
+    static_assert(std::is_trivial_v<T>, "It's undefined behavior to memset a non-trivial type");
+    std::memset(&o, 0, sizeof(o));
 }
 
 State::State() : geometry_pipeline(*this) {
     auto SubmitVertex = [this](const Shader::AttributeBuffer& vertex) {
         using Pica::Shader::OutputVertex;
-        auto AddTriangle = [this](const OutputVertex& v0, const OutputVertex& v1,
-                                  const OutputVertex& v2) {
+        auto AddTriangle = [](const OutputVertex& v0, const OutputVertex& v1,
+                              const OutputVertex& v2) {
             VideoCore::g_renderer->Rasterizer()->AddTriangle(v0, v1, v2);
         };
         primitive_assembler.SubmitVertex(
@@ -56,10 +55,10 @@ State::State() : geometry_pipeline(*this) {
 
 void State::Reset() {
     Zero(regs);
-    Zero(vs);
-    Zero(gs);
+    vs = {};
+    gs = {};
     Zero(cmd_list);
-    Zero(immediate);
+    immediate = {};
     primitive_assembler.Reconfigure(PipelineRegs::TriangleTopology::List);
     vs_float_regs_counter = 0;
     vs_uniform_write_buffer.fill(0);

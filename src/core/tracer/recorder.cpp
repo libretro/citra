@@ -180,7 +180,7 @@ void Recorder::MemoryAccessed(const u8* data, u32 size, u32 physical_address) {
     element.uses_existing_data = (memory_regions.find(element.hash) != memory_regions.end());
     if (!element.uses_existing_data) {
         element.extra_data.resize(size);
-        memcpy(element.extra_data.data(), data, size);
+        std::memcpy(element.extra_data.data(), data, size);
         memory_regions.insert({element.hash, 0}); // file offset will be initialized in Finish()
     }
 
@@ -190,11 +190,10 @@ void Recorder::MemoryAccessed(const u8* data, u32 size, u32 physical_address) {
 template <typename T>
 void Recorder::RegisterWritten(u32 physical_address, T value) {
     StreamElement element = {{RegisterWrite}};
-    element.data.register_write.size =
-        (sizeof(T) == 1) ? CTRegisterWrite::SIZE_8
-                         : (sizeof(T) == 2) ? CTRegisterWrite::SIZE_16
-                                            : (sizeof(T) == 4) ? CTRegisterWrite::SIZE_32
-                                                               : CTRegisterWrite::SIZE_64;
+    element.data.register_write.size = (sizeof(T) == 1)   ? CTRegisterWrite::SIZE_8
+                                       : (sizeof(T) == 2) ? CTRegisterWrite::SIZE_16
+                                       : (sizeof(T) == 4) ? CTRegisterWrite::SIZE_32
+                                                          : CTRegisterWrite::SIZE_64;
     element.data.register_write.physical_address = physical_address;
     element.data.register_write.value = value;
 

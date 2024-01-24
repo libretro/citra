@@ -50,19 +50,19 @@ inline void Read(T& var, const u32 raw_addr) {
 static Common::Vec4<u8> DecodePixel(Regs::PixelFormat input_format, const u8* src_pixel) {
     switch (input_format) {
     case Regs::PixelFormat::RGBA8:
-        return Color::DecodeRGBA8(src_pixel);
+        return Common::Color::DecodeRGBA8(src_pixel);
 
     case Regs::PixelFormat::RGB8:
-        return Color::DecodeRGB8(src_pixel);
+        return Common::Color::DecodeRGB8(src_pixel);
 
     case Regs::PixelFormat::RGB565:
-        return Color::DecodeRGB565(src_pixel);
+        return Common::Color::DecodeRGB565(src_pixel);
 
     case Regs::PixelFormat::RGB5A1:
-        return Color::DecodeRGB5A1(src_pixel);
+        return Common::Color::DecodeRGB5A1(src_pixel);
 
     case Regs::PixelFormat::RGBA4:
-        return Color::DecodeRGBA4(src_pixel);
+        return Common::Color::DecodeRGBA4(src_pixel);
 
     default:
         LOG_ERROR(HW_GPU, "Unknown source framebuffer format {:x}", input_format);
@@ -116,19 +116,19 @@ static void MemoryFill(const Regs::MemoryFillConfig& config) {
             u32 value = config.value_32bit;
             std::size_t len = (end - start) / sizeof(u32);
             for (std::size_t i = 0; i < len; ++i)
-                memcpy(&start[i * sizeof(u32)], &value, sizeof(u32));
+                std::memcpy(&start[i * sizeof(u32)], &value, sizeof(u32));
         }
     } else {
         // fill with 16-bit values
         u16 value_16bit = config.value_16bit.Value();
         for (u8* ptr = start; ptr < end; ptr += sizeof(u16))
-            memcpy(ptr, &value_16bit, sizeof(u16));
+            std::memcpy(ptr, &value_16bit, sizeof(u16));
     }
 }
 
 static void DisplayTransfer(const Regs::DisplayTransferConfig& config) {
     const PAddr src_addr = config.GetPhysicalInputAddress();
-    const PAddr dst_addr = config.GetPhysicalOutputAddress();
+    PAddr dst_addr = config.GetPhysicalOutputAddress();
 
     // TODO: do hwtest with these cases
     if (!g_memory->IsValidPhysicalAddress(src_addr)) {
@@ -163,6 +163,14 @@ static void DisplayTransfer(const Regs::DisplayTransferConfig& config) {
 
     if (VideoCore::g_renderer->Rasterizer()->AccelerateDisplayTransfer(config))
         return;
+
+    // Using flip_vertically alongside crop_input_lines produces skewed output on hardware.
+    // We have to emulate this because some games rely on this behaviour to render correctly.
+    if (config.flip_vertically && config.crop_input_lines &&
+        config.input_width > config.output_width) {
+        dst_addr += (config.input_width - config.output_width) * (config.output_height - 1) *
+                    GPU::Regs::BytesPerPixel(config.output_format);
+    }
 
     u8* src_pointer = g_memory->GetPhysicalPointer(src_addr);
     u8* dst_pointer = g_memory->GetPhysicalPointer(dst_addr);
@@ -274,23 +282,23 @@ static void DisplayTransfer(const Regs::DisplayTransferConfig& config) {
             u8* dst_pixel = dst_pointer + dst_offset;
             switch (config.output_format) {
             case Regs::PixelFormat::RGBA8:
-                Color::EncodeRGBA8(src_color, dst_pixel);
+                Common::Color::EncodeRGBA8(src_color, dst_pixel);
                 break;
 
             case Regs::PixelFormat::RGB8:
-                Color::EncodeRGB8(src_color, dst_pixel);
+                Common::Color::EncodeRGB8(src_color, dst_pixel);
                 break;
 
             case Regs::PixelFormat::RGB565:
-                Color::EncodeRGB565(src_color, dst_pixel);
+                Common::Color::EncodeRGB565(src_color, dst_pixel);
                 break;
 
             case Regs::PixelFormat::RGB5A1:
-                Color::EncodeRGB5A1(src_color, dst_pixel);
+                Common::Color::EncodeRGB5A1(src_color, dst_pixel);
                 break;
 
             case Regs::PixelFormat::RGBA4:
-                Color::EncodeRGBA4(src_color, dst_pixel);
+                Common::Color::EncodeRGBA4(src_color, dst_pixel);
                 break;
 
             default:
@@ -503,7 +511,7 @@ template void Write<u16>(u32 addr, const u16 data);
 template void Write<u8>(u32 addr, const u8 data);
 
 /// Update hardware
-static void VBlankCallback(u64 userdata, s64 cycles_late) {
+static void VBlankCallback(std::uintptr_t user_data, s64 cycles_late) {
     VideoCore::g_renderer->SwapBuffers();
 
     // Signal to GSP that GPU interrupt has occurred
@@ -521,7 +529,7 @@ static void VBlankCallback(u64 userdata, s64 cycles_late) {
 /// Initialize hardware
 void Init(Memory::MemorySystem& memory) {
     g_memory = &memory;
-    memset(&g_regs, 0, sizeof(g_regs));
+    std::memset(&g_regs, 0, sizeof(g_regs));
 
     auto& framebuffer_top = g_regs.framebuffer_config[0];
     auto& framebuffer_sub = g_regs.framebuffer_config[1];

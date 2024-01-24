@@ -2,7 +2,9 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <QActionGroup>
 #include <QApplication>
+#include <QDir>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
 #include <QHBoxLayout>
@@ -14,6 +16,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QModelIndex>
 #include <QStandardItem>
 #include <QStandardItemModel>
@@ -28,9 +31,12 @@
 #include "citra_qt/main.h"
 #include "citra_qt/uisettings.h"
 #include "common/logging/log.h"
+#include "common/settings.h"
 #include "core/file_sys/archive_extsavedata.h"
 #include "core/file_sys/archive_source_sd_savedata.h"
+#include "core/hle/service/am/am.h"
 #include "core/hle/service/fs/archive.h"
+#include "qcursor.h"
 
 GameListSearchField::KeyReleaseEater::KeyReleaseEater(GameList* gamelist, QObject* parent)
     : QObject(parent), gamelist{gamelist} {}
@@ -136,10 +142,8 @@ GameListSearchField::GameListSearchField(GameList* parent) : QWidget{parent} {
     layout_filter = new QHBoxLayout;
     layout_filter->setContentsMargins(8, 8, 8, 8);
     label_filter = new QLabel;
-    label_filter->setText(tr("Filter:"));
     edit_filter = new QLineEdit;
     edit_filter->clear();
-    edit_filter->setPlaceholderText(tr("Enter pattern to filter"));
     edit_filter->installEventFilter(key_release_eater);
     edit_filter->setClearButtonEnabled(true);
     connect(edit_filter, &QLineEdit::textChanged, parent, &GameList::OnTextChanged);
@@ -159,6 +163,7 @@ GameListSearchField::GameListSearchField(GameList* parent) : QWidget{parent} {
     layout_filter->addWidget(label_filter_result);
     layout_filter->addWidget(button_filter_close);
     setLayout(layout_filter);
+    RetranslateUI();
 }
 
 /**
@@ -170,8 +175,7 @@ GameListSearchField::GameListSearchField(GameList* parent) : QWidget{parent} {
  * @return true if the haystack contains all words of userinput
  */
 static bool ContainsAllWords(const QString& haystack, const QString& userinput) {
-    const QStringList userinput_split =
-        userinput.split(QLatin1Char{' '}, QString::SplitBehavior::SkipEmptyParts);
+    const QStringList userinput_split = userinput.split(QLatin1Char{' '}, Qt::SkipEmptyParts);
 
     return std::all_of(userinput_split.begin(), userinput_split.end(),
                        [&haystack](const QString& s) { return haystack.contains(s); });
@@ -237,7 +241,8 @@ void GameList::OnTextChanged(const QString& new_text) {
                     file_path.mid(file_path.lastIndexOf(QLatin1Char{'/'}) + 1) + QLatin1Char{' '} +
                     file_title;
                 if (ContainsAllWords(file_name, edit_filter_text) ||
-                    (file_program_id.count() == 16 && edit_filter_text.contains(file_program_id))) {
+                    (file_program_id.length() == 16 &&
+                     edit_filter_text.contains(file_program_id))) {
                     tree_view->setRowHidden(j, folder_index, false);
                     ++result_count;
                 } else {
@@ -253,13 +258,15 @@ void GameList::OnUpdateThemedIcons() {
     for (int i = 0; i < item_model->invisibleRootItem()->rowCount(); i++) {
         QStandardItem* child = item_model->invisibleRootItem()->child(i);
 
+        const int icon_size = IconSizes.at(UISettings::values.game_list_icon_size.GetValue());
         switch (child->data(GameListItem::TypeRole).value<GameListItemType>()) {
         case GameListItemType::InstalledDir:
-            child->setData(QIcon::fromTheme(QStringLiteral("sd_card")).pixmap(48),
+            child->setData(QIcon::fromTheme(QStringLiteral("sd_card")).pixmap(icon_size),
                            Qt::DecorationRole);
             break;
         case GameListItemType::SystemDir:
-            child->setData(QIcon::fromTheme(QStringLiteral("chip")).pixmap(48), Qt::DecorationRole);
+            child->setData(QIcon::fromTheme(QStringLiteral("chip")).pixmap(icon_size),
+                           Qt::DecorationRole);
             break;
         case GameListItemType::CustomDir: {
             const UISettings::GameDir& game_dir =
@@ -267,11 +274,12 @@ void GameList::OnUpdateThemedIcons() {
             const QString icon_name = QFileInfo::exists(game_dir.path)
                                           ? QStringLiteral("folder")
                                           : QStringLiteral("bad_folder");
-            child->setData(QIcon::fromTheme(icon_name).pixmap(48), Qt::DecorationRole);
+            child->setData(QIcon::fromTheme(icon_name).pixmap(icon_size), Qt::DecorationRole);
             break;
         }
         case GameListItemType::AddDir:
-            child->setData(QIcon::fromTheme(QStringLiteral("plus")).pixmap(48), Qt::DecorationRole);
+            child->setData(QIcon::fromTheme(QStringLiteral("plus")).pixmap(icon_size),
+                           Qt::DecorationRole);
             break;
         default:
             break;
@@ -304,13 +312,12 @@ GameList::GameList(GMainWindow* parent) : QWidget{parent} {
     tree_view->setEditTriggers(QHeaderView::NoEditTriggers);
     tree_view->setContextMenuPolicy(Qt::CustomContextMenu);
     tree_view->setStyleSheet(QStringLiteral("QTreeView{ border: none; }"));
+    tree_view->header()->setContextMenuPolicy(Qt::CustomContextMenu);
+
+    UpdateColumnVisibility();
 
     item_model->insertColumns(0, COLUMN_COUNT);
-    item_model->setHeaderData(COLUMN_NAME, Qt::Horizontal, tr("Name"));
-    item_model->setHeaderData(COLUMN_COMPATIBILITY, Qt::Horizontal, tr("Compatibility"));
-    item_model->setHeaderData(COLUMN_REGION, Qt::Horizontal, tr("Region"));
-    item_model->setHeaderData(COLUMN_FILE_TYPE, Qt::Horizontal, tr("File type"));
-    item_model->setHeaderData(COLUMN_SIZE, Qt::Horizontal, tr("Size"));
+    RetranslateUI();
     item_model->setSortRole(GameListItemPath::SortRole);
 
     connect(main_window, &GMainWindow::UpdateThemedIcons, this, &GameList::OnUpdateThemedIcons);
@@ -318,6 +325,8 @@ GameList::GameList(GMainWindow* parent) : QWidget{parent} {
     connect(tree_view, &QTreeView::customContextMenuRequested, this, &GameList::PopupContextMenu);
     connect(tree_view, &QTreeView::expanded, this, &GameList::OnItemExpanded);
     connect(tree_view, &QTreeView::collapsed, this, &GameList::OnItemExpanded);
+    connect(tree_view->header(), &QHeaderView::customContextMenuRequested, this,
+            &GameList::PopupHeaderContextMenu);
 
     // We must register all custom types with the Qt Automoc system so that we are able to use
     // it with signals/slots. In this case, QList falls under the umbrells of custom types.
@@ -421,10 +430,10 @@ void GameList::DonePopulating(const QStringList& watch_list) {
     // Workaround: Add the watch paths in chunks to allow the gui to refresh
     // This prevents the UI from stalling when a large number of watch paths are added
     // Also artificially caps the watcher to a certain number of directories
-    constexpr int LIMIT_WATCH_DIRECTORIES = 5000;
+    constexpr qsizetype LIMIT_WATCH_DIRECTORIES = 5000;
     constexpr int SLICE_SIZE = 25;
-    int len = std::min(watch_list.length(), LIMIT_WATCH_DIRECTORIES);
-    for (int i = 0; i < len; i += SLICE_SIZE) {
+    const qsizetype len = std::min(watch_list.length(), LIMIT_WATCH_DIRECTORIES);
+    for (qsizetype i = 0; i < len; i += SLICE_SIZE) {
         watcher->addPaths(watch_list.mid(i, i + SLICE_SIZE));
         QCoreApplication::processEvents();
     }
@@ -454,8 +463,11 @@ void GameList::PopupContextMenu(const QPoint& menu_location) {
     switch (selected.data(GameListItem::TypeRole).value<GameListItemType>()) {
     case GameListItemType::Game:
         AddGamePopup(context_menu, selected.data(GameListItemPath::FullPathRole).toString(),
+                     selected.data(GameListItemPath::TitleRole).toString(),
                      selected.data(GameListItemPath::ProgramIdRole).toULongLong(),
-                     selected.data(GameListItemPath::ExtdataIdRole).toULongLong());
+                     selected.data(GameListItemPath::ExtdataIdRole).toULongLong(),
+                     static_cast<Service::FS::MediaType>(
+                         selected.data(GameListItemPath::MediaTypeRole).toUInt()));
         break;
     case GameListItemType::CustomDir:
         AddPermDirPopup(context_menu, selected);
@@ -468,93 +480,255 @@ void GameList::PopupContextMenu(const QPoint& menu_location) {
     default:
         break;
     }
+
     context_menu.exec(tree_view->viewport()->mapToGlobal(menu_location));
 }
 
-void GameList::AddGamePopup(QMenu& context_menu, const QString& path, u64 program_id,
-                            u64 extdata_id) {
+void GameList::PopupHeaderContextMenu(const QPoint& menu_location) {
+    const QModelIndex item = tree_view->indexAt(menu_location);
+    if (!item.isValid()) {
+        return;
+    }
+
+    QMenu context_menu;
+    static const QMap<QString, Settings::Setting<bool>*> columns{
+        {tr("Compatibility"), &UISettings::values.show_compat_column},
+        {tr("Region"), &UISettings::values.show_region_column},
+        {tr("File type"), &UISettings::values.show_type_column},
+        {tr("Size"), &UISettings::values.show_size_column}};
+
+    QActionGroup* column_group = new QActionGroup(this);
+    column_group->setExclusive(false);
+    for (const auto& key : columns.keys()) {
+        QAction* action = column_group->addAction(context_menu.addAction(key));
+        action->setCheckable(true);
+        action->setChecked(columns[key]->GetValue());
+        connect(action, &QAction::toggled, [this, key](bool value) {
+            *columns[key] = !columns[key]->GetValue();
+            UpdateColumnVisibility();
+        });
+    }
+
+    context_menu.exec(tree_view->viewport()->mapToGlobal(menu_location));
+}
+
+void GameList::UpdateColumnVisibility() {
+    tree_view->setColumnHidden(COLUMN_COMPATIBILITY, !UISettings::values.show_compat_column);
+    tree_view->setColumnHidden(COLUMN_REGION, !UISettings::values.show_region_column);
+    tree_view->setColumnHidden(COLUMN_FILE_TYPE, !UISettings::values.show_type_column);
+    tree_view->setColumnHidden(COLUMN_SIZE, !UISettings::values.show_size_column);
+}
+
+void ForEachOpenGLCacheFile(u64 program_id, auto func) {
+    for (const std::string_view cache_type : {"separable", "conventional"}) {
+        const std::string path = fmt::format("{}opengl/precompiled/{}/{:016X}.bin",
+                                             FileUtil::GetUserPath(FileUtil::UserPath::ShaderDir),
+                                             cache_type, program_id);
+        QFile file{QString::fromStdString(path)};
+        func(file);
+    }
+}
+
+void GameList::AddGamePopup(QMenu& context_menu, const QString& path, const QString& name,
+                            u64 program_id, u64 extdata_id, Service::FS::MediaType media_type) {
     QAction* open_save_location = context_menu.addAction(tr("Open Save Data Location"));
     QAction* open_extdata_location = context_menu.addAction(tr("Open Extra Data Location"));
     QAction* open_application_location = context_menu.addAction(tr("Open Application Location"));
     QAction* open_update_location = context_menu.addAction(tr("Open Update Data Location"));
+    QAction* open_dlc_location = context_menu.addAction(tr("Open DLC Data Location"));
     QAction* open_texture_dump_location = context_menu.addAction(tr("Open Texture Dump Location"));
     QAction* open_texture_load_location =
         context_menu.addAction(tr("Open Custom Texture Location"));
     QAction* open_mods_location = context_menu.addAction(tr("Open Mods Location"));
     QAction* dump_romfs = context_menu.addAction(tr("Dump RomFS"));
-    QAction* navigate_to_gamedb_entry = context_menu.addAction(tr("Navigate to GameDB entry"));
 
-    const bool is_application =
-        0x0004000000000000 <= program_id && program_id <= 0x00040000FFFFFFFF;
+    QMenu* shader_menu = context_menu.addMenu(tr("Disk Shader Cache"));
+    QAction* open_shader_cache_location = shader_menu->addAction(tr("Open Shader Cache Location"));
+    shader_menu->addSeparator();
+    QAction* delete_opengl_disk_shader_cache =
+        shader_menu->addAction(tr("Delete OpenGL Shader Cache"));
+
+    QMenu* uninstall_menu = context_menu.addMenu(tr("Uninstall"));
+    QAction* uninstall_all = uninstall_menu->addAction(tr("Everything"));
+    uninstall_menu->addSeparator();
+    QAction* uninstall_game = uninstall_menu->addAction(tr("Game"));
+    QAction* uninstall_update = uninstall_menu->addAction(tr("Update"));
+    QAction* uninstall_dlc = uninstall_menu->addAction(tr("DLC"));
+
+    QAction* navigate_to_gamedb_entry = context_menu.addAction(tr("Navigate to GameDB entry"));
+    context_menu.addSeparator();
+    QAction* properties = context_menu.addAction(tr("Properties"));
+
+    const u32 program_id_high = (program_id >> 32) & 0xFFFFFFFF;
+    // TODO: Use proper bitmasks for these kinds of checks.
+    const bool is_application = program_id_high == 0x00040000 || program_id_high == 0x00040002 ||
+                                program_id_high == 0x00040010;
+
+    bool opengl_cache_exists = false;
+    ForEachOpenGLCacheFile(
+        program_id, [&opengl_cache_exists](QFile& file) { opengl_cache_exists |= file.exists(); });
 
     std::string sdmc_dir = FileUtil::GetUserPath(FileUtil::UserPath::SDMCDir);
-    open_save_location->setVisible(
+    open_save_location->setEnabled(
         is_application && FileUtil::Exists(FileSys::ArchiveSource_SDSaveData::GetSaveDataPathFor(
                               sdmc_dir, program_id)));
 
     if (extdata_id) {
-        open_extdata_location->setVisible(
+        open_extdata_location->setEnabled(
             is_application &&
             FileUtil::Exists(FileSys::GetExtDataPathFromId(sdmc_dir, extdata_id)));
     } else {
         open_extdata_location->setVisible(false);
     }
 
-    auto media_type = Service::AM::GetTitleMediaType(program_id);
-    open_application_location->setVisible(path.toStdString() ==
-                                          Service::AM::GetTitleContentPath(media_type, program_id));
-    open_update_location->setVisible(
+    const auto update_program_id = program_id | 0xE00000000;
+    const auto dlc_program_id = program_id | 0x8C00000000;
+
+    const auto is_installed =
+        media_type == Service::FS::MediaType::NAND || media_type == Service::FS::MediaType::SDMC;
+    const auto has_update =
         is_application && FileUtil::Exists(Service::AM::GetTitlePath(Service::FS::MediaType::SDMC,
-                                                                     program_id + 0xe00000000) +
-                                           "content/"));
+                                                                     update_program_id) +
+                                           "content/");
+    const auto has_dlc =
+        is_application &&
+        FileUtil::Exists(Service::AM::GetTitlePath(Service::FS::MediaType::SDMC, dlc_program_id) +
+                         "content/");
+
+    open_application_location->setEnabled(is_installed);
+    open_update_location->setEnabled(has_update);
+    open_dlc_location->setEnabled(has_dlc);
+    open_texture_dump_location->setEnabled(is_application);
+    open_texture_load_location->setEnabled(is_application);
+    open_mods_location->setEnabled(is_application);
+    dump_romfs->setEnabled(is_application);
+
+    delete_opengl_disk_shader_cache->setEnabled(opengl_cache_exists);
+
+    uninstall_all->setEnabled(is_installed || has_update || has_dlc);
+    uninstall_game->setEnabled(is_installed);
+    uninstall_update->setEnabled(has_update);
+    uninstall_dlc->setEnabled(has_dlc);
+
     auto it = FindMatchingCompatibilityEntry(compatibility_list, program_id);
-
-    open_texture_dump_location->setVisible(is_application);
-    open_texture_load_location->setVisible(is_application);
-    open_mods_location->setVisible(is_application);
-    dump_romfs->setVisible(is_application);
-
     navigate_to_gamedb_entry->setVisible(it != compatibility_list.end());
 
-    connect(open_save_location, &QAction::triggered, [this, program_id] {
+    connect(open_save_location, &QAction::triggered, this, [this, program_id] {
         emit OpenFolderRequested(program_id, GameListOpenTarget::SAVE_DATA);
     });
-    connect(open_extdata_location, &QAction::triggered, [this, extdata_id] {
+    connect(open_extdata_location, &QAction::triggered, this, [this, extdata_id] {
         emit OpenFolderRequested(extdata_id, GameListOpenTarget::EXT_DATA);
     });
-    connect(open_application_location, &QAction::triggered, [this, program_id] {
+    connect(open_application_location, &QAction::triggered, this, [this, program_id] {
         emit OpenFolderRequested(program_id, GameListOpenTarget::APPLICATION);
     });
-    connect(open_update_location, &QAction::triggered, [this, program_id] {
+    connect(open_update_location, &QAction::triggered, this, [this, program_id] {
         emit OpenFolderRequested(program_id, GameListOpenTarget::UPDATE_DATA);
     });
-    connect(open_texture_dump_location, &QAction::triggered, [this, program_id] {
+    connect(open_texture_dump_location, &QAction::triggered, this, [this, program_id] {
         if (FileUtil::CreateFullPath(fmt::format("{}textures/{:016X}/",
                                                  FileUtil::GetUserPath(FileUtil::UserPath::DumpDir),
                                                  program_id))) {
             emit OpenFolderRequested(program_id, GameListOpenTarget::TEXTURE_DUMP);
         }
     });
-    connect(open_texture_load_location, &QAction::triggered, [this, program_id] {
+    connect(open_texture_load_location, &QAction::triggered, this, [this, program_id] {
         if (FileUtil::CreateFullPath(fmt::format("{}textures/{:016X}/",
                                                  FileUtil::GetUserPath(FileUtil::UserPath::LoadDir),
                                                  program_id))) {
             emit OpenFolderRequested(program_id, GameListOpenTarget::TEXTURE_LOAD);
         }
     });
-    connect(open_mods_location, &QAction::triggered, [this, program_id] {
+    connect(open_mods_location, &QAction::triggered, this, [this, program_id] {
         if (FileUtil::CreateFullPath(fmt::format("{}mods/{:016X}/",
                                                  FileUtil::GetUserPath(FileUtil::UserPath::LoadDir),
                                                  program_id))) {
             emit OpenFolderRequested(program_id, GameListOpenTarget::MODS);
         }
     });
-    connect(dump_romfs, &QAction::triggered,
+    connect(open_dlc_location, &QAction::triggered, this, [this, program_id] {
+        const u64 trimmed_id = program_id & 0xFFFFFFF;
+        const std::string dlc_path =
+            fmt::format("{}Nintendo 3DS/00000000000000000000000000000000/"
+                        "00000000000000000000000000000000/title/0004008c/{:08x}/content/",
+                        FileUtil::GetUserPath(FileUtil::UserPath::SDMCDir), trimmed_id);
+        fmt::print("DLC path {}\n", dlc_path);
+        if (FileUtil::CreateFullPath(dlc_path)) {
+            emit OpenFolderRequested(trimmed_id, GameListOpenTarget::DLC_DATA);
+        }
+    });
+    connect(dump_romfs, &QAction::triggered, this,
             [this, path, program_id] { emit DumpRomFSRequested(path, program_id); });
-    connect(navigate_to_gamedb_entry, &QAction::triggered, [this, program_id]() {
+    connect(navigate_to_gamedb_entry, &QAction::triggered, this, [this, program_id]() {
         emit NavigateToGamedbEntryRequested(program_id, compatibility_list);
     });
-};
+    connect(properties, &QAction::triggered, this,
+            [this, path]() { emit OpenPerGameGeneralRequested(path); });
+    connect(open_shader_cache_location, &QAction::triggered, this, [this, program_id] {
+        if (FileUtil::CreateFullPath(FileUtil::GetUserPath(FileUtil::UserPath::ShaderDir))) {
+            emit OpenFolderRequested(program_id, GameListOpenTarget::SHADER_CACHE);
+        }
+    });
+    connect(delete_opengl_disk_shader_cache, &QAction::triggered, this, [program_id] {
+        ForEachOpenGLCacheFile(program_id, [](QFile& file) { file.remove(); });
+    });
+    connect(uninstall_all, &QAction::triggered, this, [=, this] {
+        QMessageBox::StandardButton answer = QMessageBox::question(
+            this, tr("Citra"),
+            tr("Are you sure you want to completely uninstall '%1'?\n\nThis will "
+               "delete the game if installed, as well as any installed updates or DLC.")
+                .arg(name),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer == QMessageBox::Yes) {
+            std::vector<std::tuple<Service::FS::MediaType, u64, QString>> titles;
+            if (is_installed) {
+                titles.emplace_back(media_type, program_id, name);
+            }
+            if (has_update) {
+                titles.emplace_back(Service::FS::MediaType::SDMC, update_program_id,
+                                    tr("%1 (Update)").arg(name));
+            }
+            if (has_dlc) {
+                titles.emplace_back(Service::FS::MediaType::SDMC, dlc_program_id,
+                                    tr("%1 (DLC)").arg(name));
+            }
+            main_window->UninstallTitles(titles);
+        }
+    });
+    connect(uninstall_game, &QAction::triggered, this, [this, name, media_type, program_id] {
+        QMessageBox::StandardButton answer = QMessageBox::question(
+            this, tr("Citra"), tr("Are you sure you want to uninstall '%1'?").arg(name),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer == QMessageBox::Yes) {
+            std::vector<std::tuple<Service::FS::MediaType, u64, QString>> titles;
+            titles.emplace_back(media_type, program_id, name);
+            main_window->UninstallTitles(titles);
+        }
+    });
+    connect(uninstall_update, &QAction::triggered, this, [this, name, update_program_id] {
+        QMessageBox::StandardButton answer = QMessageBox::question(
+            this, tr("Citra"),
+            tr("Are you sure you want to uninstall the update for '%1'?").arg(name),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer == QMessageBox::Yes) {
+            std::vector<std::tuple<Service::FS::MediaType, u64, QString>> titles;
+            titles.emplace_back(Service::FS::MediaType::SDMC, update_program_id,
+                                tr("%1 (Update)").arg(name));
+            main_window->UninstallTitles(titles);
+        }
+    });
+    connect(uninstall_dlc, &QAction::triggered, this, [this, name, dlc_program_id] {
+        QMessageBox::StandardButton answer = QMessageBox::question(
+            this, tr("Citra"), tr("Are you sure you want to uninstall all DLC for '%1'?").arg(name),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer == QMessageBox::Yes) {
+            std::vector<std::tuple<Service::FS::MediaType, u64, QString>> titles;
+            titles.emplace_back(Service::FS::MediaType::SDMC, dlc_program_id,
+                                tr("%1 (DLC)").arg(name));
+            main_window->UninstallTitles(titles);
+        }
+    });
+}
 
 void GameList::AddCustomDirPopup(QMenu& context_menu, QModelIndex selected) {
     UISettings::GameDir& game_dir =
@@ -566,11 +740,11 @@ void GameList::AddCustomDirPopup(QMenu& context_menu, QModelIndex selected) {
     deep_scan->setCheckable(true);
     deep_scan->setChecked(game_dir.deep_scan);
 
-    connect(deep_scan, &QAction::triggered, [this, &game_dir] {
+    connect(deep_scan, &QAction::triggered, this, [this, &game_dir] {
         game_dir.deep_scan = !game_dir.deep_scan;
         PopulateAsync(UISettings::values.game_dirs);
     });
-    connect(delete_dir, &QAction::triggered, [this, &game_dir, selected] {
+    connect(delete_dir, &QAction::triggered, this, [this, &game_dir, selected] {
         UISettings::values.game_dirs.removeOne(game_dir);
         item_model->invisibleRootItem()->removeRow(selected.row());
     });
@@ -579,8 +753,10 @@ void GameList::AddCustomDirPopup(QMenu& context_menu, QModelIndex selected) {
 void GameList::AddPermDirPopup(QMenu& context_menu, QModelIndex selected) {
     const int game_dir_index = selected.data(GameListDir::GameDirRole).toInt();
 
-    QAction* move_up = context_menu.addAction(tr(u8"\U000025b2 Move Up"));
-    QAction* move_down = context_menu.addAction(tr(u8"\U000025bc Move Down "));
+    QAction* move_up =
+        context_menu.addAction(tr("Move Up").prepend(QString::fromWCharArray(L"\u25b2 ")));
+    QAction* move_down =
+        context_menu.addAction(tr("Move Down").prepend(QString::fromWCharArray(L"\u25bc ")));
     QAction* open_directory_location = context_menu.addAction(tr("Open Directory Location"));
 
     const int row = selected.row();
@@ -588,7 +764,7 @@ void GameList::AddPermDirPopup(QMenu& context_menu, QModelIndex selected) {
     move_up->setEnabled(row > 0);
     move_down->setEnabled(row < item_model->rowCount() - 2);
 
-    connect(move_up, &QAction::triggered, [this, selected, row, game_dir_index] {
+    connect(move_up, &QAction::triggered, this, [this, selected, row, game_dir_index] {
         const int other_index = selected.sibling(row - 1, 0).data(GameListDir::GameDirRole).toInt();
         // swap the items in the settings
         std::swap(UISettings::values.game_dirs[game_dir_index],
@@ -603,7 +779,7 @@ void GameList::AddPermDirPopup(QMenu& context_menu, QModelIndex selected) {
         tree_view->setExpanded(selected, UISettings::values.game_dirs[game_dir_index].expanded);
     });
 
-    connect(move_down, &QAction::triggered, [this, selected, row, game_dir_index] {
+    connect(move_down, &QAction::triggered, this, [this, selected, row, game_dir_index] {
         const int other_index = selected.sibling(row + 1, 0).data(GameListDir::GameDirRole).toInt();
         // swap the items in the settings
         std::swap(UISettings::values.game_dirs[game_dir_index],
@@ -618,7 +794,7 @@ void GameList::AddPermDirPopup(QMenu& context_menu, QModelIndex selected) {
         tree_view->setExpanded(selected, UISettings::values.game_dirs[game_dir_index].expanded);
     });
 
-    connect(open_directory_location, &QAction::triggered, [this, game_dir_index] {
+    connect(open_directory_location, &QAction::triggered, this, [this, game_dir_index] {
         emit OpenDirectory(UISettings::values.game_dirs[game_dir_index].path);
     });
 }
@@ -645,7 +821,7 @@ void GameList::LoadCompatibilityList() {
     const QJsonDocument json = QJsonDocument::fromJson(content);
     const QJsonArray arr = json.array();
 
-    for (const QJsonValue value : arr) {
+    for (const QJsonValue& value : arr) {
         const QJsonObject game = value.toObject();
         const QString compatibility_key = QStringLiteral("compatibility");
 
@@ -657,7 +833,7 @@ void GameList::LoadCompatibilityList() {
         const QString directory = game[QStringLiteral("directory")].toString();
         const QJsonArray ids = game[QStringLiteral("releases")].toArray();
 
-        for (const QJsonValue id_ref : ids) {
+        for (const QJsonValue& id_ref : ids) {
             const QJsonObject id_object = id_ref.toObject();
             const QString id = id_object[QStringLiteral("id")].toString();
 
@@ -667,12 +843,45 @@ void GameList::LoadCompatibilityList() {
     }
 }
 
+void GameList::changeEvent(QEvent* event) {
+    if (event->type() == QEvent::LanguageChange) {
+        RetranslateUI();
+    }
+
+    QWidget::changeEvent(event);
+}
+
+void GameList::RetranslateUI() {
+    item_model->setHeaderData(COLUMN_NAME, Qt::Horizontal, tr("Name"));
+    item_model->setHeaderData(COLUMN_COMPATIBILITY, Qt::Horizontal, tr("Compatibility"));
+    item_model->setHeaderData(COLUMN_REGION, Qt::Horizontal, tr("Region"));
+    item_model->setHeaderData(COLUMN_FILE_TYPE, Qt::Horizontal, tr("File type"));
+    item_model->setHeaderData(COLUMN_SIZE, Qt::Horizontal, tr("Size"));
+}
+
+void GameListSearchField::changeEvent(QEvent* event) {
+    if (event->type() == QEvent::LanguageChange) {
+        RetranslateUI();
+    }
+
+    QWidget::changeEvent(event);
+}
+
+void GameListSearchField::RetranslateUI() {
+    label_filter->setText(tr("Filter:"));
+    edit_filter->setPlaceholderText(tr("Enter pattern to filter"));
+}
+
 QStandardItemModel* GameList::GetModel() const {
     return item_model;
 }
 
 void GameList::PopulateAsync(QVector<UISettings::GameDir>& game_dirs) {
     tree_view->setEnabled(false);
+
+    // Update the columns in case UISettings has changed
+    UpdateColumnVisibility();
+
     // Delete any rows that might already exist if we're repopulating
     item_model->removeRows(0, item_model->rowCount());
     search_field->clear();
