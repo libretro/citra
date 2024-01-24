@@ -111,9 +111,7 @@ else()
         -Wno-unused-command-line-argument
         # Build fortification options
         -Wp,-D_FORTIFY_SOURCE=2
-        -Wp,-D_GLIBCXX_ASSERTIONS
         -fstack-protector-strong
-        -fstack-clash-protection
     )
 
     if (CITRA_WARNINGS_AS_ERRORS)
@@ -136,6 +134,11 @@ else()
         if (COMPILE_WITH_DWARF)
             add_compile_options("-gdwarf")
         endif()
+    else()
+        add_compile_options(
+            -Wp,-D_GLIBCXX_ASSERTIONS
+            -fstack-clash-protection
+        )
     endif()
 
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR MINGW)

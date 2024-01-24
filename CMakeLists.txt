@@ -55,7 +55,7 @@ else()
 endif()
 
 # LTO takes too much memory and time using MSVC.
-if (NOT MSVC AND IS_RELEASE_BUILD)
+if (NOT MSVC AND NOT MINGW AND IS_RELEASE_BUILD)
     set(DEFAULT_ENABLE_LTO ON)
 else()
     set(DEFAULT_ENABLE_LTO OFF)
