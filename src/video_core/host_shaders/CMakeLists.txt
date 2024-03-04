@@ -30,7 +30,7 @@ find_program(GLSLANG "glslang")
 if ("${GLSLANG}" STREQUAL "GLSLANG-NOTFOUND")
     find_program(GLSLANG "glslangValidator")
     if ("${GLSLANG}" STREQUAL "GLSLANG-NOTFOUND")
-        message(FATAL_ERROR "Required program `glslang` (or `glslangValidator`) not found.")
+        #message(FATAL_ERROR "Required program `glslang` (or `glslangValidator`) not found.")
     endif()
 endif()
 
@@ -85,6 +85,9 @@ foreach(FILENAME IN ITEMS ${SHADER_FILES})
         get_filename_component(FILE_NAME ${SHADER_NAME} NAME)
         string(TOUPPER ${FILE_NAME}_SPV SPIRV_VARIABLE_NAME)
         set(SPIRV_HEADER_FILE ${SHADER_DIR}/${SHADER_NAME}_spv.h)
+        if (${GLSLANG} STREQUAL "GLSLANG-NOTFOUND")
+          file(INSTALL ${SHADER_NAME}_spv.h DESTINATION ${SPIRV_HEADER_FILE})
+        else()
         add_custom_command(
             OUTPUT
                 ${SPIRV_HEADER_FILE}
@@ -93,6 +96,7 @@ foreach(FILENAME IN ITEMS ${SHADER_FILES})
             MAIN_DEPENDENCY
                 ${SOURCE_FILE}
         )
+        endif()
         set(SHADER_HEADERS ${SHADER_HEADERS} ${SPIRV_HEADER_FILE})
     endif()
 endforeach()
