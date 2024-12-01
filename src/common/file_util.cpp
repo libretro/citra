@@ -75,7 +75,7 @@
 
 #endif
 
-#ifdef ANDROID
+#if defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
 #include "common/android_storage.h"
 #include "common/string_util.h"
 #endif
@@ -149,7 +149,7 @@ bool Exists(const std::string& filename) {
         copy += DIR_SEP_CHR;
 
     int result = _wstat64(Common::UTF8ToUTF16W(copy).c_str(), &file_info);
-#elif ANDROID
+#elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
     int result = AndroidStorage::FileExists(filename) ? 0 : -1;
 #else
     struct stat file_info;
@@ -160,7 +160,7 @@ bool Exists(const std::string& filename) {
 }
 
 bool IsDirectory(const std::string& filename) {
-#ifdef ANDROID
+#if defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
     return AndroidStorage::IsDirectory(filename);
 #endif
 
@@ -208,7 +208,7 @@ bool Delete(const std::string& filename) {
         LOG_ERROR(Common_Filesystem, "DeleteFile failed on {}: {}", filename, GetLastErrorMsg());
         return false;
     }
-#elif ANDROID
+#elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
     if (!AndroidStorage::DeleteDocument(filename)) {
         LOG_ERROR(Common_Filesystem, "unlink failed on {}", filename);
         return false;
@@ -235,7 +235,7 @@ bool CreateDir(const std::string& path) {
     }
     LOG_ERROR(Common_Filesystem, "CreateDirectory failed on {}: {}", path, error);
     return false;
-#elif ANDROID
+#elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
     std::string directory = path;
     std::string filename = path;
     if (Common::EndsWith(path, "/")) {
@@ -316,7 +316,7 @@ bool DeleteDir(const std::string& filename) {
 #ifdef _WIN32
     if (::RemoveDirectoryW(Common::UTF8ToUTF16W(filename).c_str()))
         return true;
-#elif ANDROID
+#elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
     if (AndroidStorage::DeleteDocument(filename))
         return true;
 #else
@@ -334,7 +334,7 @@ bool Rename(const std::string& srcFilename, const std::string& destFilename) {
     if (_wrename(Common::UTF8ToUTF16W(srcFilename).c_str(),
                  Common::UTF8ToUTF16W(destFilename).c_str()) == 0)
         return true;
-#elif ANDROID
+#elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
     if (AndroidStorage::RenameFile(srcFilename, std::string(GetFilename(destFilename))))
         return true;
 #else
@@ -356,7 +356,7 @@ bool Copy(const std::string& srcFilename, const std::string& destFilename) {
     LOG_ERROR(Common_Filesystem, "failed {} --> {}: {}", srcFilename, destFilename,
               GetLastErrorMsg());
     return false;
-#elif ANDROID
+#elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
     return AndroidStorage::CopyFile(srcFilename, std::string(GetParentPath(destFilename)),
                                     std::string(GetFilename(destFilename)));
 #else
@@ -419,7 +419,7 @@ u64 GetSize(const std::string& filename) {
     struct stat buf;
 #ifdef _WIN32
     if (_wstat64(Common::UTF8ToUTF16W(filename).c_str(), &buf) == 0)
-#elif ANDROID
+#elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
     u64 result = AndroidStorage::GetSize(filename);
     LOG_TRACE(Common_Filesystem, "{}: {}", filename, result);
     return result;
@@ -492,7 +492,7 @@ bool ForeachDirectoryEntry(u64* num_entries_out, const std::string& directory,
     // windows loop
     do {
         const std::string virtual_name(Common::UTF16ToUTF8(ffd.cFileName));
-#elif ANDROID
+#elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
     // android loop
     auto result = AndroidStorage::GetFilesName(directory);
     for (auto virtual_name : result) {
@@ -519,7 +519,7 @@ bool ForeachDirectoryEntry(u64* num_entries_out, const std::string& directory,
 #ifdef _WIN32
     } while (FindNextFileW(handle_find, &ffd) != 0);
     FindClose(handle_find);
-#elif ANDROID
+#elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
     }
 #else
     }
@@ -611,7 +611,7 @@ void CopyDir([[maybe_unused]] const std::string& source_path,
     if (!FileUtil::Exists(dest_path))
         FileUtil::CreateFullPath(dest_path);
 
-#ifdef ANDROID
+#if defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
     auto result = AndroidStorage::GetFilesName(source_path);
     for (auto virtualName : result) {
 #else
@@ -641,7 +641,7 @@ void CopyDir([[maybe_unused]] const std::string& source_path,
             FileUtil::Copy(source, dest);
     }
 
-#ifndef ANDROID
+#if !(defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS))
     closedir(dirp);
 #endif // ANDROID
 #endif // _WIN32
@@ -803,7 +803,7 @@ void SetUserPath(const std::string& path) {
 
         g_paths.emplace(UserPath::ConfigDir, user_path + CONFIG_DIR DIR_SEP);
         g_paths.emplace(UserPath::CacheDir, user_path + CACHE_DIR DIR_SEP);
-#elif ANDROID
+#elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
         user_path = "/";
         g_paths.emplace(UserPath::ConfigDir, user_path + CONFIG_DIR DIR_SEP);
         g_paths.emplace(UserPath::CacheDir, user_path + CACHE_DIR DIR_SEP);
@@ -1033,7 +1033,7 @@ std::string_view RemoveTrailingSlash(std::string_view path) {
 
 std::string SanitizePath(std::string_view path_, DirectorySeparator directory_separator) {
     std::string path(path_);
-#ifdef ANDROID
+#if defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
     return std::string(RemoveTrailingSlash(path));
 #endif
     char type1 = directory_separator == DirectorySeparator::BackwardSlash ? '/' : '\\';
@@ -1100,7 +1100,7 @@ bool IOFile::Open() {
                       Common::UTF8ToUTF16W(openmode).c_str(), flags);
     m_good = m_file != nullptr;
 
-#elif ANDROID
+#elif defined(ANDROID) && !defined(HAVE_LIBRETRO_VFS)
     // Check whether filepath is startsWith content
     AndroidStorage::AndroidOpenMode android_open_mode = AndroidStorage::ParseOpenmode(openmode);
     if (android_open_mode == AndroidStorage::AndroidOpenMode::WRITE ||
