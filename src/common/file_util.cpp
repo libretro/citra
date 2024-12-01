@@ -362,30 +362,30 @@ bool Copy(const std::string& srcFilename, const std::string& destFilename) {
 #else
 
     // Open input file
-    FILE* input = fopen(srcFilename.c_str(), "rb");
+    FILE* input = FOPEN(srcFilename.c_str(), "rb");
     if (!input) {
         LOG_ERROR(Common_Filesystem, "opening input failed {} --> {}: {}", srcFilename,
                   destFilename, GetLastErrorMsg());
         return false;
     }
-    SCOPE_EXIT({ fclose(input); });
+    SCOPE_EXIT({ FCLOSE(input); });
 
     // open output file
-    FILE* output = fopen(destFilename.c_str(), "wb");
+    FILE* output = FOPEN(destFilename.c_str(), "wb");
     if (!output) {
         LOG_ERROR(Common_Filesystem, "opening output failed {} --> {}: {}", srcFilename,
                   destFilename, GetLastErrorMsg());
         return false;
     }
-    SCOPE_EXIT({ fclose(output); });
+    SCOPE_EXIT({ FCLOSE(output); });
 
     // copy loop
     std::array<char, 1024> buffer;
-    while (!feof(input)) {
+    while (!FEOF(input)) {
         // read input
-        std::size_t rnum = fread(buffer.data(), sizeof(char), buffer.size(), input);
+        std::size_t rnum = FREAD(buffer.data(), sizeof(char), buffer.size(), input);
         if (rnum != buffer.size()) {
-            if (ferror(input) != 0) {
+            if (FERROR(input) != 0) {
                 LOG_ERROR(Common_Filesystem, "failed reading from source, {} --> {}: {}",
                           srcFilename, destFilename, GetLastErrorMsg());
                 return false;
@@ -393,7 +393,7 @@ bool Copy(const std::string& srcFilename, const std::string& destFilename) {
         }
 
         // write output
-        std::size_t wnum = fwrite(buffer.data(), sizeof(char), rnum, output);
+        std::size_t wnum = FWRITE(buffer.data(), sizeof(char), rnum, output);
         if (wnum != rnum) {
             LOG_ERROR(Common_Filesystem, "failed writing to output, {} --> {}: {}", srcFilename,
                       destFilename, GetLastErrorMsg());
@@ -1223,7 +1223,15 @@ std::size_t IOFile::ReadAtImpl(void* data, std::size_t length, std::size_t data_
 
     DEBUG_ASSERT(data != nullptr);
 
+#ifdef HAVE_LIBRETRO_VFS
+    int64_t pos = filestream_tell(m_file);
+    FSEEK(m_file, offset, RETRO_VFS_SEEK_POSITION_START);
+    int64_t rv = FREAD(data, data_size, length, m_file);
+    FSEEK(m_file, pos, RETRO_VFS_SEEK_POSITION_START);
+    return rv;
+#else
     return pread(fileno(m_file), data, data_size * length, offset);
+#endif
 }
 
 std::size_t IOFile::WriteImpl(const void* data, std::size_t length, std::size_t data_size) {

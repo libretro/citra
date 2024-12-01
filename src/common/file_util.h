@@ -27,7 +27,7 @@
 #include <streams/file_stream_transforms.h>
 #define CORE_FILE RFILE
 #else
-#define CORE_FILE FILE
+#define CORE_FILE std::FILE
 #endif
 
 namespace FileUtil {
@@ -363,7 +363,9 @@ public:
         return m_good;
     }
     [[nodiscard]] int GetFd() const {
-#ifdef ANDROID
+#ifdef HAVE_LIBRETRO_VFS
+        return fileno(filestream_get_vfs_handle(m_file)->fp);
+#elif defined(ANDROID)
         return m_fd;
 #else
         if (m_file == nullptr)
@@ -400,7 +402,7 @@ private:
 
     bool Open();
 
-    std::FILE* m_file = nullptr;
+    CORE_FILE* m_file = nullptr;
     int m_fd = -1;
     bool m_good = true;
 
