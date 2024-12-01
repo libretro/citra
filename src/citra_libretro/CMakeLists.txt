@@ -35,3 +35,7 @@ endif()
 
 set_target_properties(citra_libretro PROPERTIES PREFIX "")
 target_compile_definitions(citra_libretro PRIVATE HAVE_LIBRETRO)
+
+if(ANDROID)
+  target_compile_definitions(citra_libretro PRIVATE USING_GLES)
+endif()
