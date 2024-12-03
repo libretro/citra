@@ -128,7 +128,7 @@ void LibRetro::OnConfigureEnvironment() {
          cpuScale.append("|");
     }
 
-    static const retro_variable values[] = {
+    retro_variable values[] = {
         //{"citra_graphics_api", "Graphics API; Auto|Vulkan|OpenGL"},
         {"citra_use_cpu_jit", "Enable CPU JIT; enabled|disabled"},
         {"citra_cpu_scale", cpuScale.c_str()},
