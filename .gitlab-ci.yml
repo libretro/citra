@@ -76,7 +76,7 @@ android-arm64-v8a:
     - .libretro-android-cmake-arm64-v8a
     - .core-defs
   variables:
-    LIBNAME: ${CORENAME}_libretro.so
+    LIBNAME: ${CORENAME}_libretro_android.so
   before_script:
     - export NUMPROC=$(($(nproc)/5))
     - perl -pi -e 's/bullseye/bookworm/g' /etc/apt/sources.list
