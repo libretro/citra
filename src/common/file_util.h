@@ -364,6 +364,8 @@ public:
     }
     [[nodiscard]] int GetFd() const {
 #ifdef HAVE_LIBRETRO_VFS
+        if (m_file == nullptr)
+            return -1;
         return fileno(filestream_get_vfs_handle(m_file)->fp);
 #elif defined(ANDROID)
         return m_fd;
