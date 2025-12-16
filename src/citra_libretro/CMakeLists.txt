@@ -8,14 +8,19 @@ add_library(citra_libretro SHARED
         input/input_factory.h
         input/mouse_tracker.cpp
         input/mouse_tracker.h
-        vulkan/vk_swapchain.cpp
-        vulkan/vk_swapchain.h
         citra_libretro.cpp
         citra_libretro.h
         environment.cpp
         environment.h
         core_settings.cpp
         core_settings.h)
+
+if(ENABLE_VULKAN)
+  add_library(citra_libretro SHARED
+    vulkan/vk_swapchain.cpp
+    vulkan/vk_swapchain.h
+  )
+endif()
 
 create_target_directory_groups(citra_libretro)
 
