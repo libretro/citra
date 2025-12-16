@@ -108,6 +108,18 @@ if(ENABLE_LIBRETRO)
     set(CITRA_ENABLE_BUNDLE_TARGET OFF)
 endif()
 
+if(CMAKE_CXX_COMPILER MATCHES "webos" OR
+    CMAKE_CXX_COMPILER MATCHES "starfish")
+    set(WEBOS ON)
+    add_definitions(-DWEBOS=1)
+endif()
+
+if(WEBOS)
+    set(ENABLE_VULKAN OFF)
+     # temp fix for fmt/ranges.h:211:59: error: self-comparison always evaluates to true [-Werror=tautological-compare]
+    add_definitions(-Wno-tautological-compare)
+endif()
+
 include(CitraHandleSystemLibs)
 
 if (CITRA_USE_PRECOMPILED_HEADERS)
@@ -340,6 +352,7 @@ if (ENABLE_QT)
 endif()
 
 # Use system tsl::robin_map if available (otherwise we fallback to version bundled with dynarmic)
+set(TSL_ROBIN_MAP_ENABLE_INSTALL ON CACHE BOOL "" FORCE)
 find_package(tsl-robin-map QUIET)
 
 if (NOT TARGET tsl::robin_map)

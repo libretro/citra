@@ -32,6 +32,12 @@ include:
   - project: 'libretro-infrastructure/ci-templates'
     file: '/libnx-static.yml'
 
+  #################################### MISC ##################################
+
+  # webOS 32-bit (LGTV)
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/webos-cmake.yml'
+
 # Stages for building
 stages:
   - build-prepare
@@ -76,3 +82,12 @@ android-arm64-v8a:
 #   extends:
 #     - .core-defs
 #     - .libretro-libnx-static-retroarch-master
+
+#################################### MISC ##################################
+# webOS 32-bit
+libretro-build-webos-armv7a:
+  extends:
+    - .libretro-webos-armv7a-cmake
+    - .core-defs
+  variables:
+    CORE_ARGS: "${BASE_CORE_ARGS} -DCMAKE_POLICY_VERSION_MINIMUM=3.5"

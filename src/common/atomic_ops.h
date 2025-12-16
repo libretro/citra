@@ -11,6 +11,11 @@
 #include <cstring>
 #endif
 
+#if !defined(__SIZEOF_INT128__)
+#include <mutex>
+inline std::mutex g_atomic128_mutex;
+#endif
+
 namespace Common {
 
 #if _MSC_VER
@@ -107,14 +112,6 @@ namespace Common {
     return __sync_bool_compare_and_swap(pointer, expected, value);
 }
 
-[[nodiscard]] inline bool AtomicCompareAndSwap(volatile u64* pointer, u128 value, u128 expected) {
-    unsigned __int128 value_a;
-    unsigned __int128 expected_a;
-    std::memcpy(&value_a, value.data(), sizeof(u128));
-    std::memcpy(&expected_a, expected.data(), sizeof(u128));
-    return __sync_bool_compare_and_swap((unsigned __int128*)pointer, expected_a, value_a);
-}
-
 [[nodiscard]] inline bool AtomicCompareAndSwap(volatile u8* pointer, u8 value, u8 expected,
                                                u8& actual) {
     actual = __sync_val_compare_and_swap(pointer, expected, value);
@@ -139,8 +136,94 @@ namespace Common {
     return actual == expected;
 }
 
+#if !defined(__SIZEOF_INT128__)
+
+[[nodiscard]] inline bool AtomicCompareAndSwap(volatile u64* pointer, u128 value, u128 expected)
+{
+    std::lock_guard<std::mutex> lock(g_atomic128_mutex);
+
+    auto ptr64 = reinterpret_cast<volatile u64*>(pointer);
+
+    u64 cur_lo = ptr64[0];
+    u64 cur_hi = ptr64[1];
+
+    u64 exp_lo, exp_hi;
+    std::memcpy(&exp_lo, expected.data() + 0, sizeof(u64));
+    std::memcpy(&exp_hi, expected.data() + 1, sizeof(u64));
+
+    if (cur_lo == exp_lo && cur_hi == exp_hi) {
+        u64 val_lo, val_hi;
+        std::memcpy(&val_lo, value.data() + 0, sizeof(u64));
+        std::memcpy(&val_hi, value.data() + 1, sizeof(u64));
+
+        ptr64[0] = val_lo;
+        ptr64[1] = val_hi;
+        return true;
+    }
+
+    return false;
+}
+
+[[nodiscard]] inline bool AtomicCompareAndSwap(volatile u64* pointer, u128 value, u128 expected, u128& actual)
+{
+    std::lock_guard<std::mutex> lock(g_atomic128_mutex);
+
+    auto ptr64 = reinterpret_cast<volatile u64*>(pointer);
+
+    u64 cur_lo = ptr64[0];
+    u64 cur_hi = ptr64[1];
+
+    // write back actual
+    std::memcpy(actual.data() + 0, &cur_lo, sizeof(u64));
+    std::memcpy(actual.data() + 1, &cur_hi, sizeof(u64));
+
+    u64 exp_lo, exp_hi;
+    std::memcpy(&exp_lo, expected.data() + 0, sizeof(u64));
+    std::memcpy(&exp_hi, expected.data() + 1, sizeof(u64));
+
+    if (cur_lo == exp_lo && cur_hi == exp_hi) {
+        u64 val_lo, val_hi;
+        std::memcpy(&val_lo, value.data() + 0, sizeof(u64));
+        std::memcpy(&val_hi, value.data() + 1, sizeof(u64));
+
+        ptr64[0] = val_lo;
+        ptr64[1] = val_hi;
+        return true;
+    }
+
+    return false;
+}
+
+[[nodiscard]] inline u128 AtomicLoad128(volatile u64* pointer)
+{
+    std::lock_guard<std::mutex> lock(g_atomic128_mutex);
+
+    auto ptr64 = reinterpret_cast<volatile u64*>(pointer);
+
+    u128 result;
+    u64 lo = ptr64[0];
+    u64 hi = ptr64[1];
+
+    std::memcpy(result.data() + 0, &lo, sizeof(u64));
+    std::memcpy(result.data() + 1, &hi, sizeof(u64));
+
+    return result;
+}
+
+#else
+
+[[nodiscard]] inline bool AtomicCompareAndSwap(volatile u64* pointer, u128 value, u128 expected)
+{
+    unsigned __int128 value_a;
+    unsigned __int128 expected_a;
+    std::memcpy(&value_a, value.data(), sizeof(u128));
+    std::memcpy(&expected_a, expected.data(), sizeof(u128));
+    return __sync_bool_compare_and_swap((unsigned __int128*)pointer, expected_a, value_a);
+}
+
 [[nodiscard]] inline bool AtomicCompareAndSwap(volatile u64* pointer, u128 value, u128 expected,
-                                               u128& actual) {
+                                               u128& actual)
+{
     unsigned __int128 value_a;
     unsigned __int128 expected_a;
     unsigned __int128 actual_a;
@@ -151,7 +234,8 @@ namespace Common {
     return actual_a == expected_a;
 }
 
-[[nodiscard]] inline u128 AtomicLoad128(volatile u64* pointer) {
+[[nodiscard]] inline u128 AtomicLoad128(volatile u64* pointer)
+{
     unsigned __int128 zeros_a = 0;
     unsigned __int128 result_a =
         __sync_val_compare_and_swap((unsigned __int128*)pointer, zeros_a, zeros_a);
@@ -161,6 +245,7 @@ namespace Common {
     return result;
 }
 
-#endif
+#endif // __SIZEOF_INT128__
+#endif // _MSC_VER
 
 } // namespace Common
