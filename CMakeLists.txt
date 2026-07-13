@@ -54,6 +54,8 @@ else()
     set(IS_RELEASE_BUILD ON)
 endif()
 
+option(ENABLE_VULKAN "Enable Vulkan Video Core" ON)
+
 # LTO takes too much memory and time using MSVC.
 if (NOT MSVC AND NOT MINGW AND IS_RELEASE_BUILD)
     set(DEFAULT_ENABLE_LTO ON)
@@ -91,6 +93,32 @@ CMAKE_DEPENDENT_OPTION(COMPILE_WITH_DWARF "Add DWARF debugging information" ${IS
 option(ENABLE_LTO "Enable link time optimization" ${DEFAULT_ENABLE_LTO})
 option(CITRA_USE_PRECOMPILED_HEADERS "Use precompiled headers" ON)
 option(CITRA_WARNINGS_AS_ERRORS "Enable warnings as errors" ON)
+
+# Disable features not used by a libretro core
+# =======================================================================
+if(ENABLE_LIBRETRO)
+    set(ENABLE_QT OFF)
+    set(ENABLE_QT_UPDATER OFF)
+    set(ENABLE_DEDICATED_ROOM OFF)
+    set(ENABLE_WEB_SERVICE OFF)
+    set(ENABLE_SCRIPTING OFF)
+    set(ENABLE_CUBEB OFF)
+    set(ENABLE_OPENAL OFF)
+    set(ENABLE_TESTS OFF)
+    set(CITRA_ENABLE_BUNDLE_TARGET OFF)
+endif()
+
+if(CMAKE_CXX_COMPILER MATCHES "webos" OR
+    CMAKE_CXX_COMPILER MATCHES "starfish")
+    set(WEBOS ON)
+    add_definitions(-DWEBOS=1)
+endif()
+
+if(WEBOS)
+    set(ENABLE_VULKAN OFF)
+     # temp fix for fmt/ranges.h:211:59: error: self-comparison always evaluates to true [-Werror=tautological-compare]
+    add_definitions(-Wno-tautological-compare)
+endif()
 
 include(CitraHandleSystemLibs)
 
@@ -324,7 +352,16 @@ if (ENABLE_QT)
 endif()
 
 # Use system tsl::robin_map if available (otherwise we fallback to version bundled with dynarmic)
+set(TSL_ROBIN_MAP_ENABLE_INSTALL ON CACHE BOOL "" FORCE)
 find_package(tsl-robin-map QUIET)
+
+if (NOT TARGET tsl::robin_map)
+    if (EXISTS "${CMAKE_SOURCE_DIR}/externals/dynarmic/externals/robin-map/CMakeLists.txt")
+        add_subdirectory(externals/dynarmic/externals/robin-map)
+    else()
+        message(FATAL_ERROR "tsl-robin-map not found: please install it or initialize submodules")
+    endif()
+endif()
 
 # Platform-specific library requirements
 # ======================================
