@@ -77,15 +77,18 @@ if(USE_SYSTEM_FMT)
 else()
     option(FMT_INSTALL "" ON)
     add_subdirectory(fmt EXCLUDE_FROM_ALL)
-    # Clang 18+ (the NDK r27/r29 toolchains ship Clang 21) tightened consteval
-    # evaluation per P2564. That rejects the bundled fmt 10.1.1
+    # Clang 19+ (the NDK r29 toolchain ships Clang 21) tightened consteval
+    # evaluation per P2564, which rejects the bundled fmt 10.1.1
     # FMT_STRING/basic_format_string consteval path with "call to consteval
     # function ... is not a constant expression" while building fmt's own
-    # os.cc/format.cc. Force the non-consteval fallback so the format-string
-    # machinery is instantiated as constexpr instead. Format-string checking
-    # and runtime behaviour are unchanged for well-formed strings.
+    # os.cc/format.cc. fmt 10.1.1 gates that path solely on FMT_CONSTEVAL
+    # (there is no FMT_USE_CONSTEVAL until fmt 11.x), so pre-defining
+    # FMT_CONSTEVAL empty skips the "#ifndef FMT_CONSTEVAL" block, leaves
+    # FMT_HAS_CONSTEVAL undefined, and drops fmt to the check_format_string()
+    # fallback. Format-string checking and runtime behaviour are unchanged for
+    # well-formed strings.
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        target_compile_definitions(fmt PUBLIC FMT_USE_CONSTEVAL=0)
+        target_compile_definitions(fmt PUBLIC FMT_CONSTEVAL=)
     endif()
 endif()
 
