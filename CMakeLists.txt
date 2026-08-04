@@ -118,6 +118,10 @@ if (NOT $ENV{NDK_CCACHE} EQUAL "")
     set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_EXE})
 endif()
 
+if (ANDROID)
+    add_compile_definitions(PAGE_SIZE=4096)
+endif()
+
 # Check for LTO support
 # =======================================================================
 if (ENABLE_LTO)
