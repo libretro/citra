@@ -42,7 +42,7 @@ public:
         if (offset > size) {
             return ERR_WRITE_BEYOND_END;
         } else if (offset == size) {
-            return 0ULL;
+            return static_cast<std::size_t>(0);
         }
 
         if (offset + length > size) {

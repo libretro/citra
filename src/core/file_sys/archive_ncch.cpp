@@ -258,7 +258,7 @@ ResultVal<std::size_t> NCCHFile::Write(const u64 offset, const std::size_t lengt
                                        const u8* buffer) {
     LOG_ERROR(Service_FS, "Attempted to write to NCCH file");
     // TODO(shinyquagsire23): Find error code
-    return 0ULL;
+    return static_cast<std::size_t>(0);
 }
 
 u64 NCCHFile::GetSize() const {
