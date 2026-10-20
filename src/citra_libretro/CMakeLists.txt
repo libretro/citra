@@ -32,6 +32,10 @@ target_link_libraries(citra_libretro PRIVATE ${PLATFORM_LIBRARIES} Threads::Thre
 if(DEFINED LIBRETRO_STATIC)
 target_link_libraries(citra_libretro PRIVATE -static-libstdc++)
 endif()
+if(UNIX AND NOT APPLE)
+  # Export only retro_* so the frontend's libraries can't interpose bundled ones
+  target_link_options(citra_libretro PRIVATE "LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/link.T")
+endif()
 
 set_target_properties(citra_libretro PROPERTIES PREFIX "")
 target_compile_definitions(citra_libretro PRIVATE HAVE_LIBRETRO)
