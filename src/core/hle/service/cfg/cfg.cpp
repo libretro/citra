@@ -443,6 +443,11 @@ ResultCode Module::GetConfigBlock(u32 block_id, u32 size, AccessFlag accesss_fla
     CASCADE_RESULT(pointer, GetConfigBlockPointer(block_id, size, accesss_flag));
     std::memcpy(output, pointer, size);
 
+    // Games may read this block without requesting automatic region detection.
+    if (block_id == LanguageBlockID && size == sizeof(u8)) {
+        *static_cast<u8*>(output) = static_cast<u8>(LibRetro::settings.language_value);
+    }
+
     return RESULT_SUCCESS;
 }
 
